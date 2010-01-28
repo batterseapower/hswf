@@ -291,6 +291,7 @@ transformByCXFORM rgb c = (component fst3, component snd3, component thd3)
    where multTerms' = multTerms c `orElse` (1, 1, 1)
          addTerms' = addTerms c `orElse` (0, 0, 0)
          clamp x = round $ max 0 $ min 255 $ x
+         
          component :: Integral a => (forall b. (b, b, b) -> b) -> a
          component sel = clamp ((fromIntegral (sel rgb) * fromIntegral (sel multTerms') / (256.0 :: Rational)) + fromIntegral (sel addTerms'))
 
