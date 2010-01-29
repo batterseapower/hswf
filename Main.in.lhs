@@ -18,6 +18,16 @@ import System.IO.Unsafe
 
 \end{code}
 
+TODOS
+~~~~~
+
+1) Turn more bitfields into proper enumerations
+2) Expand some of those BYTE[] fields 
+  * In particular, the zlib compressed fields in the image chapter
+  * Perhaps also those embedding sound and video formats
+3) Tests, tests, tests!
+
+
 Chapter 1: Basic Data Types
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -2692,6 +2702,59 @@ ButtonSoundInfo3 If ButtonSoundChar3 != 0, SOUNDINFO Sound style for OverDownToO
 
 Chapter 13: Sprites and Movie Clips
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+p233: DefineSprite
+\begin{record}
+DefineSprite
+Field       Type         Comment
+Header      RECORDHEADER Tag type = 39
+SpriteID    UI16         Character ID of sprite
+FrameCount  UI16         Number of frames in sprite
+ControlTags RECORD[]     A series of tags
+\end{record}
+
+
+Chapter 14: Video
+~~~~~~~~~~~~~~~~~
+
+p251: DefineVideoStream
+\begin{record}
+DefineVideoStream
+Field                Type         Comment
+Header               RECORDHEADER Tag type = 60
+CharacterID          UI16         ID for this video character
+NumFrames            UI16         Number of VideoFrame tags that makes up this stream
+Width                UI16         Width in pixels
+Height               UI16         Height in pixels
+VideoFlagsReserved   UB[4]        Must be 0
+VideoFlagsDeblocking UB[3]        000 = use VIDEOPACKET value 001 = off 010 = Level 1 (Fast deblocking filter) 011 = Level 2 (VP6 only, better deblocking filter) 100 = Level 3 (VP6 only, better deblocking plus fast deringing filter) 101 = Level 4 (VP6 only, better deblocking plus better deringing filter) 110 = Reserved 111 = Reserved
+VideoFlagsSmoothing  UB[1]        0 = smoothing off (faster) 1 = smoothing on (higher quality)
+CodecID              UI8          2 = Sorenson H.263 3 = Screen video (SWF 7 and later only) 4 = VP6 (SWF 8 and later only) 5 = VP6 video with alpha channel (SWF 8 and later only)
+\end{record}
+
+p252: VideoFrame
+\begin{record}
+StreamID
+Field     Type         Comment
+Header    RECORDHEADER Tag type = 61
+StreamID  UI16         ID of video stream character of which this frame is a part
+FrameNum  UI16         Sequence number of this frame within its video stream
+VideoData BYTE[]       Video frame payload
+\end{record}
+
+
+Chapter 15: Binary data
+~~~~~~~~~~~~~~~~~~~~~~~
+
+p253: DefineBinaryData
+\begin{record}
+DefineBinaryData
+Field    Type         Comment
+Header   RECORDHEADER Tag type = 87
+Tag      UI16         16-bit character ID
+Reserved UI32         Reserved space; must be 0
+Data     BYTE[]       A blob of binary data, up to the end of the tag
+\end{record}
 
 
 \begin{code}

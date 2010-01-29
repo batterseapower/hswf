@@ -18,6 +18,16 @@ import System.IO.Unsafe
 
 \end{code}
 
+TODOS
+~~~~~
+
+1) Turn more bitfields into proper enumerations
+2) Expand some of those BYTE[] fields 
+  * In particular, the zlib compressed fields in the image chapter
+  * Perhaps also those embedding sound and video formats
+3) Tests, tests, tests!
+
+
 Chapter 1: Basic Data Types
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -655,6 +665,19 @@ data Tag = UnknownTag ByteString
                     defineButtonSound_buttonSoundInfo2 :: Maybe SOUNDINFO,
                     defineButtonSound_buttonSoundChar3 :: UI16,
                     defineButtonSound_buttonSoundInfo3 :: Maybe SOUNDINFO}
+         |  DefineSprite{defineSprite_spriteID :: UI16,
+               defineSprite_frameCount :: UI16,
+               defineSprite_controlTags :: [RECORD]}
+         |  DefineVideoStream{defineVideoStream_characterID :: UI16,
+                    defineVideoStream_numFrames :: UI16,
+                    defineVideoStream_width :: UI16, defineVideoStream_height :: UI16,
+                    defineVideoStream_videoFlagsDeblocking :: UB,
+                    defineVideoStream_videoFlagsSmoothing :: Bool,
+                    defineVideoStream_codecID :: UI8}
+         |  StreamID{streamID_streamID :: UI16, streamID_frameNum :: UI16,
+           streamID_videoData :: ByteString}
+         |  DefineBinaryData{defineBinaryData_tag :: UI16,
+                   defineBinaryData_data :: ByteString}
 
 getRECORD = do
     rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
@@ -733,6 +756,10 @@ generatedTagGetters tagType
         34 -> Just getDefineButton2
         23 -> Just getDefineButtonCxform
         17 -> Just getDefineButtonSound
+        39 -> Just getDefineSprite
+        60 -> Just getDefineVideoStream
+        61 -> Just getStreamID
+        87 -> Just getDefineBinaryData
         _ -> Nothing
 
 \end{code}
@@ -3607,6 +3634,59 @@ getDefineButtonSound
 
 Chapter 13: Sprites and Movie Clips
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+p233: DefineSprite
+\begin{code}
+getDefineSprite
+  = do defineSprite_spriteID <- getUI16
+       defineSprite_frameCount <- getUI16
+       defineSprite_controlTags <- getToEnd getRECORD
+       return (DefineSprite{..})
+
+\end{code}
+
+
+Chapter 14: Video
+~~~~~~~~~~~~~~~~~
+
+p251: DefineVideoStream
+\begin{code}
+getDefineVideoStream
+  = do defineVideoStream_characterID <- getUI16
+       defineVideoStream_numFrames <- getUI16
+       defineVideoStream_width <- getUI16
+       defineVideoStream_height <- getUI16
+       _defineVideoStream_videoFlagsReserved <- getUB 4
+       defineVideoStream_videoFlagsDeblocking <- getUB 3
+       defineVideoStream_videoFlagsSmoothing <- getFlag
+       defineVideoStream_codecID <- getUI8
+       return (DefineVideoStream{..})
+
+\end{code}
+
+p252: VideoFrame
+\begin{code}
+getStreamID
+  = do streamID_streamID <- getUI16
+       streamID_frameNum <- getUI16
+       streamID_videoData <- getRemainingLazyByteString
+       return (StreamID{..})
+
+\end{code}
+
+
+Chapter 15: Binary data
+~~~~~~~~~~~~~~~~~~~~~~~
+
+p253: DefineBinaryData
+\begin{code}
+getDefineBinaryData
+  = do defineBinaryData_tag <- getUI16
+       _defineBinaryData_reserved <- getUI32
+       defineBinaryData_data <- getRemainingLazyByteString
+       return (DefineBinaryData{..})
+
+\end{code}
 
 
 \begin{code}
