@@ -87,6 +87,11 @@ isEmpty = liftGet False B.isEmpty
 lookAhead :: SwfGet a -> SwfGet a
 lookAhead mx = SwfGet $ \env byte nbits -> fmap ((byte, nbits,) . thd3) (B.lookAhead (unSwfGet mx env byte nbits))
 
+getToEnd :: SwfGet a -> SwfGet [a]
+getToEnd mx = condM isEmpty (return []) $ do
+                  x <- mx
+                  fmap (x:) $ getToEnd mx
+
 
 modify :: (SwfGetEnv -> SwfGetEnv) -> SwfGet a -> SwfGet a
 modify f act = SwfGet $ \env byte nbits -> unSwfGet act (f env) byte nbits

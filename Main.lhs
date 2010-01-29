@@ -421,6 +421,7 @@ data RECORD = RECORD { rECORD_recordHeader :: RECORDHEADER, rECORD_recordTag :: 
 data Tag = UnknownTag ByteString
          | PlaceObject3 { placeObject3_placeFlagMove :: Bool, placeObject3_placeFlagHasImage :: Bool, placeObject3_placeFlagHasClassName :: Bool, placeObject3_depth :: UI16, placeObject3_className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, placeObject3_ratio :: Maybe UI16, placeObject3_name :: Maybe STRING, placeObject3_clipDepth :: Maybe UI16, placeObject3_surfaceFilterList :: Maybe FILTERLIST, placeObject3_blendMode :: Maybe BlendMode, placeObject3_bitmapCache :: Maybe UI8, placeObject3_clipActions :: Maybe CLIPACTIONS }
          | DoAction { doAction_actions :: [ACTIONRECORD] }
+         | DoInitAction { doInitAction_spriteID :: UI16, doInitAction_actions :: [ACTIONRECORD] }
          |  PlaceObject{placeObject_characterId :: UI16,
               placeObject_depth :: UI16, placeObject_matrix :: MATRIX,
               placeObject_colorTransform :: Maybe CXFORM}
@@ -470,12 +471,15 @@ data Tag = UnknownTag ByteString
                                :: [(EncodedU32, STRING)],
                                defineSceneAndFrameLabelData_frameNumLabels ::
                                [(EncodedU32, STRING)]}
+         |  DoABC{doABC_flags :: UI32, doABC_name :: STRING,
+        doABC_aBCData :: ByteString}
 
 getRECORD = do
     rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
 
     let mb_getter = case rECORDHEADER_tagType of
           12 -> Just getDoAction
+          59 -> Just getDoInitAction
           70 -> Just getPlaceObject3
           _  -> generatedTagGetters rECORDHEADER_tagType
 
@@ -511,6 +515,7 @@ generatedTagGetters tagType
         77 -> Just getMetadata
         78 -> Just getDefineScalingGrid
         86 -> Just getDefineSceneAndFrameLabelData
+        82 -> Just getDoABC
         _ -> Nothing
 
 \end{code}
@@ -1093,14 +1098,16 @@ p68: DoAction
 \begin{code}
 
 getDoAction = do
-    let go = do look <- lookAhead getUI8
-                case look of
-                  0 -> return []
-                  _ -> do
-                    actionRecord <- getACTIONRECORD
-                    fmap (actionRecord:) go
-    doAction_actions <- go
+    doAction_actions <- getACTIONRECORDs
     return $ DoAction {..}
+
+getACTIONRECORDs = do
+    look <- lookAhead getUI8
+    case look of
+      0 -> return []
+      _ -> do
+        actionRecord <- getACTIONRECORD
+        fmap (actionRecord:) getACTIONRECORDs
 
 \end{code}
 
@@ -1180,6 +1187,65 @@ data Action = UnknownAction (Maybe ByteString)
          |  ActionDefineFunction{actionDefineFunction_functionName :: STRING,
                        actionDefineFunction_params :: [STRING],
                        actionDefineFunction_codeSize :: UI16}
+         |  ActionDefineLocal{}
+         |  ActionDefineLocal2{}
+         |  ActionDelete{}
+         |  ActionDelete2{}
+         |  ActionEnumerate{}
+         |  ActionEquals2{}
+         |  ActionGetMember{}
+         |  ActionInitArray{}
+         |  ActionInitObject{}
+         |  ActionNewMethod{}
+         |  ActionNewObject{}
+         |  ActionSetMember{}
+         |  ActionTargetPath{}
+         |  ActionWith{actionWith_size :: UI16}
+         |  ActionToNumber{}
+         |  ActionToString{}
+         |  ActionTypeOf{}
+         |  ActionAdd2{}
+         |  ActionLess2{}
+         |  ActionModulo{}
+         |  ActionBitAnd{}
+         |  ActionBitLShift{}
+         |  ActionBitOr{}
+         |  ActionBitRShift{}
+         |  ActionBitURShift{}
+         |  ActionBitXor{}
+         |  ActionDecrement{}
+         |  ActionIncrement{}
+         |  ActionPushDuplicate{}
+         |  ActionReturn{}
+         |  ActionStackSwap{}
+         |  ActionStoreRegister{actionStoreRegister_registerNumber :: UI8}
+         |  ActionInstanceOf{}
+         |  ActionEnumerate2{}
+         |  ActionStrictEquals{}
+         |  ActionGreater{}
+         |  ActionStringGreater{}
+         |  ActionDefineFunction2{actionDefineFunction2_functionName :: STRING,
+                        actionDefineFunction2_registerCount :: UI8,
+                        actionDefineFunction2_preloadParentFlag :: Bool,
+                        actionDefineFunction2_preloadRootFlag :: Bool,
+                        actionDefineFunction2_suppressSuperFlag :: Bool,
+                        actionDefineFunction2_preloadSuperFlag :: Bool,
+                        actionDefineFunction2_suppressArgumentsFlag :: Bool,
+                        actionDefineFunction2_preloadArgumentsFlag :: Bool,
+                        actionDefineFunction2_suppressThisFlag :: Bool,
+                        actionDefineFunction2_preloadThisFlag :: Bool,
+                        actionDefineFunction2_preloadGlobalFlag :: Bool,
+                        actionDefineFunction2_parameters :: [REGISTERPARAM],
+                        actionDefineFunction2_codeSize :: UI16}
+         |  ActionExtends{}
+         |  ActionCastOp{}
+         |  ActionImplementsOp{}
+         |  ActionTry{actionTry_finallyBlockFlag :: Bool,
+            actionTry_catchBlockFlag :: Bool,
+            actionTry_catchName :: Maybe STRING,
+            actionTry_catchRegister :: Maybe UI8, actionTry_tryBody :: [UI8],
+            actionTry_catchBody :: [UI8], actionTry_finallyBody :: [UI8]}
+         |  ActionThrow{}
 
 getACTIONRECORD = do
     aCTIONRECORD_actionRecordHeader@(ACTIONRECORDHEADER {..}) <- getACTIONRECORDHEADER
@@ -1259,6 +1325,49 @@ generatedActionGetters actionCode
         82 -> Just getActionCallMethod
         136 -> Just getActionConstantPool
         155 -> Just getActionDefineFunction
+        60 -> Just getActionDefineLocal
+        65 -> Just getActionDefineLocal2
+        58 -> Just getActionDelete
+        59 -> Just getActionDelete2
+        70 -> Just getActionEnumerate
+        73 -> Just getActionEquals2
+        78 -> Just getActionGetMember
+        66 -> Just getActionInitArray
+        67 -> Just getActionInitObject
+        83 -> Just getActionNewMethod
+        64 -> Just getActionNewObject
+        79 -> Just getActionSetMember
+        69 -> Just getActionTargetPath
+        148 -> Just getActionWith
+        74 -> Just getActionToNumber
+        75 -> Just getActionToString
+        68 -> Just getActionTypeOf
+        71 -> Just getActionAdd2
+        72 -> Just getActionLess2
+        63 -> Just getActionModulo
+        96 -> Just getActionBitAnd
+        99 -> Just getActionBitLShift
+        97 -> Just getActionBitOr
+        100 -> Just getActionBitRShift
+        101 -> Just getActionBitURShift
+        98 -> Just getActionBitXor
+        81 -> Just getActionDecrement
+        80 -> Just getActionIncrement
+        76 -> Just getActionPushDuplicate
+        62 -> Just getActionReturn
+        77 -> Just getActionStackSwap
+        135 -> Just getActionStoreRegister
+        84 -> Just getActionInstanceOf
+        85 -> Just getActionEnumerate2
+        102 -> Just getActionStrictEquals
+        103 -> Just getActionGreater
+        104 -> Just getActionStringGreater
+        142 -> Just getActionDefineFunction2
+        105 -> Just getActionExtends
+        43 -> Just getActionCastOp
+        44 -> Just getActionImplementsOp
+        143 -> Just getActionTry
+        42 -> Just getActionThrow
         _ -> Nothing
 
 \end{code}
@@ -1660,13 +1769,334 @@ getActionDefineFunction
 
 \end{code}
 
+p98: ActionDefineLocal
+\begin{code}
+getActionDefineLocal = do return (ActionDefineLocal{..})
 
+\end{code}
 
+p98: ActionDefineLocal2
+\begin{code}
+getActionDefineLocal2 = do return (ActionDefineLocal2{..})
 
+\end{code}
 
+p98: ActionDelete
+\begin{code}
+getActionDelete = do return (ActionDelete{..})
 
+\end{code}
 
+p99: ActionDelete2
+\begin{code}
+getActionDelete2 = do return (ActionDelete2{..})
 
+\end{code}
+
+p99: ActionEnumerate
+\begin{code}
+getActionEnumerate = do return (ActionEnumerate{..})
+
+\end{code}
+
+p99: ActionEquals2
+\begin{code}
+getActionEquals2 = do return (ActionEquals2{..})
+
+\end{code}
+
+p100: ActionGetMember
+\begin{code}
+getActionGetMember = do return (ActionGetMember{..})
+
+\end{code}
+
+p101: ActionInitArray
+\begin{code}
+getActionInitArray = do return (ActionInitArray{..})
+
+\end{code}
+
+p101: ActionInitObject
+\begin{code}
+getActionInitObject = do return (ActionInitObject{..})
+
+\end{code}
+
+p102: ActionNewMethod
+\begin{code}
+getActionNewMethod = do return (ActionNewMethod{..})
+
+\end{code}
+
+p103: ActionNewObject
+\begin{code}
+getActionNewObject = do return (ActionNewObject{..})
+
+\end{code}
+
+p103: ActionSetMember
+\begin{code}
+getActionSetMember = do return (ActionSetMember{..})
+
+\end{code}
+
+p104: ActionTargetPath
+\begin{code}
+getActionTargetPath = do return (ActionTargetPath{..})
+
+\end{code}
+
+p104: ActionWith
+\begin{code}
+getActionWith
+  = do actionWith_size <- getUI16
+       return (ActionWith{..})
+
+\end{code}
+
+p105: ActionToNumber
+\begin{code}
+getActionToNumber = do return (ActionToNumber{..})
+
+\end{code}
+
+p105: ActionToString
+\begin{code}
+getActionToString = do return (ActionToString{..})
+
+\end{code}
+
+p106: ActionTypeOf
+\begin{code}
+getActionTypeOf = do return (ActionTypeOf{..})
+
+\end{code}
+
+p106: ActionAdd2
+\begin{code}
+getActionAdd2 = do return (ActionAdd2{..})
+
+\end{code}
+
+p107: ActionLess2
+\begin{code}
+getActionLess2 = do return (ActionLess2{..})
+
+\end{code}
+
+p107: ActionModulo
+\begin{code}
+getActionModulo = do return (ActionModulo{..})
+
+\end{code}
+
+p107: ActionBitAnd
+\begin{code}
+getActionBitAnd = do return (ActionBitAnd{..})
+
+\end{code}
+
+p108: ActionBitLShift
+\begin{code}
+getActionBitLShift = do return (ActionBitLShift{..})
+
+\end{code}
+
+p108: ActionBitOr
+\begin{code}
+getActionBitOr = do return (ActionBitOr{..})
+
+\end{code}
+
+p109: ActionBitRShift
+\begin{code}
+getActionBitRShift = do return (ActionBitRShift{..})
+
+\end{code}
+
+p109: ActionBitURShift
+\begin{code}
+getActionBitURShift = do return (ActionBitURShift{..})
+
+\end{code}
+
+p110: ActionBitXor
+\begin{code}
+getActionBitXor = do return (ActionBitXor{..})
+
+\end{code}
+
+p110: ActionDecrement
+\begin{code}
+getActionDecrement = do return (ActionDecrement{..})
+
+\end{code}
+
+p110: ActionIncrement
+\begin{code}
+getActionIncrement = do return (ActionIncrement{..})
+
+\end{code}
+
+p111: ActionPushDuplicate
+\begin{code}
+getActionPushDuplicate = do return (ActionPushDuplicate{..})
+
+\end{code}
+
+p111: ActionReturn
+\begin{code}
+getActionReturn = do return (ActionReturn{..})
+
+\end{code}
+
+p111: ActionStackSwap
+\begin{code}
+getActionStackSwap = do return (ActionStackSwap{..})
+
+\end{code}
+
+p111: ActionStoreRegister
+\begin{code}
+getActionStoreRegister
+  = do actionStoreRegister_registerNumber <- getUI8
+       return (ActionStoreRegister{..})
+
+\end{code}
+
+p112: DoInitAction
+\begin{code}
+
+getDoInitAction = do
+    doInitAction_spriteID <- getUI16
+    doInitAction_actions <- getACTIONRECORDs
+    return $ DoInitAction {..}
+
+\end{code}
+
+p113: ActionInstanceOf
+\begin{code}
+getActionInstanceOf = do return (ActionInstanceOf{..})
+
+\end{code}
+
+p113: ActionEnumerate2
+\begin{code}
+getActionEnumerate2 = do return (ActionEnumerate2{..})
+
+\end{code}
+
+p114: ActionStrictEquals
+\begin{code}
+getActionStrictEquals = do return (ActionStrictEquals{..})
+
+\end{code}
+
+p114: ActionGreater
+\begin{code}
+getActionGreater = do return (ActionGreater{..})
+
+\end{code}
+
+p115: ActionStringGreater
+\begin{code}
+getActionStringGreater = do return (ActionStringGreater{..})
+
+\end{code}
+
+p116: ActionDefineFunction2
+\begin{code}
+getActionDefineFunction2
+  = do actionDefineFunction2_functionName <- getSTRING
+       actionDefineFunction2_numParams <- getUI16
+       actionDefineFunction2_registerCount <- getUI8
+       actionDefineFunction2_preloadParentFlag <- getFlag
+       actionDefineFunction2_preloadRootFlag <- getFlag
+       actionDefineFunction2_suppressSuperFlag <- getFlag
+       actionDefineFunction2_preloadSuperFlag <- getFlag
+       actionDefineFunction2_suppressArgumentsFlag <- getFlag
+       actionDefineFunction2_preloadArgumentsFlag <- getFlag
+       actionDefineFunction2_suppressThisFlag <- getFlag
+       actionDefineFunction2_preloadThisFlag <- getFlag
+       _actionDefineFunction2_reserved <- getUB 7
+       actionDefineFunction2_preloadGlobalFlag <- getFlag
+       actionDefineFunction2_parameters <- sequence
+                                             (genericReplicate actionDefineFunction2_numParams
+                                                getREGISTERPARAM)
+       actionDefineFunction2_codeSize <- getUI16
+       return (ActionDefineFunction2{..})
+
+\end{code}
+
+\begin{code}
+ 
+data REGISTERPARAM = REGISTERPARAM{rEGISTERPARAM_register :: UI8,
+                                   rEGISTERPARAM_paramName :: STRING}
+getREGISTERPARAM
+  = do rEGISTERPARAM_register <- getUI8
+       rEGISTERPARAM_paramName <- getSTRING
+       return (REGISTERPARAM{..})
+
+\end{code}
+
+p119: ActionExtends
+\begin{code}
+getActionExtends = do return (ActionExtends{..})
+
+\end{code}
+
+p119: ActionCastOp
+\begin{code}
+getActionCastOp = do return (ActionCastOp{..})
+
+\end{code}
+
+p120: ActionImplementsOp
+\begin{code}
+getActionImplementsOp = do return (ActionImplementsOp{..})
+
+\end{code}
+
+p121: ActionTy
+\begin{code}
+getActionTry
+  = do _actionTry_reserved <- getUB 5
+       actionTry_catchInRegisterFlag <- getFlag
+       actionTry_finallyBlockFlag <- getFlag
+       actionTry_catchBlockFlag <- getFlag
+       actionTry_trySize <- getUI16
+       actionTry_catchSize <- getUI16
+       actionTry_finallySize <- getUI16
+       actionTry_catchName <- maybeHas (not actionTry_catchInRegisterFlag)
+                                getSTRING
+       actionTry_catchRegister <- maybeHas actionTry_catchInRegisterFlag
+                                    getUI8
+       actionTry_tryBody <- sequence
+                              (genericReplicate actionTry_trySize getUI8)
+       actionTry_catchBody <- sequence
+                                (genericReplicate actionTry_catchSize getUI8)
+       actionTry_finallyBody <- sequence
+                                  (genericReplicate actionTry_finallySize getUI8)
+       return (ActionTry{..})
+
+\end{code}
+
+p122: ActionThrow
+\begin{code}
+getActionThrow = do return (ActionThrow{..})
+
+\end{code}
+
+p123: DoABC
+\begin{code}
+getDoABC
+  = do doABC_flags <- getUI32
+       doABC_name <- getSTRING
+       doABC_aBCData <- getRemainingLazyByteString
+       return (DoABC{..})
+
+\end{code}
 
 \begin{code}
 

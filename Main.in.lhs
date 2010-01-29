@@ -355,6 +355,7 @@ data RECORD = RECORD { rECORD_recordHeader :: RECORDHEADER, rECORD_recordTag :: 
 data Tag = UnknownTag ByteString
          | PlaceObject3 { placeObject3_placeFlagMove :: Bool, placeObject3_placeFlagHasImage :: Bool, placeObject3_placeFlagHasClassName :: Bool, placeObject3_depth :: UI16, placeObject3_className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, placeObject3_ratio :: Maybe UI16, placeObject3_name :: Maybe STRING, placeObject3_clipDepth :: Maybe UI16, placeObject3_surfaceFilterList :: Maybe FILTERLIST, placeObject3_blendMode :: Maybe BlendMode, placeObject3_bitmapCache :: Maybe UI8, placeObject3_clipActions :: Maybe CLIPACTIONS }
          | DoAction { doAction_actions :: [ACTIONRECORD] }
+         | DoInitAction { doInitAction_spriteID :: UI16, doInitAction_actions :: [ACTIONRECORD] }
 \genconstructors{tag}
 
 getRECORD = do
@@ -362,6 +363,7 @@ getRECORD = do
 
     let mb_getter = case rECORDHEADER_tagType of
           12 -> Just getDoAction
+          59 -> Just getDoInitAction
           70 -> Just getPlaceObject3
           _  -> generatedTagGetters rECORDHEADER_tagType
 
@@ -845,14 +847,16 @@ p68: DoAction
 \begin{code}
 
 getDoAction = do
-    let go = do look <- lookAhead getUI8
-                case look of
-                  0 -> return []
-                  _ -> do
-                    actionRecord <- getACTIONRECORD
-                    fmap (actionRecord:) go
-    doAction_actions <- go
+    doAction_actions <- getACTIONRECORDs
     return $ DoAction {..}
+
+getACTIONRECORDs = do
+    look <- lookAhead getUI8
+    case look of
+      0 -> return []
+      _ -> do
+        actionRecord <- getACTIONRECORD
+        fmap (actionRecord:) getACTIONRECORDs
 
 \end{code}
 
@@ -1330,13 +1334,362 @@ Params               STRING[NumParams]  Paramaters
 CodeSize             UI16               # of bytes of code that follow
 \end{record}
 
+p98: ActionDefineLocal
+\begin{record}
+ActionDefineLocal
+Field             Type               Comment
+ActionDefineLocal ACTIONRECORDHEADER ActionCode = 0x3C
+\end{record}
 
+p98: ActionDefineLocal2
+\begin{record}
+ActionDefineLocal2
+Field              Type               Comment
+ActionDefineLocal2 ACTIONRECORDHEADER ActionCode = 0x41
+\end{record}
 
+p98: ActionDelete
+\begin{record}
+ActionDelete
+Field        Type               Comment
+ActionDelete ACTIONRECORDHEADER ActionCode = 0x3A
+\end{record}
 
+p99: ActionDelete2
+\begin{record}
+ActionDelete2
+Field         Type               Comment
+ActionDelete2 ACTIONRECORDHEADER ActionCode = 0x3B
+\end{record}
 
+p99: ActionEnumerate
+\begin{record}
+ActionEnumerate
+Field           Type               Comment
+ActionEnumerate ACTIONRECORDHEADER ActionCode = 0x46
+\end{record}
 
+p99: ActionEquals2
+\begin{record}
+ActionEquals2
+Field         Type               Comment
+ActionEquals2 ACTIONRECORDHEADER ActionCode = 0x49
+\end{record}
 
+p100: ActionGetMember
+\begin{record}
+ActionGetMember
+Field           Type               Comment
+ActionGetMember ACTIONRECORDHEADER ActionCode = 0x4E
+\end{record}
 
+p101: ActionInitArray
+\begin{record}
+ActionInitArray
+Field           Type               Comment
+ActionInitArray ACTIONRECORDHEADER ActionCode = 0x42
+\end{record}
+
+p101: ActionInitObject
+\begin{record}
+ActionInitObject
+Field            Type               Comment
+ActionInitObject ACTIONRECORDHEADER ActionCode = 0x43
+\end{record}
+
+p102: ActionNewMethod
+\begin{record}
+ActionNewMethod
+Field           Type               Comment
+ActionNewMethod ACTIONRECORDHEADER ActionCode = 0x53
+\end{record}
+
+p103: ActionNewObject
+\begin{record}
+ActionNewObject
+Field           Type               Comment
+ActionNewObject ACTIONRECORDHEADER ActionCode = 0x40
+\end{record}
+
+p103: ActionSetMember
+\begin{record}
+ActionSetMember
+Field           Type               Comment
+ActionSetMember ACTIONRECORDHEADER ActionCode = 0x4F
+\end{record}
+
+p104: ActionTargetPath
+\begin{record}
+ActionTargetPath
+Field            Type               Comment
+ActionTargetPath ACTIONRECORDHEADER ActionCode = 0x45
+\end{record}
+
+p104: ActionWith
+\begin{record}
+ActionWith
+Field      Type               Comment
+ActionWith ACTIONRECORDHEADER ActionCode = 0x94
+Size       UI16               # of bytes of code that follow
+\end{record}
+
+p105: ActionToNumber
+\begin{record}
+ActionToNumber
+Field          Type               Comment
+ActionToNumber ACTIONRECORDHEADER ActionCode = 0x4A
+\end{record}
+
+p105: ActionToString
+\begin{record}
+ActionToString
+Field          Type               Comment
+ActionToString ACTIONRECORDHEADER ActionCode = 0x4B
+\end{record}
+
+p106: ActionTypeOf
+\begin{record}
+ActionTypeOf
+Field        Type               Comment
+ActionTypeOf ACTIONRECORDHEADER ActionCode = 0x44
+\end{record}
+
+p106: ActionAdd2
+\begin{record}
+ActionAdd2
+Field      Type               Comment
+ActionAdd2 ACTIONRECORDHEADER ActionCode = 0x47
+\end{record}
+
+p107: ActionLess2
+\begin{record}
+ActionLess2
+Field       Type               Comment
+ActionLess2 ACTIONRECORDHEADER ActionCode = 0x48
+\end{record}
+
+p107: ActionModulo
+\begin{record}
+ActionModulo
+Field        Type               Comment
+ActionModulo ACTIONRECORDHEADER ActionCode = 0x3F
+\end{record}
+
+p107: ActionBitAnd
+\begin{record}
+ActionBitAnd
+Field        Type               Comment
+ActionBitAnd ACTIONRECORDHEADER ActionCode = 0x60
+\end{record}
+
+p108: ActionBitLShift
+\begin{record}
+ActionBitLShift
+Field           Type               Comment
+ActionBitLShift ACTIONRECORDHEADER ActionCode = 0x63
+\end{record}
+
+p108: ActionBitOr
+\begin{record}
+ActionBitOr
+Field       Type               Comment
+ActionBitOr ACTIONRECORDHEADER ActionCode = 0x61
+\end{record}
+
+p109: ActionBitRShift
+\begin{record}
+ActionBitRShift
+Field           Type               Comment
+ActionBitRShift ACTIONRECORDHEADER ActionCode = 0x64
+\end{record}
+
+p109: ActionBitURShift
+\begin{record}
+ActionBitURShift
+Field            Type               Comment
+ActionBitURShift ACTIONRECORDHEADER ActionCode = 0x65
+\end{record}
+
+p110: ActionBitXor
+\begin{record}
+ActionBitXor
+Field        Type               Comment
+ActionBitXor ACTIONRECORDHEADER ActionCode = 0x62
+\end{record}
+
+p110: ActionDecrement
+\begin{record}
+ActionDecrement
+Field           Type               Comment
+ActionDecrement ACTIONRECORDHEADER ActionCode = 0x51
+\end{record}
+
+p110: ActionIncrement
+\begin{record}
+ActionIncrement
+Field           Type               Comment
+ActionIncrement ACTIONRECORDHEADER ActionCode = 0x50
+\end{record}
+
+p111: ActionPushDuplicate
+\begin{record}
+ActionPushDuplicate
+Field               Type               Comment
+ActionPushDuplicate ACTIONRECORDHEADER ActionCode = 0x4C
+\end{record}
+
+p111: ActionReturn
+\begin{record}
+ActionReturn
+Field        Type               Comment
+ActionReturn ACTIONRECORDHEADER ActionCode = 0x3E
+\end{record}
+
+p111: ActionStackSwap
+\begin{record}
+ActionStackSwap
+Field           Type               Comment
+ActionStackSwap ACTIONRECORDHEADER ActionCode = 0x4D
+\end{record}
+
+p111: ActionStoreRegister
+\begin{record}
+ActionStoreRegister
+Field               Type               Comment
+ActionStoreRegister ACTIONRECORDHEADER ActionCode = 0x87
+RegisterNumber      UI8
+\end{record}
+
+p112: DoInitAction
+\begin{code}
+
+getDoInitAction = do
+    doInitAction_spriteID <- getUI16
+    doInitAction_actions <- getACTIONRECORDs
+    return $ DoInitAction {..}
+
+\end{code}
+
+p113: ActionInstanceOf
+\begin{record}
+ActionInstanceOf
+Field            Type               Comment
+ActionInstanceOf ACTIONRECORDHEADER ActionCode = 0x54
+\end{record}
+
+p113: ActionEnumerate2
+\begin{record}
+ActionEnumerate2
+Field            Type               Comment
+ActionEnumerate2 ACTIONRECORDHEADER ActionCode = 0x55
+\end{record}
+
+p114: ActionStrictEquals
+\begin{record}
+ActionStrictEquals
+Field              Type               Comment
+ActionStrictEquals ACTIONRECORDHEADER ActionCode = 0x66
+\end{record}
+
+p114: ActionGreater
+\begin{record}
+ActionGreater
+Field         Type               Comment
+ActionGreater ACTIONRECORDHEADER ActionCode = 0x67
+\end{record}
+
+p115: ActionStringGreater
+\begin{record}
+ActionStringGreater
+Field               Type               Comment
+ActionStringGreater ACTIONRECORDHEADER ActionCode = 0x68
+\end{record}
+
+p116: ActionDefineFunction2
+\begin{record}
+ActionDefineFunction2
+Field                 Type                     Comment
+ActionDefineFunction2 ACTIONRECORDHEADER       ActionCode = 0x8E
+FunctionName          STRING                   Name of function, empty if anonymous
+NumParams             UI16                     of parameters
+RegisterCount         UI8                      Number of registers to allocate, up to 255 registers (from 0 to 254)
+PreloadParentFlag     UB[1]                    0 = Don’t preload _parent into register 1 = Preload _parent into register
+PreloadRootFlag       UB[1]                    0 = Don’t preload _root into register 1 = Preload _root into register
+SuppressSuperFlag     UB[1]                    0 = Create super variable 1 = Don’t create super variable
+PreloadSuperFlag      UB[1]                    0 = Don’t preload super into register 1 = Preload super into register
+SuppressArgumentsFlag UB[1]                    0 = Create arguments variable 1 = Don’t create arguments variable
+PreloadArgumentsFlag  UB[1]                    0 = Don’t preload arguments into register 1 = Preload arguments into register
+SuppressThisFlag      UB[1]                    0 = Create this variable 1 = Don’t create this variable
+PreloadThisFlag       UB[1]                    0 = Don’t preload this into register 1 = Preload this into register
+Reserved              UB[7]                    Always 0
+PreloadGlobalFlag     UB[1]                    0 = Don’t preload _global into register 1 = Preload _global into register
+Parameters            REGISTERPARAM[NumParams] See REGISTERPARAM, following
+CodeSize              UI16                     # of bytes of code that follow
+\end{record}
+
+\begin{record}
+REGISTERPARAM
+Field     Type   Comment
+Register  UI8    For each parameter to the function, a register can be specified. If the register specified is zero, the parameter is created as a variable named ParamName in the activation object, which can be referenced with ActionGetVariable and ActionSetVariable. If the register specified is nonzero, the parameter is copied into the register, and it can be referenced with ActionPush and ActionStoreRegister, and no variable is created in the activation object
+ParamName STRING Parameter name
+\end{record}
+
+p119: ActionExtends
+\begin{record}
+ActionExtends
+Field         Type               Comment
+ActionExtends ACTIONRECORDHEADER ActionCode = 0x69
+\end{record}
+
+p119: ActionCastOp
+\begin{record}
+ActionCastOp
+Field        Type               Comment
+ActionCastOp ACTIONRECORDHEADER ActionCode = 0x2B
+\end{record}
+
+p120: ActionImplementsOp
+\begin{record}
+ActionImplementsOp
+Field              Type               Comment
+ActionImplementsOp ACTIONRECORDHEADER ActionCode = 0x2C
+\end{record}
+
+p121: ActionTy
+\begin{record}
+ActionTry
+Field               Type                               Comment
+ActionTry           ACTIONRECORDHEADER                 ActionCode = 0x8F
+Reserved            UB[5]                              Always zero
+CatchInRegisterFlag UB[1]                              0 - Do not put caught object into register (instead, store in named variable) 1 - Put caught object into register (do not store in named variable)
+FinallyBlockFlag    UB[1]                              0 - No finally block 1 - Has finally block
+CatchBlockFlag      UB[1]                              0 - No catch block 1 - Has catch block
+TrySize             UI16                               Length of the try block
+CatchSize           UI16                               Length of the catch block
+FinallySize         UI16                               Length of the finally block
+CatchName           If CatchInRegisterFlag = 0, STRING Name of the catch variable
+CatchRegister       If CatchInRegisterFlag = 1, UI8    Register to catch into
+TryBody             UI8[TrySize]                       Body of the try block
+CatchBody           UI8[CatchSize]                     Body of the catch block, if any
+FinallyBody         UI8[FinallySize]                   Body of the finally block, if any
+\end{record}
+
+p122: ActionThrow
+\begin{record}
+ActionThrow
+Field       Type               Comment
+ActionThrow ACTIONRECORDHEADER ActionCode = 0x2A
+\end{record}
+
+p123: DoABC
+\begin{record}
+DoABC
+Field     Type          Comment
+Header    RECORDHEADER  Tag type = 82
+Flags     UI32          A 32-bit flags value, which may contain the following bits set: kDoAbcLazyInitializeFlag = 1: Indicates that the ABC  block should not be executed immediately, but only parsed. A later finddef may cause its scripts to execute.
+Name      STRING        The name assigned to the bytecode.
+ABCData   BYTE[]        A block of .abc bytecode to be parsed by the ActionScript 3.0 virtual machine, up to the end of the tag.
+\end{record}
 
 \begin{code}
 
