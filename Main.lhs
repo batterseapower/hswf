@@ -539,7 +539,7 @@ data Tag = UnknownTag ByteString
                  defineFontInfo_fontFlagsANSI :: Bool,
                  defineFontInfo_fontFlagsItalic :: Bool,
                  defineFontInfo_fontFlagsBold :: Bool,
-                 defineFontInfo_codeTable :: Maybe [UI16]}
+                 defineFontInfo_codeTable :: Either [UI16] [UI8]}
 
 getRECORD = do
     rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
@@ -2814,9 +2814,9 @@ getDefineFontInfo
        defineFontInfo_fontFlagsItalic <- getFlag
        defineFontInfo_fontFlagsBold <- getFlag
        defineFontInfo_fontFlagsWideCodes <- getFlag
-       defineFontInfo_codeTable <- maybeHas
-                                     defineFontInfo_fontFlagsWideCodes
-                                     (getToEnd getUI16)
+       defineFontInfo_codeTable <- if defineFontInfo_fontFlagsWideCodes
+                                     then fmap Left (getToEnd getUI16) else
+                                     fmap Right (getToEnd getUI8)
        return (DefineFontInfo{..})
 
 \end{code}

@@ -46,8 +46,8 @@ unParseChunk specialinfos (GenGettersChunk gen) = (Nothing, codeBlock [decl])
     
         decl = FunBind [Match noSrcLoc (Ident getterName) [PVar (Ident varName)] Nothing (UnGuardedRhs dispatcher) (BDecls [])]
         dispatcher = Case (var varName) (alts ++ [default_alt])
-        alts = [Alt noSrcLoc pat (UnGuardedAlt (App (Con $ qname "Just") (var $ "get" ++ recordName))) (BDecls []) | (gen', pat, recordName, _) <- specialinfos, gen' == gen]
-        default_alt = Alt noSrcLoc PWildCard (UnGuardedAlt (Con $ qname "Nothing")) (BDecls [])
+        alts = [Alt noSrcLoc pat (UnGuardedAlt (App (con "Just") (var $ "get" ++ recordName))) (BDecls []) | (gen', pat, recordName, _) <- specialinfos, gen' == gen]
+        default_alt = Alt noSrcLoc PWildCard (UnGuardedAlt (con "Nothing")) (BDecls [])
 unParseChunk specialinfos (GenConstructorsChunk gen) = (Nothing, ["         " ++ (if firstalt then "=" else "|") ++ LHEP.prettyPrint datacon | (firstalt, datacon) <- (exhaustive : repeat False) `zip` datacons])
   where exhaustive = gen == ShapeRecord
         datacons = [datacon | (gen', _, _, datacon) <- specialinfos, gen' == gen]
@@ -91,6 +91,7 @@ data TyCon = TyCon String [FieldExpr]
 
 data Type = Type { type_tycons :: [TyCon], type_repeats :: Repeats }
           | IfThenType { type_cond :: FieldExpr, type_then :: Type }
+          | IfThenElseType { type_cond :: FieldExpr, type_then :: Type, type_else :: Type }
           | CompositeType { type_fields :: [Field] } -- Inserted by analysis
           deriving (Show)
 
@@ -113,8 +114,9 @@ data FieldBinOp = Plus | Mult | Equals | Or | And
                 deriving (Eq, Show)
 
 type_cond_maybe :: Type -> Maybe FieldExpr
-type_cond_maybe (IfThenType { type_cond }) = Just type_cond
-type_cond_maybe _                          = Nothing
+type_cond_maybe (IfThenType { type_cond })     = Just type_cond
+type_cond_maybe (IfThenElseType { type_cond }) = Just type_cond
+type_cond_maybe _                              = Nothing
 
 parseFile :: String -> [Chunk]
 parseFile contents = goNo [] (lines contents)
@@ -157,7 +159,7 @@ parseExactly :: Parser a -> String -> a
 parseExactly ma s = case parse ma "<memory>" s of Left errs -> error (show errs); Right a -> a
 
 parseType :: String -> Either ParseError Type
-parseType s = parse typ "<memory>" s
+parseType s = parse (do { t <- typ; eof; return t }) "<memory>" s
 
 typ = try conditional
   <|> basetyp
@@ -169,7 +171,7 @@ basetyp = do
     repeats <- if optional then return OptionallyAtEnd else repeatspecifier
     return $ Type cons repeats
 
-repeatspecifier = between (char '[') (char ']') (fmap NumberOfTimes expr <|> return RepeatsUntilEnd)
+repeatspecifier = between (char '[') (char ']' >> spaces) (fmap NumberOfTimes expr <|> return RepeatsUntilEnd)
               <|> return Once
               <?> "repeat specifier"
 
@@ -177,21 +179,29 @@ optionality = do { string "(optional)"; spaces; return True }
           <|> return False
           <?> "optionality clause"
 
-conditional = do { string "If"; spaces; e <- expr; optional (char ','); spaces; t <- typ; return $ IfThenType e t }
-          <?> "conditional"
+conditional = do
+    string "If"; spaces
+    e <- expr;
+    optional (char ','); spaces
+    tt <- typ;
+    mb_tf <- optionMaybe $ do
+        string "Otherwise"; spaces
+        optional (char ','); spaces
+        typ
+    return $ maybe (IfThenType e tt) (IfThenElseType e tt) mb_tf
 
-tycon = do { tc <- many1 alphaNum; mb_args <- optionMaybe arguments; return $ TyCon tc (fromMaybe [] mb_args) }
+tycon = do { tc <- many1 alphaNum; mb_args <- optionMaybe arguments; spaces; return $ TyCon tc (fromMaybe [] mb_args) }
     <?> "type constructor"
 
 fieldname = do { x <- letter; xs <- many alphaNum; return (x:xs) }
 
-arguments = between (char '(') (char ')') (sepBy expr (char ',' >> spaces))
+arguments = between (char '(') (char ')' >> spaces) (sepBy expr (char ',' >> spaces))
         <?> "arguments"
 
-parameters = between (char '(') (char ')') (sepBy fieldname (char ',' >> spaces))
+parameters = between (char '(') (char ')' >> spaces) (sepBy fieldname (char ',' >> spaces))
          <?> "parameters"
 
-tycons = between (char '<') (char '>') $ sepBy tycon (char ',' >> spaces)
+tycons = between (char '<') (char '>' >> spaces) $ sepBy tycon (char ',' >> spaces)
 
 expr = buildExpressionParser table (do { e <- factor; spaces; return e })
    <?> "expression"
@@ -203,22 +213,28 @@ table = [[op "*" (BinOpE Mult) AssocLeft],
          [op "or" (BinOpE Or) AssocLeft]]
         where op s f assoc = Infix (do{ string s; spaces; return f}) assoc
 
-factor = between (char '(') (char ')') expr
+factor = between (char '(') (char ')' >> spaces) expr
      <|> field
      <|> literal
      <?> "array length expression factor"
 
-field = fmap FieldE fieldname
+field = skiptspaces $ fmap FieldE fieldname
 
-literal = fmap (LitE . read) $ many1 digit
+literal = skiptspaces $ fmap (LitE . read) $ many1 digit
 
 headerline = do { name <- many1 alphaNum; mb_params <- optionMaybe parameters; return (name, fromMaybe [] mb_params) }
+
+skiptspaces ma = do
+    a <- ma
+    spaces
+    return a
 
 
 simplify :: [Field] -> [Field]
 simplify = map simplifyOne
   where simplifyOne f = f { field_type = fmapFieldExpr (simplifyFieldExpr True) (field_type f) }
         fmapFieldExpr f ty@(IfThenType { type_cond, type_then }) = ty { type_cond = f type_cond, type_then = fmapFieldExpr f type_then }
+        fmapFieldExpr f ty@(IfThenElseType { type_cond, type_then, type_else }) = ty { type_cond = f type_cond, type_then = fmapFieldExpr f type_then, type_else = fmapFieldExpr f type_else }
         fmapFieldExpr _ ty = ty
 
 identifyComposites :: [Field] -> [Field]
@@ -315,17 +331,24 @@ fieldToSyntax defuser field = (Generator noSrcLoc bind_to genexp, if should_excl
 
 typeToSyntax :: (FieldName -> String) -> Type -> (Exp, LHE.Type)
 typeToSyntax defuser typ = case typ of
-    CompositeType fields -> (genexp, ty)
+    CompositeType fields
+      -> (Do $ getters ++ [Qualifier $ App (var "return") (Tuple components)], TyTuple Boxed (catMaybes mb_tys))
       where
-        genexp = Do $ getters ++ [Qualifier $ App (var "return") (Tuple components)]
-        ty = TyTuple Boxed (catMaybes mb_tys)
-        
         components = [Var (UnQual bound_to) | (Generator _ (PVar bound_to) _, Just _) <- gettertys]
         gettertys = map (fieldToSyntax defuser) fields
         (getters, mb_tys) = unzip gettertys
 
-    IfThenType condexpr typ -> (maybeHas condexpr genexp, maybeTy ty)
+    IfThenType condexpr typ
+      -> (App (App (var "maybeHas") (fieldExprToSyntax defuser condexpr)) genexp, maybeTy_ ty)
       where (genexp, ty) = typeToSyntax defuser typ
+    
+    IfThenElseType condexpr typt typf
+      -> (If (fieldExprToSyntax defuser condexpr) (fmap_ (con "Left") genexpt) (fmap_ (con "Right") genexpf), eitherTy_ tyt tyf)
+      where (genexpt, tyt) = typeToSyntax defuser typt
+            (genexpf, tyf) = typeToSyntax defuser typf
+            
+            fmap_ efun efunctor = App (App (var "fmap") efun) efunctor
+            eitherTy_ ty1 ty2 = TyApp (TyApp (LHE.TyCon (qname "Either")) ty1) ty2
     
     Type [TyCon "UB" []] (NumberOfTimes (LitE 1))
       -> (var "getFlag", LHE.TyCon (qname "Bool"))
@@ -346,7 +369,7 @@ typeToSyntax defuser typ = case typ of
         NumberOfTimes lenexpr
           -> (App (App (var "genericReplicateM") (fieldExprToSyntax defuser lenexpr)) onegenexp, TyList onety)
         OptionallyAtEnd
-          -> (App (App (var "maybeHasM") (App (App (var "fmap") (var "not")) (var "isEmpty"))) onegenexp, maybeTy onety)
+          -> (App (App (var "maybeHasM") (App (App (var "fmap") (var "not")) (var "isEmpty"))) onegenexp, maybeTy_ onety)
         RepeatsUntilEnd
           -> (App (var "getToEnd") onegenexp, TyList onety)
       where
@@ -359,8 +382,7 @@ typeToSyntax defuser typ = case typ of
         tyOne (TyCon tycon _)     = LHE.TyCon (qname tycon)
 
   where
-    maybeHas condexpr = App (App (var "maybeHas") (fieldExprToSyntax defuser condexpr)) 
-    maybeTy = TyApp (LHE.TyCon (qname "Maybe"))
+    maybeTy_ = TyApp (LHE.TyCon (qname "Maybe"))
 
 fieldExprToSyntax _       (LitE i) = Lit (Int $ fromIntegral i)
 fieldExprToSyntax defuser (FieldE x) = var (defuser x)
@@ -379,6 +401,7 @@ simplifyFieldExpr _    e = e
 
 var = Var . UnQual . Ident
 qname = UnQual . Ident
+con = Con . qname
 noSrcLoc = SrcLoc "<unknown>" 0 0
 apps = foldl App
 
