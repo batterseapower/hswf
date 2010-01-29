@@ -353,8 +353,8 @@ data RECORD = RECORD { rECORD_recordHeader :: RECORDHEADER, rECORD_recordTag :: 
 
 data Tag = UnknownTag ByteString
          | PlaceObject3 { placeObject3_placeFlagMove :: Bool, placeObject3_placeFlagHasImage :: Bool, placeObject3_placeFlagHasClassName :: Bool, placeObject3_depth :: UI16, placeObject3_className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, placeObject3_ratio :: Maybe UI16, placeObject3_name :: Maybe STRING, placeObject3_clipDepth :: Maybe UI16, placeObject3_surfaceFilterList :: Maybe FILTERLIST, placeObject3_blendMode :: Maybe BlendMode, placeObject3_bitmapCache :: Maybe UI8, placeObject3_clipActions :: Maybe CLIPACTIONS }
-         | DoAction { doAction_actions :: [ACTIONRECORD] }
-         | DoInitAction { doInitAction_spriteID :: UI16, doInitAction_actions :: [ACTIONRECORD] }
+         | DoAction { doAction_actions :: ACTIONRECORDS }
+         | DoInitAction { doInitAction_spriteID :: UI16, doInitAction_actions :: ACTIONRECORDS }
          | DefineFont { defineFont_fontID :: UI16, defineFont_glyphShapeTable :: [SHAPE] }
 \genconstructors{tag}
 
@@ -414,18 +414,23 @@ ClipActions                If PlaceFlagHasClipActions CLIPACTIONS        SWF 5 a
 
 \begin{code}
 
-data CLIPACTIONS = CLIPACTIONS { cLIPACTIONS_allEventFlags :: CLIPEVENTFLAGS, cLIPACTIONS_clipActionRecords :: [CLIPACTIONRECORD] }
+data CLIPACTIONS = CLIPACTIONS { cLIPACTIONS_allEventFlags :: CLIPEVENTFLAGS, cLIPACTIONS_clipActionRecords :: CLIPACTIONRECORDS }
 
 getCLIPACTIONS = do
     _reserved <- getUI16
     cLIPACTIONS_allEventFlags <- getCLIPEVENTFLAGS
-    let go = do clipActionRecord <- getCLIPACTIONRECORD
-                end <- fmap null $ lookAhead getCLIPEVENTFLAGS
-                if end then return []
-                       else fmap (clipActionRecord:) $ go
-    cLIPACTIONS_clipActionRecords <- go
-    _clipActionEndFlag <- getCLIPEVENTFLAGS
+    cLIPACTIONS_clipActionRecords <- getCLIPACTIONRECORDS
     return $ CLIPACTIONS {..}
+
+type CLIPACTIONRECORDS = [CLIPACTIONRECORD]
+
+getCLIPACTIONRECORDS = do
+    look <- lookAhead getCLIPEVENTFLAGS
+    if (null look)
+     then getCLIPEVENTFLAGS >> return []
+     else do
+       x <- getCLIPACTIONRECORD
+       fmap (x:) getCLIPACTIONRECORDS
 
 data CLIPACTIONRECORD = CLIPACTIONRECORD { cLIPACTIONRECORD_eventFlags :: CLIPEVENTFLAGS, cLIPACTIONRECORD_keyCode :: Maybe UI8, cLIPACTIONRECORD_actions :: [ACTIONRECORD] }
 
@@ -434,13 +439,13 @@ getCLIPACTIONRECORD = do
     actionRecordSize <- getUI32
     (cLIPACTIONRECORD_keyCode, cLIPACTIONRECORD_actions) <- nestSwfGet (fromIntegral actionRecordSize) $ do
         keyCode <- maybeHas (ClipEventKeyPress `elem` cLIPACTIONRECORD_eventFlags) getUI8
-        let go = do action <- getACTIONRECORD
-                    condM isEmpty
-                      (return [])
-                      (fmap (action:) go)
-        actions <- go
+        actions <- getACTIONRECORDS
         return (keyCode, actions)
     return $ CLIPACTIONRECORD {..}
+  where
+    getACTIONRECORDS = condM isEmpty (return []) $ do
+        action <- getACTIONRECORD
+        fmap (action:) getACTIONRECORDS
 
 \end{code}
 
@@ -848,16 +853,18 @@ p68: DoAction
 \begin{code}
 
 getDoAction = do
-    doAction_actions <- getACTIONRECORDs
+    doAction_actions <- getACTIONRECORDS
     return $ DoAction {..}
 
-getACTIONRECORDs = do
+type ACTIONRECORDS = [ACTIONRECORD]
+
+getACTIONRECORDS = do
     look <- lookAhead getUI8
-    case look of
-      0 -> getUI8 >> return []
-      _ -> do
+    if look == 0
+     then getUI8 >> return []
+     else do
         actionRecord <- getACTIONRECORD
-        fmap (actionRecord:) getACTIONRECORDs
+        fmap (actionRecord:) getACTIONRECORDS
 
 \end{code}
 
@@ -1566,7 +1573,7 @@ p112: DoInitAction
 
 getDoInitAction = do
     doInitAction_spriteID <- getUI16
-    doInitAction_actions <- getACTIONRECORDs
+    doInitAction_actions <- getACTIONRECORDS
     return $ DoInitAction {..}
 
 \end{code}
@@ -1803,8 +1810,8 @@ getSHAPERECORDS shapeVer fillBits lineBits = go
            then getSTRAIGHTEDGERECORD >>= \x -> fmap (x:) go
            else getCURVEDEDGERECORD >>= \x -> fmap (x:) go
        else do
-          eos <- lookAhead (getUB 5)
-          if eos == 0
+          look <- lookAhead (getUB 5)
+          if look == 0
            then getUB 5 >> byteAlign >> return []
            else getSTYLECHANGERECORD shapeVer fillBits lineBits >>= \x -> fmap (x:) go
 
@@ -2343,11 +2350,14 @@ TextRecords      TEXTRECORDS(1, GlyphBits, AdvanceBits) Text records.
 type TEXTRECORDS = [TEXTRECORD]
 
 getTEXTRECORDS textVer glyphBits advanceBits = go
-  where go = do
-          eor <- lookAhead getUI8
-          if eor == 0
-           then getUI8 >> return []
-           else getTEXTRECORD textVer glyphBits advanceBits >>= \x -> fmap (x:) go
+  where
+    go = do
+      look <- lookAhead getUI8
+      if look == 0
+       then getUI8 >> return []
+       else do
+         x <- getTEXTRECORD textVer glyphBits advanceBits
+         fmap (x:) go
 
 \end{code}
 
@@ -2565,9 +2575,124 @@ StreamSoundData BYTE[]       Compressed sound data
 Chapter 12: Buttons
 ~~~~~~~~~~~~~~~~~~~
 
+p224: Button record
 \begin{code}
 
+type BUTTONRECORDS = [BUTTONRECORD]
+
+getBUTTONRECORDS buttonVer = go
+  where
+    go = do
+      look <- lookAhead getUI8
+      if look == 0
+        then getUI8 >> return []
+        else do
+          x <- getBUTTONRECORD buttonVer
+          fmap (x:) go
+
 \end{code}
+
+\begin{record}
+BUTTONRECORD(ButtonVer)
+Field                       Type                                                     Comment
+ButtonReserved              UB[2]                                                    Reserved bits; always 0
+ButtonHasBlendMode          UB[1]                                                    0 = No blend mode 1 = Has blend mode (SWF 8 and later only)
+ButtonHasFilterList         UB[1]                                                    0 = No filter list 1 = Has filter list (SWF 8 and later only)
+ButtonStateHitTest          UB[1]                                                    Present in hit test state
+ButtonStateDown             UB[1]                                                    Present in down state
+ButtonStateOver             UB[1]                                                    Present in over state
+ButtonStateUp               UB[1]                                                    Present in up state
+CharacterID                 UI16                                                     ID of character to place
+PlaceDepth                  UI16                                                     Depth at which to place character
+PlaceMatrix                 MATRIX                                                   Transformation matrix for character placement
+ButtonDisplayColorTransform If ButtonVer = 2, CXFORMWITHALPHA                        Character color transform
+ButtonDisplayFilterList     If ButtonVer = 2, If ButtonHasFilterList = 1, FILTERLIST List of filters on this button
+ButtonDisplayBlendMode      If ButtonVer = 2, If ButtonHasBlendMode  = 1, UI8        0 or 1 = normal 2 = layer 3 = multiply 4 = screen 5 = lighten 6 = darken 7 = difference 8 = add 9 = subtract 10 = invert 11 = alpha 12 = erase 13 = overlay 14 = hardlight. Values 15 to 255 are reserved.
+\end{record}
+
+p225: DefineButton
+\begin{record}
+DefineButton
+Field            Type             Comment
+Header           RECORDHEADER     Tag type = 7
+ButtonId         UI16             ID for this character
+Characters       BUTTONRECORDS(1) Characters that make up the button
+Actions          ACTIONRECORDS    Actions to perform
+\end{record}
+
+p226: DefineButton2
+\begin{record}
+DefineButton2
+Field             Type              Comment
+Header            RECORDHEADER      Tag type = 34
+ButtonId          UI16              ID for this character
+ReservedFlags     UB[7]             Always 0
+TrackAsMenu       UB[1]             0 = track as normal button 1 = track as menu button
+ActionOffset      UI16              Offset in bytes from start of this field to the first BUTTONCONDACTION, or 0 if no actions occur
+Characters        BUTTONRECORDS(2)  Characters that make up the button
+CharacterEndFlag  UI8               Must be 0
+Actions           BUTTONCONDACTIONS Actions to execute at particular button events
+\end{record}
+
+\begin{record}
+BUTTONCONDACTION
+Field                 Type          Comment
+CondIdleToOverDown    UB[1]         Idle to OverDown
+CondOutDownToIdle     UB[1]         OutDown to Idle
+CondOutDownToOverDown UB[1]         OutDown to OverDown
+CondOverDownToOutDown UB[1]         OverDown to OutDown
+CondOverDownToOverUp  UB[1]         OverDown to OverUp
+CondOverUpToOverDown  UB[1]         OverUp to OverDown
+CondOverUpToIdle      UB[1]         OverUp to Idle
+CondIdleToOverUp      UB[1]         Idle to OverUp
+CondKeyPress          UB[7]         SWF 4 or later: key code.Otherwise always 0. Valid key codes: 1 = left arrow 2 = right arrow 3 = home 4 = end 5 = insert 6 = delete 8 = backspace 13 = enter 14 = up arrow 15 = down arrow 16 = page up 17 = page down 18 = tab 19 = escape 32 to 126: follows ASCII 
+CondOverDownToIdle    UB[1]         OverDown to Idle
+Actions               ACTIONRECORDS Actions to perform. See DoAction.
+\end{record}
+
+\begin{code}
+
+type BUTTONCONDACTIONS = [BUTTONCONDACTION]
+
+getBUTTONCONDACTIONS = condM isEmpty (return []) $ do
+    offset <- getUI16
+    x <- (if offset /= 0 then nestSwfGet (fromIntegral $ offset - 2) else id) getBUTTONCONDACTION
+    
+    if offset == 0
+     then return []
+     else fmap (x:) getBUTTONCONDACTIONS
+
+\end{code}
+
+p228: DefineButtonCxform
+\begin{record}
+DefineButtonCxform
+Field                Type         Comment
+Header               RECORDHEADER Tag type = 23
+ButtonId             UI16         Button ID for this information
+ButtonColorTransform CXFORM       Character color transform
+\end{record}
+
+p229: DefineButtonSound
+\begin{record}
+DefineButtonSound
+Field            Type                                Comment
+Header           RECORDHEADER                        Tag type = 17
+ButtonId         UI16                                The ID of the button these sounds apply to.
+ButtonSoundChar0 UI16                                Sound ID for OverUpToIdle
+ButtonSoundInfo0 If ButtonSoundChar0 != 0, SOUNDINFO Sound style for OverUpToIdle
+ButtonSoundChar1 UI16                                Sound ID for IdleToOverUp
+ButtonSoundInfo1 If ButtonSoundChar1 != 0, SOUNDINFO Sound style for IdleToOverUp
+ButtonSoundChar2 UI16                                Sound ID for OverUpToOverDown
+ButtonSoundInfo2 If ButtonSoundChar2 != 0, SOUNDINFO Sound style for OverUpToOverDown
+ButtonSoundChar3 UI16                                Sound ID for OverDownToOverUp
+ButtonSoundInfo3 If ButtonSoundChar3 != 0, SOUNDINFO Sound style for OverDownToOverUp
+\end{record}
+
+
+Chapter 13: Sprites and Movie Clips
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 
 \begin{code}
 

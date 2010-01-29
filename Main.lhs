@@ -407,8 +407,8 @@ data RECORD = RECORD { rECORD_recordHeader :: RECORDHEADER, rECORD_recordTag :: 
 
 data Tag = UnknownTag ByteString
          | PlaceObject3 { placeObject3_placeFlagMove :: Bool, placeObject3_placeFlagHasImage :: Bool, placeObject3_placeFlagHasClassName :: Bool, placeObject3_depth :: UI16, placeObject3_className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, placeObject3_ratio :: Maybe UI16, placeObject3_name :: Maybe STRING, placeObject3_clipDepth :: Maybe UI16, placeObject3_surfaceFilterList :: Maybe FILTERLIST, placeObject3_blendMode :: Maybe BlendMode, placeObject3_bitmapCache :: Maybe UI8, placeObject3_clipActions :: Maybe CLIPACTIONS }
-         | DoAction { doAction_actions :: [ACTIONRECORD] }
-         | DoInitAction { doInitAction_spriteID :: UI16, doInitAction_actions :: [ACTIONRECORD] }
+         | DoAction { doAction_actions :: ACTIONRECORDS }
+         | DoInitAction { doInitAction_spriteID :: UI16, doInitAction_actions :: ACTIONRECORDS }
          | DefineFont { defineFont_fontID :: UI16, defineFont_glyphShapeTable :: [SHAPE] }
          |  PlaceObject{placeObject_characterId :: UI16,
               placeObject_depth :: UI16, placeObject_matrix :: MATRIX,
@@ -635,6 +635,26 @@ data Tag = UnknownTag ByteString
                    soundStreamHead2_streamSoundSampleCount :: UI16,
                    soundStreamHead2_latencySeek :: Maybe SI16}
          |  SoundStreamBlock{soundStreamBlock_streamSoundData :: ByteString}
+         |  DefineButton{defineButton_buttonId :: UI16,
+               defineButton_characters :: BUTTONRECORDS,
+               defineButton_actions :: ACTIONRECORDS}
+         |  DefineButton2{defineButton2_buttonId :: UI16,
+                defineButton2_trackAsMenu :: Bool,
+                defineButton2_actionOffset :: UI16,
+                defineButton2_characters :: BUTTONRECORDS,
+                defineButton2_characterEndFlag :: UI8,
+                defineButton2_actions :: BUTTONCONDACTIONS}
+         |  DefineButtonCxform{defineButtonCxform_buttonId :: UI16,
+                     defineButtonCxform_buttonColorTransform :: CXFORM}
+         |  DefineButtonSound{defineButtonSound_buttonId :: UI16,
+                    defineButtonSound_buttonSoundChar0 :: UI16,
+                    defineButtonSound_buttonSoundInfo0 :: Maybe SOUNDINFO,
+                    defineButtonSound_buttonSoundChar1 :: UI16,
+                    defineButtonSound_buttonSoundInfo1 :: Maybe SOUNDINFO,
+                    defineButtonSound_buttonSoundChar2 :: UI16,
+                    defineButtonSound_buttonSoundInfo2 :: Maybe SOUNDINFO,
+                    defineButtonSound_buttonSoundChar3 :: UI16,
+                    defineButtonSound_buttonSoundInfo3 :: Maybe SOUNDINFO}
 
 getRECORD = do
     rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
@@ -709,6 +729,10 @@ generatedTagGetters tagType
         18 -> Just getSoundStreamHead
         45 -> Just getSoundStreamHead2
         19 -> Just getSoundStreamBlock
+        7 -> Just getDefineButton
+        34 -> Just getDefineButton2
+        23 -> Just getDefineButtonCxform
+        17 -> Just getDefineButtonSound
         _ -> Nothing
 
 \end{code}
@@ -761,18 +785,23 @@ getPlaceObject2
 
 \begin{code}
 
-data CLIPACTIONS = CLIPACTIONS { cLIPACTIONS_allEventFlags :: CLIPEVENTFLAGS, cLIPACTIONS_clipActionRecords :: [CLIPACTIONRECORD] }
+data CLIPACTIONS = CLIPACTIONS { cLIPACTIONS_allEventFlags :: CLIPEVENTFLAGS, cLIPACTIONS_clipActionRecords :: CLIPACTIONRECORDS }
 
 getCLIPACTIONS = do
     _reserved <- getUI16
     cLIPACTIONS_allEventFlags <- getCLIPEVENTFLAGS
-    let go = do clipActionRecord <- getCLIPACTIONRECORD
-                end <- fmap null $ lookAhead getCLIPEVENTFLAGS
-                if end then return []
-                       else fmap (clipActionRecord:) $ go
-    cLIPACTIONS_clipActionRecords <- go
-    _clipActionEndFlag <- getCLIPEVENTFLAGS
+    cLIPACTIONS_clipActionRecords <- getCLIPACTIONRECORDS
     return $ CLIPACTIONS {..}
+
+type CLIPACTIONRECORDS = [CLIPACTIONRECORD]
+
+getCLIPACTIONRECORDS = do
+    look <- lookAhead getCLIPEVENTFLAGS
+    if (null look)
+     then getCLIPEVENTFLAGS >> return []
+     else do
+       x <- getCLIPACTIONRECORD
+       fmap (x:) getCLIPACTIONRECORDS
 
 data CLIPACTIONRECORD = CLIPACTIONRECORD { cLIPACTIONRECORD_eventFlags :: CLIPEVENTFLAGS, cLIPACTIONRECORD_keyCode :: Maybe UI8, cLIPACTIONRECORD_actions :: [ACTIONRECORD] }
 
@@ -781,13 +810,13 @@ getCLIPACTIONRECORD = do
     actionRecordSize <- getUI32
     (cLIPACTIONRECORD_keyCode, cLIPACTIONRECORD_actions) <- nestSwfGet (fromIntegral actionRecordSize) $ do
         keyCode <- maybeHas (ClipEventKeyPress `elem` cLIPACTIONRECORD_eventFlags) getUI8
-        let go = do action <- getACTIONRECORD
-                    condM isEmpty
-                      (return [])
-                      (fmap (action:) go)
-        actions <- go
+        actions <- getACTIONRECORDS
         return (keyCode, actions)
     return $ CLIPACTIONRECORD {..}
+  where
+    getACTIONRECORDS = condM isEmpty (return []) $ do
+        action <- getACTIONRECORD
+        fmap (action:) getACTIONRECORDS
 
 \end{code}
 
@@ -1287,16 +1316,18 @@ p68: DoAction
 \begin{code}
 
 getDoAction = do
-    doAction_actions <- getACTIONRECORDs
+    doAction_actions <- getACTIONRECORDS
     return $ DoAction {..}
 
-getACTIONRECORDs = do
+type ACTIONRECORDS = [ACTIONRECORD]
+
+getACTIONRECORDS = do
     look <- lookAhead getUI8
-    case look of
-      0 -> getUI8 >> return []
-      _ -> do
+    if look == 0
+     then getUI8 >> return []
+     else do
         actionRecord <- getACTIONRECORD
-        fmap (actionRecord:) getACTIONRECORDs
+        fmap (actionRecord:) getACTIONRECORDS
 
 \end{code}
 
@@ -2161,7 +2192,7 @@ p112: DoInitAction
 
 getDoInitAction = do
     doInitAction_spriteID <- getUI16
-    doInitAction_actions <- getACTIONRECORDs
+    doInitAction_actions <- getACTIONRECORDS
     return $ DoInitAction {..}
 
 \end{code}
@@ -2429,8 +2460,8 @@ getSHAPERECORDS shapeVer fillBits lineBits = go
            then getSTRAIGHTEDGERECORD >>= \x -> fmap (x:) go
            else getCURVEDEDGERECORD >>= \x -> fmap (x:) go
        else do
-          eos <- lookAhead (getUB 5)
-          if eos == 0
+          look <- lookAhead (getUB 5)
+          if look == 0
            then getUB 5 >> byteAlign >> return []
            else getSTYLECHANGERECORD shapeVer fillBits lineBits >>= \x -> fmap (x:) go
 
@@ -3138,11 +3169,14 @@ getDefineText
 type TEXTRECORDS = [TEXTRECORD]
 
 getTEXTRECORDS textVer glyphBits advanceBits = go
-  where go = do
-          eor <- lookAhead getUI8
-          if eor == 0
-           then getUI8 >> return []
-           else getTEXTRECORD textVer glyphBits advanceBits >>= \x -> fmap (x:) go
+  where
+    go = do
+      look <- lookAhead getUI8
+      if look == 0
+       then getUI8 >> return []
+       else do
+         x <- getTEXTRECORD textVer glyphBits advanceBits
+         fmap (x:) go
 
 \end{code}
 
@@ -3411,9 +3445,169 @@ getSoundStreamBlock
 Chapter 12: Buttons
 ~~~~~~~~~~~~~~~~~~~
 
+p224: Button record
 \begin{code}
 
+type BUTTONRECORDS = [BUTTONRECORD]
+
+getBUTTONRECORDS buttonVer = go
+  where
+    go = do
+      look <- lookAhead getUI8
+      if look == 0
+        then getUI8 >> return []
+        else do
+          x <- getBUTTONRECORD buttonVer
+          fmap (x:) go
+
 \end{code}
+
+\begin{code}
+ 
+data BUTTONRECORD = BUTTONRECORD{bUTTONRECORD_buttonHasBlendMode ::
+                                 Bool,
+                                 bUTTONRECORD_buttonHasFilterList :: Bool,
+                                 bUTTONRECORD_buttonStateHitTest :: Bool,
+                                 bUTTONRECORD_buttonStateDown :: Bool,
+                                 bUTTONRECORD_buttonStateOver :: Bool,
+                                 bUTTONRECORD_buttonStateUp :: Bool,
+                                 bUTTONRECORD_characterID :: UI16, bUTTONRECORD_placeDepth :: UI16,
+                                 bUTTONRECORD_placeMatrix :: MATRIX,
+                                 bUTTONRECORD_buttonDisplay ::
+                                 Maybe (CXFORMWITHALPHA, Maybe FILTERLIST, Maybe UI8)}
+getBUTTONRECORD bUTTONRECORD_buttonVer
+  = do _bUTTONRECORD_buttonReserved <- getUB 2
+       bUTTONRECORD_buttonHasBlendMode <- getFlag
+       bUTTONRECORD_buttonHasFilterList <- getFlag
+       bUTTONRECORD_buttonStateHitTest <- getFlag
+       bUTTONRECORD_buttonStateDown <- getFlag
+       bUTTONRECORD_buttonStateOver <- getFlag
+       bUTTONRECORD_buttonStateUp <- getFlag
+       bUTTONRECORD_characterID <- getUI16
+       bUTTONRECORD_placeDepth <- getUI16
+       bUTTONRECORD_placeMatrix <- getMATRIX
+       bUTTONRECORD_buttonDisplay <- maybeHas
+                                       (bUTTONRECORD_buttonVer == 2)
+                                       (do bUTTONRECORD_buttonDisplayColorTransform <- getCXFORMWITHALPHA
+                                           bUTTONRECORD_buttonDisplayFilterList <- maybeHas
+                                                                                     bUTTONRECORD_buttonHasFilterList
+                                                                                     getFILTERLIST
+                                           bUTTONRECORD_buttonDisplayBlendMode <- maybeHas
+                                                                                    bUTTONRECORD_buttonHasBlendMode
+                                                                                    getUI8
+                                           return
+                                             (bUTTONRECORD_buttonDisplayColorTransform,
+                                              bUTTONRECORD_buttonDisplayFilterList,
+                                              bUTTONRECORD_buttonDisplayBlendMode))
+       return (BUTTONRECORD{..})
+
+\end{code}
+
+p225: DefineButton
+\begin{code}
+getDefineButton
+  = do defineButton_buttonId <- getUI16
+       defineButton_characters <- getBUTTONRECORDS 1
+       defineButton_actions <- getACTIONRECORDS
+       return (DefineButton{..})
+
+\end{code}
+
+p226: DefineButton2
+\begin{code}
+getDefineButton2
+  = do defineButton2_buttonId <- getUI16
+       _defineButton2_reservedFlags <- getUB 7
+       defineButton2_trackAsMenu <- getFlag
+       defineButton2_actionOffset <- getUI16
+       defineButton2_characters <- getBUTTONRECORDS 2
+       defineButton2_characterEndFlag <- getUI8
+       defineButton2_actions <- getBUTTONCONDACTIONS
+       return (DefineButton2{..})
+
+\end{code}
+
+\begin{code}
+ 
+data BUTTONCONDACTION = BUTTONCONDACTION{bUTTONCONDACTION_condIdleToOverDown
+                                         :: Bool,
+                                         bUTTONCONDACTION_condOutDownToIdle :: Bool,
+                                         bUTTONCONDACTION_condOutDownToOverDown :: Bool,
+                                         bUTTONCONDACTION_condOverDownToOutDown :: Bool,
+                                         bUTTONCONDACTION_condOverDownToOverUp :: Bool,
+                                         bUTTONCONDACTION_condOverUpToOverDown :: Bool,
+                                         bUTTONCONDACTION_condOverUpToIdle :: Bool,
+                                         bUTTONCONDACTION_condIdleToOverUp :: Bool,
+                                         bUTTONCONDACTION_condKeyPress :: UB,
+                                         bUTTONCONDACTION_condOverDownToIdle :: Bool,
+                                         bUTTONCONDACTION_actions :: ACTIONRECORDS}
+getBUTTONCONDACTION
+  = do bUTTONCONDACTION_condIdleToOverDown <- getFlag
+       bUTTONCONDACTION_condOutDownToIdle <- getFlag
+       bUTTONCONDACTION_condOutDownToOverDown <- getFlag
+       bUTTONCONDACTION_condOverDownToOutDown <- getFlag
+       bUTTONCONDACTION_condOverDownToOverUp <- getFlag
+       bUTTONCONDACTION_condOverUpToOverDown <- getFlag
+       bUTTONCONDACTION_condOverUpToIdle <- getFlag
+       bUTTONCONDACTION_condIdleToOverUp <- getFlag
+       bUTTONCONDACTION_condKeyPress <- getUB 7
+       bUTTONCONDACTION_condOverDownToIdle <- getFlag
+       bUTTONCONDACTION_actions <- getACTIONRECORDS
+       return (BUTTONCONDACTION{..})
+
+\end{code}
+
+\begin{code}
+
+type BUTTONCONDACTIONS = [BUTTONCONDACTION]
+
+getBUTTONCONDACTIONS = condM isEmpty (return []) $ do
+    offset <- getUI16
+    x <- (if offset /= 0 then nestSwfGet (fromIntegral $ offset - 2) else id) getBUTTONCONDACTION
+    
+    if offset == 0
+     then return []
+     else fmap (x:) getBUTTONCONDACTIONS
+
+\end{code}
+
+p228: DefineButtonCxform
+\begin{code}
+getDefineButtonCxform
+  = do defineButtonCxform_buttonId <- getUI16
+       defineButtonCxform_buttonColorTransform <- getCXFORM
+       return (DefineButtonCxform{..})
+
+\end{code}
+
+p229: DefineButtonSound
+\begin{code}
+getDefineButtonSound
+  = do defineButtonSound_buttonId <- getUI16
+       defineButtonSound_buttonSoundChar0 <- getUI16
+       defineButtonSound_buttonSoundInfo0 <- maybeHas
+                                               (defineButtonSound_buttonSoundChar0 /= 0)
+                                               getSOUNDINFO
+       defineButtonSound_buttonSoundChar1 <- getUI16
+       defineButtonSound_buttonSoundInfo1 <- maybeHas
+                                               (defineButtonSound_buttonSoundChar1 /= 0)
+                                               getSOUNDINFO
+       defineButtonSound_buttonSoundChar2 <- getUI16
+       defineButtonSound_buttonSoundInfo2 <- maybeHas
+                                               (defineButtonSound_buttonSoundChar2 /= 0)
+                                               getSOUNDINFO
+       defineButtonSound_buttonSoundChar3 <- getUI16
+       defineButtonSound_buttonSoundInfo3 <- maybeHas
+                                               (defineButtonSound_buttonSoundChar3 /= 0)
+                                               getSOUNDINFO
+       return (DefineButtonSound{..})
+
+\end{code}
+
+
+Chapter 13: Sprites and Movie Clips
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 
 \begin{code}
 

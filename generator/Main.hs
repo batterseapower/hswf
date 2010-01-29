@@ -110,7 +110,7 @@ data FieldExpr = LitE Int
 data FieldUnOp = Not
                deriving (Eq, Show)
 
-data FieldBinOp = Plus | Mult | Equals | Or | And
+data FieldBinOp = Plus | Mult | Equals | NotEquals | Or | And
                 deriving (Eq, Show)
 
 type_cond_maybe :: Type -> Maybe FieldExpr
@@ -208,7 +208,7 @@ expr = buildExpressionParser table (do { e <- factor; spaces; return e })
 
 table = [[op "*" (BinOpE Mult) AssocLeft],
          [op "+" (BinOpE Plus) AssocLeft],
-         [op "=" (BinOpE Equals) AssocLeft],
+         [op "=" (BinOpE Equals) AssocLeft, op "!=" (BinOpE NotEquals) AssocLeft],
          [op "and" (BinOpE And) AssocLeft],
          [op "or" (BinOpE Or) AssocLeft]]
         where op s f assoc = Infix (do{ string s; spaces; return f}) assoc
@@ -391,7 +391,7 @@ fieldExprToSyntax defuser (FieldE x) = var (defuser x)
 fieldExprToSyntax defuser (UnOpE op e) = App eop (fieldExprToSyntax defuser e)
   where eop = case op of Not -> var "not"
 fieldExprToSyntax defuser (BinOpE op e1 e2) = InfixApp (fieldExprToSyntax defuser e1) (QVarOp $ UnQual $ Symbol $ eop) (fieldExprToSyntax defuser e2)
-  where eop = case op of Plus -> "+"; Mult -> "*"; Equals -> "=="; And -> "&&"; Or -> "||"
+  where eop = case op of Plus -> "+"; Mult -> "*"; Equals -> "=="; NotEquals -> "/="; And -> "&&"; Or -> "||"
 
 simplifyFieldExpr True (BinOpE Equals e1 (LitE 1)) = simplifyFieldExpr True e1
 simplifyFieldExpr True (BinOpE Equals e1 (LitE 0)) = UnOpE Not (simplifyFieldExpr True e1)
