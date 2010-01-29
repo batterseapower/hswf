@@ -117,10 +117,10 @@ storableCast w = unsafePerformIO $ with w $ peek . castPtr
 
 -- Page 14: encoded integers
 
-newtype ENCODEDU32 = ENCODEDU32 UI32
+newtype EncodedU32 = EncodedU32 UI32
 
-getENCODEDU32 :: SwfGet ENCODEDU32
-getENCODEDU32 = fmap ENCODEDU32 $ do
+getEncodedU32 :: SwfGet EncodedU32
+getEncodedU32 = fmap EncodedU32 $ do
     i0@res <- fmap fromIntegral getWord8
     if i0 .&. 0x80 == 0
      then return res
@@ -352,6 +352,7 @@ Chapter 3: The Display List
 data RECORD = RECORD { rECORD_recordHeader :: RECORDHEADER, rECORD_recordTag :: Tag }
 
 data Tag = PlaceObject3 { placeObject3_placeFlagMove :: Bool, placeObject3_placeFlagHasImage :: Bool, placeObject3_placeFlagHasClassName :: Bool, placeObject3_depth :: UI16, placeObject3_className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, placeObject3_ratio :: Maybe UI16, placeObject3_name :: Maybe STRING, placeObject3_clipDepth :: Maybe UI16, placeObject3_surfaceFilterList :: Maybe FILTERLIST, placeObject3_blendMode :: Maybe BlendMode, placeObject3_bitmapCache :: Maybe UI8, placeObject3_clipActions :: Maybe CLIPACTIONS }
+         | DoAction { doAction_actions :: [ACTIONRECORD] }
 \genconstructors{tag}
          | UnknownTag ByteString
 
@@ -359,6 +360,7 @@ getRECORD = do
     rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
 
     let mb_getter = case rECORDHEADER_tagType of
+          12 -> Just getDoAction
           70 -> Just getPlaceObject3
           _  -> generatedTagGetters rECORDHEADER_tagType
 
@@ -673,8 +675,8 @@ Header RECORDHEADER Tag type = 1
 \end{record}
 
 
-Chapter 1: Basic Data Types
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Chapter 4: Control Tags
+~~~~~~~~~~~~~~~~~~~~~~~
 
 p53: SetBackgroundColor
 \begin{record}
@@ -683,6 +685,184 @@ Field           Type         Comment
 Header          RECORDHEADER Tag type = 9
 BackgroundColor RGB          Color of the display background
 \end{record}
+
+p53: FrameLabel
+\begin{record}
+FrameLabel
+Field           Type           Comment
+Header          RECORDHEADER   Tag type = 43
+Name            STRING         Label for frame
+NamedAnchorFlag (optional) UI8 SWF 6 or later. Always 1
+\end{record}
+
+p54: Protect
+\begin{record}
+Protect
+Field  Type         Comment
+Header RECORDHEADER Tag type = 24
+\end{record}
+
+p55: End
+\begin{record}
+End
+Field  Type         Comment
+Header RECORDHEADER Tag type = 0
+\end{record}
+
+p55: ExportAssets
+\begin{record}
+ExportAssets
+Field  Type         Comment
+Header RECORDHEADER Tag type = 56
+Count  UI16         Number of assets to export
+Tag1   UI16         First character ID to export
+Name1  STRING       Identifier for first exported character
+TagN   UI16         Last character ID to export
+NameN  STRING       Identifier for last exported character
+\end{record}
+
+p56: ImportAssets
+\begin{record}
+ImportAssets
+Field  Type         Comment
+Header RECORDHEADER Tag type = 57
+URL    STRING       URL where the source SWF file can be found
+Count  UI16         Number of assets to import
+Tag1   UI16         Character ID to use for first imported character in importing SWF file (need not match character ID in exporting SWF file)
+Name1  STRING       Identifier for first imported character (must match an identifier in exporting SWF file)
+TagN   UI16         Character ID to use for last imported character in importing SWF file
+NameN  STRING       Identifier for last imported character
+\end{record}
+
+p57: EnableDebugger
+\begin{record}
+EnableDebugger
+Field    Type         Comment
+Header   RECORDHEADER Tag type = 58
+Password STRING       MD5-encrypted password
+\end{record}
+
+p57: EnableDebugger2
+\begin{record}
+EnableDebugger2
+Field    Type         Comment
+Header   RECORDHEADER Tag type = 64
+Reserved UI16         Always 0
+Password STRING       MD5-encrypted password
+\end{record}
+
+p58: ScriptLimits
+\begin{record}
+ScriptLimits
+Field                Type         Comment
+Header               RECORDHEADER Tag type = 65
+MaxRecursionDepth    UI16         Maximum recursion depth
+ScriptTimeoutSeconds UI16         Maximum ActionScript processing time before script stuck dialog box displays
+\end{record}
+
+p58: SetTabIndex
+\begin{record}
+SetTabIndex
+Field    Type         Comment
+Header   RECORDHEADER Tag type = 66
+Depth    UI16         Depth of character
+TabIndex UI16         Tab order value
+\end{record}
+
+p59: FileAttributes
+\begin{record}
+FileAttributes
+Field         Type         Comment
+Header        RECORDHEADER Tag type = 69
+Reserved      UB[1]        Must be 0
+UseDirectBlit UB[1]        If 1, the SWF file uses hardware acceleration to blit graphics to the screen, where such acceleration is available. If 0, the SWF file will not use hardware accelerated graphics facilities. Minimum file version is 10.
+UseGPU        UB[1]        If 1, the SWF file uses GPU compositing features when drawing graphics, where such acceleration is available. If 0, the SWF file will not use hardware accelerated graphics facilities. Minimum file version is 10.
+HasMetadata   UB[1]        If 1, the SWF file contains the Metadata tag. If 0, the SWF file does not contain the Metadata tag.
+ActionScript3 UB[1]        If 1, this SWF uses ActionScript 3.0. If 0, this SWF uses ActionScript 1.0 or 2.0. Minimum file format version is 9.
+Reserved      UB[2]        Must be 0
+UseNetwork    UB[1]        If 1, this SWF file is given network file access when loaded locally. If 0, this SWF file is given local file access when loaded locally.
+Reserved      UB[24]       Must be 0
+\end{record}
+
+p60: ImportAssets2
+\begin{record}
+ImportAssets2
+Field    Type         Comment
+Header   RECORDHEADER Tag type = 71
+URL      STRING       URL where the source SWF file can be found
+Reserved UI8          Must be 1
+Reserved UI8          Must be 0
+Count    UI16         Number of assets to import
+Tag1     UI16         Character ID to use for first imported character in importing SWF file (need not match character ID in exporting SWF file)
+Name1    STRING       Identifier for first imported character (must match an identifier in exporting SWF file) ...
+TagN     UI16         Character ID to use for last imported character in importing SWF file
+NameN    STRING       Identifier for last imported character
+\end{record}
+
+p62: SymbolClass
+\begin{record}
+SymbolClass
+Field      Type         Comment
+Header     RECORDHEADER Tag type = 76
+NumSymbols UI16         Number of symbols that will be associated by this tag.
+Tag1       UI16         The 16-bit character tag ID for the symbol to associate
+Name1      STRING       The fully-qualified name of the ActionScript 3.0 class with which to associate this symbol. The class must have already been declared by a DoABC tag.
+TagN       UI16         Tag ID for symbol N
+NameN      STRING       Fully-qualified class name for symbol N
+\end{record}
+
+p64: Metadata
+\begin{record}
+Metadata
+Field    Type         Comment
+Header   RECORDHEADER Tag type = 77
+Metadata STRING       XML Metadata
+\end{record}
+
+p65: DefineScalingGrid
+\begin{record}
+DefineScalingGrid
+Field       Type         Comment
+Header      RECORDHEADER Tag type = 78
+CharacterId UI16         ID of sprite or button character upon which the scaling grid will be applied.
+Splitter    RECT         Center region of 9-slice grid
+\end{record}
+
+p66: DefineSceneAndFrameLabelData
+\begin{record}
+DefineSceneAndFrameLabelData
+Field           Type         Comment
+Header          RECORDHEADER Tag type = 86
+SceneCount      EncodedU32   Number of scenes
+Offset1         EncodedU32   Frame offset for scene 1
+Name1           STRING       Name of scene 1
+OffsetN         EncodedU32   Frame offset for scene N
+NameN           STRING       Name of scene N
+FrameLabelCount EncodedU32   Number of frame labels
+FrameNum1       EncodedU32   Frame number of frame label #1 (zero-based, global to symbol)
+FrameLabel1     STRING       Frame label string of frame label #1
+FrameNumN       EncodedU32   Frame number of frame label #N (zero-based, global to symbol)
+FrameLabelN     STRING       Frame label string of frame label #N
+\end{record}
+
+
+Chapter 5: Actions
+~~~~~~~~~~~~~~~~~~
+
+p68: DoAction
+\begin{code}
+
+getDoAction = do
+    let go = do look <- lookAhead getUI8
+                case look of
+                  0 -> return []
+                  _ -> do
+                    actionRecord <- getACTIONRECORD
+                    fmap (actionRecord:) go
+    doAction_actions <- go
+    return $ DoAction {..}
+
+\end{code}
 
 p68: ACTIONRECORD
 \begin{code}

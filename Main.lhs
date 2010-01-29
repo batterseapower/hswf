@@ -117,10 +117,10 @@ storableCast w = unsafePerformIO $ with w $ peek . castPtr
 
 -- Page 14: encoded integers
 
-newtype ENCODEDU32 = ENCODEDU32 UI32
+newtype EncodedU32 = EncodedU32 UI32
 
-getENCODEDU32 :: SwfGet ENCODEDU32
-getENCODEDU32 = fmap ENCODEDU32 $ do
+getEncodedU32 :: SwfGet EncodedU32
+getEncodedU32 = fmap EncodedU32 $ do
     i0@res <- fmap fromIntegral getWord8
     if i0 .&. 0x80 == 0
      then return res
@@ -418,6 +418,7 @@ Chapter 3: The Display List
 data RECORD = RECORD { rECORD_recordHeader :: RECORDHEADER, rECORD_recordTag :: Tag }
 
 data Tag = PlaceObject3 { placeObject3_placeFlagMove :: Bool, placeObject3_placeFlagHasImage :: Bool, placeObject3_placeFlagHasClassName :: Bool, placeObject3_depth :: UI16, placeObject3_className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, placeObject3_ratio :: Maybe UI16, placeObject3_name :: Maybe STRING, placeObject3_clipDepth :: Maybe UI16, placeObject3_surfaceFilterList :: Maybe FILTERLIST, placeObject3_blendMode :: Maybe BlendMode, placeObject3_bitmapCache :: Maybe UI8, placeObject3_clipActions :: Maybe CLIPACTIONS }
+         | DoAction { doAction_actions :: [ACTIONRECORD] }
          |  PlaceObject{placeObject_characterId :: UI16,
               placeObject_depth :: UI16, placeObject_matrix :: MATRIX,
               placeObject_colorTransform :: Maybe CXFORM}
@@ -434,12 +435,55 @@ data Tag = PlaceObject3 { placeObject3_placeFlagMove :: Bool, placeObject3_place
          |  RemoveObject2{removeObject2_depth :: UI16}
          |  ShowFrame{}
          |  SetBackgroundColor{setBackgroundColor_backgroundColor :: RGB}
+         |  FrameLabel{frameLabel_name :: STRING,
+             frameLabel_namedAnchorFlag :: Maybe UI8}
+         |  Protect{}
+         |  End{}
+         |  ExportAssets{exportAssets_count :: UI16, exportAssets_tag1 :: UI16,
+               exportAssets_name1 :: STRING, exportAssets_tagN :: UI16,
+               exportAssets_nameN :: STRING}
+         |  ImportAssets{importAssets_uRL :: STRING,
+               importAssets_count :: UI16, importAssets_tag1 :: UI16,
+               importAssets_name1 :: STRING, importAssets_tagN :: UI16,
+               importAssets_nameN :: STRING}
+         |  EnableDebugger{enableDebugger_password :: STRING}
+         |  EnableDebugger2{enableDebugger2_password :: STRING}
+         |  ScriptLimits{scriptLimits_maxRecursionDepth :: UI16,
+               scriptLimits_scriptTimeoutSeconds :: UI16}
+         |  SetTabIndex{setTabIndex_depth :: UI16,
+              setTabIndex_tabIndex :: UI16}
+         |  FileAttributes{fileAttributes_useDirectBlit :: Bool,
+                 fileAttributes_useGPU :: Bool, fileAttributes_hasMetadata :: Bool,
+                 fileAttributes_actionScript3 :: Bool,
+                 fileAttributes_useNetwork :: Bool}
+         |  ImportAssets2{importAssets2_uRL :: STRING,
+                importAssets2_count :: UI16, importAssets2_tag1 :: UI16,
+                importAssets2_name1 :: STRING, importAssets2_tagN :: UI16,
+                importAssets2_nameN :: STRING}
+         |  SymbolClass{symbolClass_numSymbols :: UI16,
+              symbolClass_tag1 :: UI16, symbolClass_name1 :: STRING,
+              symbolClass_tagN :: UI16, symbolClass_nameN :: STRING}
+         |  Metadata{metadata_metadata :: STRING}
+         |  DefineScalingGrid{defineScalingGrid_characterId :: UI16,
+                    defineScalingGrid_splitter :: RECT}
+         |  DefineSceneAndFrameLabelData{defineSceneAndFrameLabelData_sceneCount
+                               :: EncodedU32,
+                               defineSceneAndFrameLabelData_offset1 :: EncodedU32,
+                               defineSceneAndFrameLabelData_name1 :: STRING,
+                               defineSceneAndFrameLabelData_offsetN :: EncodedU32,
+                               defineSceneAndFrameLabelData_nameN :: STRING,
+                               defineSceneAndFrameLabelData_frameLabelCount :: EncodedU32,
+                               defineSceneAndFrameLabelData_frameNum1 :: EncodedU32,
+                               defineSceneAndFrameLabelData_frameLabel1 :: STRING,
+                               defineSceneAndFrameLabelData_frameNumN :: EncodedU32,
+                               defineSceneAndFrameLabelData_frameLabelN :: STRING}
          | UnknownTag ByteString
 
 getRECORD = do
     rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
 
     let mb_getter = case rECORDHEADER_tagType of
+          12 -> Just getDoAction
           70 -> Just getPlaceObject3
           _  -> generatedTagGetters rECORDHEADER_tagType
 
@@ -460,6 +504,21 @@ generatedTagGetters tagType
         28 -> Just getRemoveObject2
         1 -> Just getShowFrame
         9 -> Just getSetBackgroundColor
+        43 -> Just getFrameLabel
+        24 -> Just getProtect
+        0 -> Just getEnd
+        56 -> Just getExportAssets
+        57 -> Just getImportAssets
+        58 -> Just getEnableDebugger
+        64 -> Just getEnableDebugger2
+        65 -> Just getScriptLimits
+        66 -> Just getSetTabIndex
+        69 -> Just getFileAttributes
+        71 -> Just getImportAssets2
+        76 -> Just getSymbolClass
+        77 -> Just getMetadata
+        78 -> Just getDefineScalingGrid
+        86 -> Just getDefineSceneAndFrameLabelData
         _ -> Nothing
 
 \end{code}
@@ -867,14 +926,190 @@ getShowFrame = do return (ShowFrame{..})
 \end{code}
 
 
-Chapter 1: Basic Data Types
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Chapter 4: Control Tags
+~~~~~~~~~~~~~~~~~~~~~~~
 
 p53: SetBackgroundColor
 \begin{code}
 getSetBackgroundColor
   = do setBackgroundColor_backgroundColor <- getRGB
        return (SetBackgroundColor{..})
+
+\end{code}
+
+p53: FrameLabel
+\begin{code}
+getFrameLabel
+  = do frameLabel_name <- getSTRING
+       frameLabel_namedAnchorFlag <- maybeHasM (fmap not isEmpty) getUI8
+       return (FrameLabel{..})
+
+\end{code}
+
+p54: Protect
+\begin{code}
+getProtect = do return (Protect{..})
+
+\end{code}
+
+p55: End
+\begin{code}
+getEnd = do return (End{..})
+
+\end{code}
+
+p55: ExportAssets
+\begin{code}
+getExportAssets
+  = do exportAssets_count <- getUI16
+       exportAssets_tag1 <- getUI16
+       exportAssets_name1 <- getSTRING
+       exportAssets_tagN <- getUI16
+       exportAssets_nameN <- getSTRING
+       return (ExportAssets{..})
+
+\end{code}
+
+p56: ImportAssets
+\begin{code}
+getImportAssets
+  = do importAssets_uRL <- getSTRING
+       importAssets_count <- getUI16
+       importAssets_tag1 <- getUI16
+       importAssets_name1 <- getSTRING
+       importAssets_tagN <- getUI16
+       importAssets_nameN <- getSTRING
+       return (ImportAssets{..})
+
+\end{code}
+
+p57: EnableDebugger
+\begin{code}
+getEnableDebugger
+  = do enableDebugger_password <- getSTRING
+       return (EnableDebugger{..})
+
+\end{code}
+
+p57: EnableDebugger2
+\begin{code}
+getEnableDebugger2
+  = do _enableDebugger2_reserved <- getUI16
+       enableDebugger2_password <- getSTRING
+       return (EnableDebugger2{..})
+
+\end{code}
+
+p58: ScriptLimits
+\begin{code}
+getScriptLimits
+  = do scriptLimits_maxRecursionDepth <- getUI16
+       scriptLimits_scriptTimeoutSeconds <- getUI16
+       return (ScriptLimits{..})
+
+\end{code}
+
+p58: SetTabIndex
+\begin{code}
+getSetTabIndex
+  = do setTabIndex_depth <- getUI16
+       setTabIndex_tabIndex <- getUI16
+       return (SetTabIndex{..})
+
+\end{code}
+
+p59: FileAttributes
+\begin{code}
+getFileAttributes
+  = do _fileAttributes_reserved <- getFlag
+       fileAttributes_useDirectBlit <- getFlag
+       fileAttributes_useGPU <- getFlag
+       fileAttributes_hasMetadata <- getFlag
+       fileAttributes_actionScript3 <- getFlag
+       _fileAttributes_reserved <- getUB 2
+       fileAttributes_useNetwork <- getFlag
+       _fileAttributes_reserved <- getUB 24
+       return (FileAttributes{..})
+
+\end{code}
+
+p60: ImportAssets2
+\begin{code}
+getImportAssets2
+  = do importAssets2_uRL <- getSTRING
+       _importAssets2_reserved <- getUI8
+       _importAssets2_reserved <- getUI8
+       importAssets2_count <- getUI16
+       importAssets2_tag1 <- getUI16
+       importAssets2_name1 <- getSTRING
+       importAssets2_tagN <- getUI16
+       importAssets2_nameN <- getSTRING
+       return (ImportAssets2{..})
+
+\end{code}
+
+p62: SymbolClass
+\begin{code}
+getSymbolClass
+  = do symbolClass_numSymbols <- getUI16
+       symbolClass_tag1 <- getUI16
+       symbolClass_name1 <- getSTRING
+       symbolClass_tagN <- getUI16
+       symbolClass_nameN <- getSTRING
+       return (SymbolClass{..})
+
+\end{code}
+
+p64: Metadata
+\begin{code}
+getMetadata
+  = do metadata_metadata <- getSTRING
+       return (Metadata{..})
+
+\end{code}
+
+p65: DefineScalingGrid
+\begin{code}
+getDefineScalingGrid
+  = do defineScalingGrid_characterId <- getUI16
+       defineScalingGrid_splitter <- getRECT
+       return (DefineScalingGrid{..})
+
+\end{code}
+
+p66: DefineSceneAndFrameLabelData
+\begin{code}
+getDefineSceneAndFrameLabelData
+  = do defineSceneAndFrameLabelData_sceneCount <- getEncodedU32
+       defineSceneAndFrameLabelData_offset1 <- getEncodedU32
+       defineSceneAndFrameLabelData_name1 <- getSTRING
+       defineSceneAndFrameLabelData_offsetN <- getEncodedU32
+       defineSceneAndFrameLabelData_nameN <- getSTRING
+       defineSceneAndFrameLabelData_frameLabelCount <- getEncodedU32
+       defineSceneAndFrameLabelData_frameNum1 <- getEncodedU32
+       defineSceneAndFrameLabelData_frameLabel1 <- getSTRING
+       defineSceneAndFrameLabelData_frameNumN <- getEncodedU32
+       defineSceneAndFrameLabelData_frameLabelN <- getSTRING
+       return (DefineSceneAndFrameLabelData{..})
+
+\end{code}
+
+
+Chapter 5: Actions
+~~~~~~~~~~~~~~~~~~
+
+p68: DoAction
+\begin{code}
+
+getDoAction = do
+    let go = do look <- lookAhead getUI8
+                case look of
+                  0 -> return []
+                  _ -> do
+                    actionRecord <- getACTIONRECORD
+                    fmap (actionRecord:) go
+    doAction_actions <- go
+    return $ DoAction {..}
 
 \end{code}
 

@@ -34,7 +34,8 @@ fixupLineBreaks [] = []
 fixupLineBreaks [l] = [l]
 fixupLineBreaks (l1:l2:ls)
   | (l2c:_) <- l2
-  , isLower l2c || isDigit l2c || length (words l2) < 3
+  , let l2ws = words l2
+  , isLower l2c || isDigit l2c || isSymbol l2c || length l2ws < 3 || "[" `isInfixOf` (head l2ws) || head l2ws == "If"
   = fixupLineBreaks ((l1 ++ ' ':l2):ls)
   | otherwise
   = l1 : fixupLineBreaks (l2:ls)
@@ -70,11 +71,14 @@ fixupIndentation (name:ls) = name : [pad fieldname typindent ++ pad typ commenti
         partOfTypeField w = looksLikeType w || (w == "Type" && headerline) || partOfArrayExpr w
 
         looksLikeType w = length w > 1 &&
-                          w /= "ID" &&
-                          length (fst (span (\c -> isUpper c || isDigit c) w)) >= 2 &&
+                          w /= "ID" && w /= "SWF" &&
+                          length (fst (span (\c -> isUpper c || isDigit c) (dropPrefix "Encoded" w))) >= 2 &&
                           all (not . (`isInfixOf` w)) [")", "("] &&
                           not (all isDigit w)
         partOfArrayExpr w = any (`isInfixOf` w) ["*", "+", "]", "["]
+
+        dropPrefix pr xs | take (length pr) xs == pr = drop (length pr) xs
+                         | otherwise                 = xs
 
         breakRev p xs = case break p (reverse xs) of (as, bs) -> (reverse bs, reverse as)
 
