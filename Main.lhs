@@ -279,8 +279,7 @@ p20: MATRIX record
 
 \begin{code}
  
-data MATRIX = MATRIX{mATRIX_hasScale :: Bool,
-                     mATRIX_scale :: Maybe (UB, FB, FB), mATRIX_hasRotate :: Bool,
+data MATRIX = MATRIX{mATRIX_scale :: Maybe (UB, FB, FB),
                      mATRIX_rotate :: Maybe (UB, FB, FB), mATRIX_nTranslateBits :: UB,
                      mATRIX_translateX :: SB, mATRIX_translateY :: SB}
 getMATRIX
