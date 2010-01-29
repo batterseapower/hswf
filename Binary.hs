@@ -51,10 +51,10 @@ decompressRemainder size_hint = nest' (fmap decompress B.getRemainingLazyByteStr
 liftGet :: Bool -> B.Get a -> SwfGet a
 liftGet resetbits get = SwfGet $ \_ byte nbits -> fmap (if resetbits then (0, 0,) else (byte, nbits,)) get
 
-getBits :: Int -> SwfGet Word32
+getBits :: Integral a => a -> SwfGet Word32
 getBits n | n <  0    = error "getBits: negative bits"
           | n > 32    = error "getBits: bit count greater than 32"
-          | otherwise = SwfGet $ \_ byte nbits -> go byte nbits n
+          | otherwise = SwfGet $ \_ byte nbits -> go byte nbits (fromIntegral n)
   where
     go byte nbits want_nbits
        -- Can we satisfy ourselves with just the bits from this byte?

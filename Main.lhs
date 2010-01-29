@@ -166,21 +166,21 @@ type SB = SI32
 type UB = UI32
 type FB = FIXED
 
-signextend :: Integral a => Int -> Word32 -> a
+signextend :: (Integral a, Integral b) => a -> Word32 -> b
 signextend nbits bits = fromIntegral $ bits .|. complement (2 ^ nbits - 1)
 
  -- 1110b = -2
  -- 0x30000 (19 bit) = 196608
-getSB :: Int -> SwfGet SB
+getSB :: Integral a => a -> SwfGet SB
 getSB nbits = fmap (signextend nbits) (getBits nbits)
   where 
   
  -- 1110b = 14
-getUB :: Int -> SwfGet UB
+getUB :: Integral a => a -> SwfGet UB
 getUB = getBits
 
  -- 0x30000 (19 bit) = 3.0
-getFB :: Int -> SwfGet FB
+getFB :: Integral a => a -> SwfGet FB
 getFB nbits = fmap parse (getBits nbits)
   where parse bits = FIXED (signextend (nbits - 16) $ bits `shiftR` 16) (fromIntegral $ bits .&. 0xFFFF)
 
@@ -225,37 +225,55 @@ getLANGCODE = do
 
 p18: RGB color record
 \begin{code}
-
-data RGB = RGB { red :: UI8, green :: UI8, blue :: UI8 }
-
-getRGB = liftM3 RGB getUI8 getUI8 getUI8
+ 
+data RGB = RGB{rGB_red :: UI8, rGB_green :: UI8, rGB_blue :: UI8}
+getRGB
+  = do rGB_red <- getUI8
+       rGB_green <- getUI8
+       rGB_blue <- getUI8
+       return (RGB{..})
 
 \end{code}
 
 p19: RGBA color record/ARGB color record
 \begin{code}
+ 
+data RGBA = RGBA{rGBA_red :: UI8, rGBA_green :: UI8,
+                 rGBA_blue :: UI8, rGBA_alpha :: UI8}
+getRGBA
+  = do rGBA_red <- getUI8
+       rGBA_green <- getUI8
+       rGBA_blue <- getUI8
+       rGBA_alpha <- getUI8
+       return (RGBA{..})
 
-data RGBA = RGBA { rgb :: RGB, alpha :: UI8 }
-type ARGB = RGBA
+\end{code}
 
-getRGBA = liftM2 RGBA getRGB getUI8
-
-getARGB = liftM2 (flip RGBA) getUI8 getRGB
+\begin{code}
+ 
+data ARGB = ARGB{aRGB_alpha :: UI8, aRGB_red :: UI8,
+                 aRGB_green :: UI8, aRGB_blue :: UI8}
+getARGB
+  = do aRGB_alpha <- getUI8
+       aRGB_red <- getUI8
+       aRGB_green <- getUI8
+       aRGB_blue <- getUI8
+       return (ARGB{..})
 
 \end{code}
 
 p20: Rectangle record
 \begin{code}
-
-data RECT = RECT { xMin :: SI32, xMax :: SI32, yMin :: SI32, yMax :: SI32 }
-
-getRECT = do
-    nbits <- getBitCount 5
-    xMin <- getSB nbits
-    xMax <- getSB nbits
-    yMin <- getSB nbits
-    yMax <- getSB nbits
-    return $ RECT {..}
+ 
+data RECT = RECT{rECT_nbits :: UB, rECT_xmin :: SB,
+                 rECT_xmax :: SB, rECT_ymin :: SB, rECT_ymax :: SB}
+getRECT
+  = do rECT_nbits <- getUB 5
+       rECT_xmin <- getSB rECT_nbits
+       rECT_xmax <- getSB rECT_nbits
+       rECT_ymin <- getSB rECT_nbits
+       rECT_ymax <- getSB rECT_nbits
+       return (RECT{..})
 
 \end{code}
 

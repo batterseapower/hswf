@@ -19,7 +19,10 @@ import Data.List
 -- Clamp UB[1] Clamp mode
 -- PreserveAlpha UB[1] Preserve the alpha
 
-main = interact (unlines . fixupIndentation . fixupLineBreaks . lines)
+main = interact (unlines . fixupIndentation . fixupLineBreaks . waitForAll . lines)
+
+waitForAll :: [String] -> [String]
+waitForAll xs = length xs `seq` xs
 
 fixupLineBreaks :: [String] -> [String]
 fixupLineBreaks [] = []

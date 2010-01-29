@@ -166,21 +166,21 @@ type SB = SI32
 type UB = UI32
 type FB = FIXED
 
-signextend :: Integral a => Int -> Word32 -> a
+signextend :: (Integral a, Integral b) => a -> Word32 -> b
 signextend nbits bits = fromIntegral $ bits .|. complement (2 ^ nbits - 1)
 
  -- 1110b = -2
  -- 0x30000 (19 bit) = 196608
-getSB :: Int -> SwfGet SB
+getSB :: Integral a => a -> SwfGet SB
 getSB nbits = fmap (signextend nbits) (getBits nbits)
   where 
   
  -- 1110b = 14
-getUB :: Int -> SwfGet UB
+getUB :: Integral a => a -> SwfGet UB
 getUB = getBits
 
  -- 0x30000 (19 bit) = 3.0
-getFB :: Int -> SwfGet FB
+getFB :: Integral a => a -> SwfGet FB
 getFB nbits = fmap parse (getBits nbits)
   where parse bits = FIXED (signextend (nbits - 16) $ bits `shiftR` 16) (fromIntegral $ bits .&. 0xFFFF)
 
@@ -224,40 +224,43 @@ getLANGCODE = do
 \end{code}
 
 p18: RGB color record
-\begin{code}
-
-data RGB = RGB { red :: UI8, green :: UI8, blue :: UI8 }
-
-getRGB = liftM3 RGB getUI8 getUI8 getUI8
-
-\end{code}
+\begin{record}
+RGB
+Field Type Comment
+Red   UI8  Red color value
+Green UI8  Green color value
+Blue  UI8  Blue color value
+\end{record}
 
 p19: RGBA color record/ARGB color record
-\begin{code}
+\begin{record}
+RGBA
+Field Type Comment
+Red   UI8  Red color value
+Green UI8  Green color value
+Blue  UI8  Blue color value
+Alpha UI8  alpha value defining opacity
+\end{record}
 
-data RGBA = RGBA { rgb :: RGB, alpha :: UI8 }
-type ARGB = RGBA
-
-getRGBA = liftM2 RGBA getRGB getUI8
-
-getARGB = liftM2 (flip RGBA) getUI8 getRGB
-
-\end{code}
+\begin{record}
+ARGB
+Field Type Comment
+Alpha UI8  alpha value defining opacity
+Red   UI8  Red color value
+Green UI8  Green color value
+Blue  UI8  Blue color value
+\end{record}
 
 p20: Rectangle record
-\begin{code}
-
-data RECT = RECT { xMin :: SI32, xMax :: SI32, yMin :: SI32, yMax :: SI32 }
-
-getRECT = do
-    nbits <- getBitCount 5
-    xMin <- getSB nbits
-    xMax <- getSB nbits
-    yMin <- getSB nbits
-    yMax <- getSB nbits
-    return $ RECT {..}
-
-\end{code}
+\begin{record}
+RECT
+Field Type      Comment
+Nbits UB[5]     Bits used for each subsequent field
+Xmin  SB[Nbits] x minimum position for rectangle in twips
+Xmax  SB[Nbits] x maximum position for rectangle in twips
+Ymin  SB[Nbits] y minimum position for rectangle in twips
+Ymax  SB[Nbits] y maximum position for rectangle in twips
+\end{record}
 
 p20: MATRIX record
 \begin{code}
