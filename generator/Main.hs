@@ -244,9 +244,9 @@ identifyComposites (f:fs)
   , f <- f { field_type = typ }
   , (fs1, fs2) <- spanMaybe (\f' -> case field_type f' of IfThenType cond' typ' | cond' == cond -> Just (f' { field_type = typ' }); _ -> Nothing) fs
   , not (null fs1)
-  , Just name <- compositeName (map field_name $ f:fs1)
-  , let composite_typ = IfThenType cond $ CompositeType $ f : fs1
-  = Field name composite_typ "" Nothing : identifyComposites fs2
+  , let composite_typ  = IfThenType cond $ CompositeType $ f : fs1
+        composite_name = compositeName (map field_name $ f:fs1)
+  = Field composite_name composite_typ "" Nothing : identifyComposites fs2
   | otherwise
   = f : identifyComposites fs
 
@@ -256,15 +256,17 @@ spanMaybe f = go
         go (x:xs) | Just y <- f x = first (y:) $ go xs
                   | otherwise     = ([], x:xs)
 
-compositeName :: [String] -> Maybe String
-compositeName names = commonPrefix (map (dropWhile (== 'N')) names) `fallback` commonSuffix names
+compositeName :: [String] -> String
+compositeName names
+  = case commonPrefix (map (dropWhile (== 'N')) names) `fallback` commonSuffix names of Just name -> name; Nothing -> error ("Nothing in common: " ++ show names)
   where
+    commonPrefix :: Eq a => [[a]] -> Maybe [a]
     commonPrefix = go []
       where go acc ((c:cs):css)
               | all ((== c) . head) css = Just $ fromMaybe (acc ++ [c]) $ go (acc ++ [c]) (cs:map tail css)
               | otherwise               = Nothing
 
-    commonSuffix = fmap reverse . commonPrefix . reverse
+    commonSuffix = fmap reverse . commonPrefix . map reverse
 
     fallback mb1 mb2 = maybe mb2 Just mb1
 

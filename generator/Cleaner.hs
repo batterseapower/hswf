@@ -80,7 +80,7 @@ fixupIndentation (name:ls)
                               w /= "ID" && w /= "SWF" && w /= "URL" &&
                               length (fst (span (\c -> isUpper c || isDigit c) (dropPrefix "Encoded" w))) >= 2 &&
                               all (not . (`isInfixOf` w)) [")", "("] &&
-                              not (all isDigit w)
+                              not (all (\c -> isDigit c || isSymbol c) w)
             partOfArrayExpr w = any (`isInfixOf` w) ["*", "+", "]", "["]
 
             dropPrefix pr xs | take (length pr) xs == pr = drop (length pr) xs

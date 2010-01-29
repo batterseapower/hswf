@@ -854,7 +854,7 @@ getDoAction = do
 getACTIONRECORDs = do
     look <- lookAhead getUI8
     case look of
-      0 -> return []
+      0 -> getUI8 >> return []
       _ -> do
         actionRecord <- getACTIONRECORD
         fmap (actionRecord:) getACTIONRECORDs
@@ -1805,7 +1805,7 @@ getSHAPERECORDS shapeVer fillBits lineBits = go
        else do
           eos <- lookAhead (getUB 5)
           if eos == 0
-           then byteAlign >> return []
+           then getUB 5 >> byteAlign >> return []
            else getSTYLECHANGERECORD shapeVer fillBits lineBits >>= \x -> fmap (x:) go
 
 data SHAPERECORD
@@ -2198,6 +2198,267 @@ FontFlagsWideCodes UB[1]                                          If 1, CodeTabl
 CodeTable          If FontFlagsWideCodes, UI16[] Otherwise, UI8[] Glyph to code table, sorted in ascending order.
 \end{record}
 
+p180: DefineFontInfo2
+\begin{record}
+DefineFontInfo2
+Field              Type             Comment
+Header             RECORDHEADER     Tag type = 62
+FontID             UI16             Font ID this information is for.
+FontNameLen        UI8              Length of font name.
+FontName           UI8[FontNameLen] Name of the font.
+FontFlagsReserved  UB[2]            Reserved bit fields.
+FontFlagsSmallText UB[1]            SWF 7 or later: Font is small. Character glyphs are aligned on pixel boundaries for dynamic and input text.
+FontFlagsShiftJIS  UB[1]            Always 0.
+FontFlagsANSI      UB[1]            Always 0.
+FontFlagsItalic    UB[1]            Font is italic.
+FontFlagsBold      UB[1]            Font is bold.
+FontFlagsWideCodes UB[1]            Always 1.
+LanguageCode       LANGCODE         Language ID.                       
+CodeTable          UI16[]           Glyph to code table in UCS-2, sorted in ascending order.
+\end{record}
+
+p181: DefineFont2
+\begin{record}
+DefineFont2          
+Field                  Type                                                                             Comment
+Header                 RECORDHEADER                                                                     Tag type = 48
+FontID                 UI16                                                                             ID for this font character.
+FontFlagsHasLayout     UB[1]                                                                            Has font metrics/layout information.
+FontFlagsShiftJIS      UB[1]                                                                            ShiftJIS encoding.
+FontFlagsSmallText     UB[1]                                                                            SWF 7 or later: Font is small. Character glyphs are aligned on pixel boundaries for dynamic and input text.
+FontFlagsANSI          UB[1]                                                                            ANSI encoding.
+FontFlagsWideOffsets   UB[1]                                                                            If 1, uses 32 bit offsets.
+FontFlagsWideCodes     UB[1]                                                                            If 1, font uses 16-bit codes; otherwise font uses 8 bit codes.
+FontFlagsItalic        UB[1]                                                                            Italic Font.
+FontFlagsBold          UB[1]                                                                            Bold Font.
+LanguageCode           LANGCODE                                                                         SWF 5 or earlier: always 0 SWF 6 or later: language code
+FontNameLen            UI8                                                                              Length of name.
+FontName               UI8[FontNameLen]                                                                 Name of font (see DefineFontInfo).
+NumGlyphs              UI16                                                                             Count of glyphs in font. May be zero for device fonts.
+OffsetTable            If FontFlagsWideOffsets, UI32[NumGlyphs] Otherwise UI16[NumGlyphs]               Same as in DefineFont.
+CodeTableOffset        If FontFlagsWideOffsets, UI32 Otherwise UI16                                     Byte count from start of OffsetTable to start of CodeTable.
+GlyphShapeTable        SHAPE(3)[NumGlyphs]                                                              Same as in DefineFont.
+CodeTable              If FontFlagsWideCodes, UI16[NumGlyphs] Otherwise UI8[NumGlyphs]                  Sorted in ascending order. Always UCS-2 in SWF 6 or later.
+FontLayoutAscent       If FontFlagsHasLayout, SI16                                                      Font ascender height.
+FontLayoutDescent      If FontFlagsHasLayout, SI16                                                      Font descender height.
+FontLayoutLeading      If FontFlagsHasLayout, SI16                                                      Font leading height (see following).
+FontLayoutAdvanceTable If FontFlagsHasLayout, SI16[NumGlyphs]                                           Advance value to be used for each glyph in dynamic glyph text.
+FontLayoutBoundsTable  If FontFlagsHasLayout, RECT[NumGlyphs]                                           Not used in Flash Player through version 7 (but must be present).
+FontLayoutKerningCount If FontFlagsHasLayout, UI16                                                      Not used in Flash Player through version 7 (always set to 0 to save space).
+FontLayoutKerningTable If FontFlagsHasLayout, KERNINGRECORD(FontFlagsWideCodes)[FontLayoutKerningCount] Not used in Flash Player through version 7 (omit with KerningCount of 0).
+\end{record}
+
+p184: DefineFont3
+\begin{record}
+DefineFont3
+Field                  Type                                                                             Comment
+Header                 RECORDHEADER                                                                     Tag type = 75
+FontID                 UI16                                                                             ID for this font character.
+FontFlagsHasLayout     UB[1]                                                                            Has font metrics/layout information.
+FontFlagsShiftJIS      UB[1]                                                                            ShiftJIS encoding.
+FontFlagsSmallText     UB[1]                                                                            SWF 7 or later: Font is small. Character glyphs are aligned on pixel boundaries for dynamic and input text.
+FontFlagsANSI          UB[1]                                                                            ANSI encoding.
+FontFlagsWideOffsets   UB[1]                                                                            If 1, uses 32 bit offsets.
+FontFlagsWideCodes     UB[1]                                                                            Must be 1.
+FontFlagsItalic        UB[1]                                                                            Italic Font.
+FontFlagsBold          UB[1]                                                                            Bold Font.
+LanguageCode           LANGCODE                                                                         SWF 5 or earlier: always 0SWF 6 or later: language code
+FontNameLen            UI8                                                                              Length of name.
+FontName               UI8[FontNameLen]                                                                 Name of font (see DefineFontInfo).
+NumGlyphs              UI16                                                                             Count of glyphs in font. May be zero for device fonts.
+OffsetTable            If FontFlagsWideOffsets, UI32[NumGlyphs] Otherwise UI16[NumGlyphs]               Same as in DefineFont.
+CodeTableOffset        If FontFlagsWideOffsets, UI32 Otherwise UI16                                     Byte count from start of OffsetTable to start of CodeTable.
+GlyphShapeTable        SHAPE(4)[NumGlyphs]                                                              Same as in DefineFont.
+CodeTable              UI16[NumGlyphs]                                                                  Sorted in ascending order. Always UCS-2 in SWF 6 or later.
+FontLayoutAscent       If FontFlagsHasLayout, SI16                                                      Font ascender height.
+FontLayoutDescent      If FontFlagsHasLayout, SI16                                                      Font descender height.
+FontLayoutLeading      If FontFlagsHasLayout, SI16                                                      Font leading height (see following).
+FontLayoutAdvanceTable If FontFlagsHasLayout, SI16[NumGlyphs]                                           Advance value to be used for each glyph in dynamic glyph text.
+FontLayoutBoundsTable  If FontFlagsHasLayout, RECT[NumGlyphs]                                           Not used in Flash Player through version 7 (but must be present).
+FontLayoutKerningCount If FontFlagsHasLayout, UI16                                                      Not used in Flash Player through version 7 (always set to 0 to save space).
+FontLayoutKerningTable If FontFlagsHasLayout, KERNINGRECORD(FontFlagsWideCodes)[FontLayoutKerningCount] Not used in Flash Player through version 7 (omit with KerningCount of 0).
+\end{record}
+
+p186: DefineFontAlignZones
+\begin{record}
+DefineFontAlignZones
+Field        Type         Comment
+Header       RECORDHEADER Tag type = 73
+FontID       UI16         ID of font to use, specified by DefineFont3.
+CSMTableHint UB[2]        Font thickness hint. Refers to the thickness of the typical stroke used in the font. 0 = thin 1 = medium 2 = thick. Flash Player maintains a selection of CSM tables for many fonts. However, if the font is not found in Flash Player's internal table, this hint is used to choose an appropriate table.
+Reserved     UB[6]        Must be 0.
+ZoneTable    ZONERECORD[] Alignment zone information for each glyph
+\end{record}
+
+\begin{record}
+ZONERECORD
+Field       Type                  Comment
+NumZoneData UI8                   Number of ZoneData entries. Always 2.
+ZoneData    ZONEDATA[NumZoneData] Compressed alignment zone information.
+Reserved    UB[6]                 Must be 0.
+ZoneMaskY   UB[1]                 Set if there are Y alignment zones.
+ZoneMaskX   UB[1]                 Set if there are X alignment zones.
+\end{record}
+
+\begin{record}
+ZONEDATA
+Field               Type    Comment
+AlignmentCoordinate FLOAT16 X (left) or Y (baseline) coordinate of the alignment zone.
+Range               FLOAT16 Width or height of the alignment zone.
+\end{record}
+
+p188: Kerning record
+\begin{record}
+KERNINGRECORD(FontFlagsWideCodes)
+Field                 Type                                                     Comment
+FontKerningCodes      If FontFlagsWideCodes, <UI16, UI16> Otherwise <UI8, UI8> Character code of the left and right character respectively.
+FontKerningAdjustment SI16                                                     Adjustment relative to left character’s advance value
+\end{record}
+
+p188: DefineFontName
+\begin{record}
+DefineFontName
+Field         Type         Comment
+Header        RECORDHEADER Tag type = 88
+FontID        UI16         ID for this font to which this refers
+FontName      STRING       Name of the font. For fonts starting as Type 1, this is the PostScript FullName. For fonts starting in sfnt formats such as TrueType and OpenType, this is name ID 4, platform ID 1, language ID 0 (Full name, Mac OS, English).
+FontCopyright STRING       Arbitrary string of copyright information
+\end{record}
+
+p189: DefineText
+\begin{record}
+DefineText
+Field            Type                                   Comment
+Header           RECORDHEADER                           Tag type = 11
+CharacterID      UI16                                   ID for this text character.
+TextBounds       RECT                                   Bounds of the text.
+TextMatrix       MATRIX                                 Transformation matrix for the text.
+GlyphBits        UI8                                    Bits in each glyph index.
+AdvanceBits      UI8                                    Bits in each advance value.
+TextRecords      TEXTRECORDS(1, GlyphBits, AdvanceBits) Text records.
+\end{record}
+
+\begin{code}
+
+type TEXTRECORDS = [TEXTRECORD]
+
+getTEXTRECORDS textVer glyphBits advanceBits = go
+  where go = do
+          eor <- lookAhead getUI8
+          if eor == 0
+           then getUI8 >> return []
+           else getTEXTRECORD textVer glyphBits advanceBits >>= \x -> fmap (x:) go
+
+\end{code}
+
+p190: Text records
+\begin{record}
+TEXTRECORD(TextVer, GlyphBits, AdvanceBits)
+Field                Type                                                      Comment
+TextRecordType       UB[1]                                                     Always 1.
+StyleFlagsReserved   UB[3]                                                     Always 0.
+StyleFlagsHasFont    UB[1]                                                     1 if text font specified.
+StyleFlagsHasColor   UB[1]                                                     1 if text color specified.
+StyleFlagsHasYOffset UB[1]                                                     1 if y offset specified.
+StyleFlagsHasXOffset UB[1]                                                     1 if x offset specified.
+FontID               If StyleFlagsHasFont, UI16                                Font ID for following text.
+TextColor            If StyleFlagsHasColor, If TextVer = 2, RGBA Otherwise RGB Font color for following text.
+XOffset              If StyleFlagsHasXOffset, SI16                             x offset for following text.
+YOffset              If StyleFlagsHasYOffset, SI16                             y offset for following text.
+TextHeight           If StyleFlagsHasFont, UI16                                Font height for following text.
+GlyphCount           UI8                                                       Number of glyphs in record.
+GlyphEntries         GLYPHENTRY(GlyphBits, AdvanceBits)[GlyphCount]            Glyph entry (see following).
+\end{record}
+
+p192: Glyph entry
+\begin{record}
+GLYPHENTRY(GlyphBits, AdvanceBits)
+Field        Type            Comment
+GlyphIndex   UB[GlyphBits]   Glyph index into current font.
+GlyphAdvance SB[AdvanceBits] x advance value for glyph.
+\end{record}
+
+p192: DefineText2
+\begin{record}
+DefineText2
+Field            Type                                   Comment
+Header           RECORDHEADER                           Tag type = 33
+CharacterID      UI16                                   ID for this text character.
+TextBounds       RECT                                   Bounds of the text.
+TextMatrix       MATRIX                                 Transformation matrix.
+GlyphBits        UI8                                    Bits in each glyph index.
+AdvanceBits      UI8                                    Bits in each advance value.
+TextRecords      TEXTRECORDS(2, GlyphBits, AdvanceBits) Text records.
+\end{record}
+
+p193: DefineEditText
+\begin{record}
+DefineEditText
+Field             Type                    Comment
+Header            RECORDHEADER            Tag type = 37
+CharacterID       UI16                    ID for this dynamic text character.
+Bounds            RECT                    Rectangle that completely encloses the text field.
+HasText           UB[1]                   0 = text field has no default text. 1 = text field initially displays the string specified by InitialText.
+WordWrap          UB[1]                   0 = text will not wrap and will scroll sideways. 1 = text will wrap automatically when the end of line is reached.
+Multiline         UB[1]                   0 = text field is one line only. 1 = text field is multi-line and scrollable.
+Password          UB[1]                   0 = characters are displayed as typed. 1 = all characters are displayed as an asterisk.
+ReadOnly          UB[1]                   0 = text editing is enabled. 1 = text editing is disabled
+HasTextColor      UB[1]                   0 = use default color. 1 = use specified color (TextColor).
+HasMaxLength      UB[1]                   0 = length of text is unlimited. 1 = maximum length of string is specified by MaxLength.
+HasFont           UB[1]                   0 = use default font. 1 = use specified font (FontID) and height (FontHeight). (Can’t be true if HasFontClass is true).
+HasFontClass      UB[1]                   0 = no fontClass, 1 = fontClass and Height specified for this text. (can't be true if HasFont is true). Supported in Flash Player 9.0.45.0 and later.
+AutoSize          UB[1]                   0 = fixed size. 1 = sizes to content (SWF 6 or later only).
+HasLayout         UB[1]                   Layout information provided.
+NoSelect          UB[1]                   Enables or disables interactive text selection.
+Border            UB[1]                   Causes a border to be drawn around the text field.
+WasStatic         UB[1]                   0 = Authored as dynamic text 1 = Authored as static text
+HTML              UB[1]                   0 = plaintext content. 1 = HTML content (see following).
+UseOutlines       UB[1]                   0 = use device font. 1 = use glyph font.
+FontID            If HasFont, UI16        ID of font to use.
+FontClass         If HasFontClass, STRING Class name of font to be loaded from another SWF and used for this text.
+FontHeight        If HasFont, UI16        Height of font in twips.
+TextColor         If HasTextColor, RGBA   Color of text.
+MaxLength         If HasMaxLength, UI16   Text is restricted to this length.
+LayoutAlign       If HasLayout, UI8       0 = Left 1 = Right 2 = Center 3 = Justify
+LayoutLeftMargin  If HasLayout, UI16      Left margin in twips.
+LayoutRightMargin If HasLayout, UI16      Right margin in twips.
+LayoutIndent      If HasLayout, UI16      Indent in twips.
+LayoutLeading     If HasLayout, SI16      Leading in twips (vertical distance between bottom of descender of one line and top of ascender of the next).
+VariableName      STRING                  Name of the variable where the contents of the text field are stored. May be qualified with dot syntax or slash syntax for non-global variables.
+InitialText       If HasText STRING       Text that is initially displayed.
+\end{record}
+
+p196: CSMTextSettings
+\begin{record}
+CSMTextSettings
+Field          Type         Comment
+Header         RECORDHEADER Tag type = 74
+TextID         UI16         ID for the DefineText, DefineText2, or DefineEditText to which this tag applies.
+UseFlashType   UB[2]        0 = use normal renderer. 1 = use advanced text rendering engine.
+GridFit        UB[3]        0 = Do not use grid fitting. AlignmentZones and LCD sub-pixel information will not be used. 1 = Pixel grid fit. Only supported for left-aligned dynamic text. This setting provides the ultimate in advanced anti-aliased text readability, with crisp letters aligned to pixels. 2 = Sub-pixel grid fit. Align letters to the 1/3 pixel used by LCD monitors. Can also improve quality for CRT output.
+Reserved       UB[3]        Must be 0.
+Thickness      FLOAT        The thickness attribute for the associated text field. Set to 0.0 to use the default (anti-aliasing table) value.
+Sharpness      FLOAT        The sharpness attribute for the associated text field. Set to 0.0 to use the default (anti-aliasing table) value.
+Reserved       UI8          Must be 0.
+\end{record}
+
+p198: DefineFont4
+\begin{record}
+DefineFont4
+Field                Type         Comment
+Header               RECORDHEADER Tag type = 91
+FontID               UI16         ID for this font character.
+FontFlagsReserved    UB[5]        Reserved bit fields.
+FontFlagsHasFontData UB[1]        Font is embedded. Font tag includes SFNT font data block.
+FontFlagsItalic      UB[1]        Italic font
+FontFlagsBold        UB[1]        Bold font
+FontName             STRING       Name of the font.
+FontData             BYTE[]       When present, this is an OpenType CFF font, as defined in the OpenType specification at www.microsoft.com/typography/otspec. The following tables must be present: ‘CFF ’, ‘cmap’, ‘head’, 'maxp’, ‘OS/2’, ‘post’, and either (a) ‘hhea’ and ‘hmtx’, or (b) ‘vhea’, ‘vmtx’, and ‘VORG’. The ‘cmap’ table must include one of the following kinds of Unicode ‘cmap’ subtables: (0, 4), (0, 3), (3, 10), (3, 1), or (3, 0) [notation: (platform ID, platformspecific encoding ID)]. Tables such as ‘GSUB’, ‘GPOS’, ‘GDEF’, and ‘BASE’ may also be present. Only present for embedded fonts
+\end{record}
+
+
+Chapter 11: Sounds
+~~~~~~~~~~~~~~~~~~
 
 \begin{code}
 

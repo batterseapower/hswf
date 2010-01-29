@@ -292,27 +292,25 @@ getMATRIX
 p22: Color transform record
 \begin{code}
  
-data CXFORM = CXFORM{cXFORM_hasAddTerms :: Bool,
-                     cXFORM_hasMultTerms :: Bool, cXFORM_nbits :: UB,
-                     cXFORM_redMultTerm :: Maybe SB, cXFORM_greenMultTerm :: Maybe SB,
-                     cXFORM_blueMultTerm :: Maybe SB, cXFORM_redAddTerm :: Maybe SB,
-                     cXFORM_greenAddTerm :: Maybe SB, cXFORM_blueAddTerm :: Maybe SB}
+data CXFORM = CXFORM{cXFORM_nbits :: UB,
+                     cXFORM_multTerm :: Maybe (SB, SB, SB),
+                     cXFORM_addTerm :: Maybe (SB, SB, SB)}
 getCXFORM
   = do cXFORM_hasAddTerms <- getFlag
        cXFORM_hasMultTerms <- getFlag
        cXFORM_nbits <- getUB 4
-       cXFORM_redMultTerm <- maybeHas cXFORM_hasMultTerms
-                               (getSB cXFORM_nbits)
-       cXFORM_greenMultTerm <- maybeHas cXFORM_hasMultTerms
-                                 (getSB cXFORM_nbits)
-       cXFORM_blueMultTerm <- maybeHas cXFORM_hasMultTerms
-                                (getSB cXFORM_nbits)
-       cXFORM_redAddTerm <- maybeHas cXFORM_hasAddTerms
-                              (getSB cXFORM_nbits)
-       cXFORM_greenAddTerm <- maybeHas cXFORM_hasAddTerms
-                                (getSB cXFORM_nbits)
-       cXFORM_blueAddTerm <- maybeHas cXFORM_hasAddTerms
-                               (getSB cXFORM_nbits)
+       cXFORM_multTerm <- maybeHas cXFORM_hasMultTerms
+                            (do cXFORM_redMultTerm <- getSB cXFORM_nbits
+                                cXFORM_greenMultTerm <- getSB cXFORM_nbits
+                                cXFORM_blueMultTerm <- getSB cXFORM_nbits
+                                return
+                                  (cXFORM_redMultTerm, cXFORM_greenMultTerm, cXFORM_blueMultTerm))
+       cXFORM_addTerm <- maybeHas cXFORM_hasAddTerms
+                           (do cXFORM_redAddTerm <- getSB cXFORM_nbits
+                               cXFORM_greenAddTerm <- getSB cXFORM_nbits
+                               cXFORM_blueAddTerm <- getSB cXFORM_nbits
+                               return
+                                 (cXFORM_redAddTerm, cXFORM_greenAddTerm, cXFORM_blueAddTerm))
        return (CXFORM{..})
 
 \end{code}
@@ -321,44 +319,34 @@ p23: Color transform with alpha record
 
 \begin{code}
  
-data CXFORMWITHALPHA = CXFORMWITHALPHA{cXFORMWITHALPHA_hasAddTerms
-                                       :: Bool,
-                                       cXFORMWITHALPHA_hasMultTerms :: Bool,
-                                       cXFORMWITHALPHA_nbits :: UB,
-                                       cXFORMWITHALPHA_redMultTerm :: Maybe SB,
-                                       cXFORMWITHALPHA_greenMultTerm :: Maybe SB,
-                                       cXFORMWITHALPHA_blueMultTerm :: Maybe SB,
-                                       cXFORMWITHALPHA_alphaMultTerm :: Maybe SB,
-                                       cXFORMWITHALPHA_redAddTerm :: Maybe SB,
-                                       cXFORMWITHALPHA_greenAddTerm :: Maybe SB,
-                                       cXFORMWITHALPHA_blueAddTerm :: Maybe SB,
-                                       cXFORMWITHALPHA_alphaAddTerm :: Maybe SB}
+data CXFORMWITHALPHA = CXFORMWITHALPHA{cXFORMWITHALPHA_nbits :: UB,
+                                       cXFORMWITHALPHA_multTerm :: Maybe (SB, SB, SB, SB),
+                                       cXFORMWITHALPHA_addTerm :: Maybe (SB, SB, SB, SB)}
 getCXFORMWITHALPHA
   = do cXFORMWITHALPHA_hasAddTerms <- getFlag
        cXFORMWITHALPHA_hasMultTerms <- getFlag
        cXFORMWITHALPHA_nbits <- getUB 4
-       cXFORMWITHALPHA_redMultTerm <- maybeHas
-                                        cXFORMWITHALPHA_hasMultTerms
-                                        (getSB cXFORMWITHALPHA_nbits)
-       cXFORMWITHALPHA_greenMultTerm <- maybeHas
-                                          cXFORMWITHALPHA_hasMultTerms
-                                          (getSB cXFORMWITHALPHA_nbits)
-       cXFORMWITHALPHA_blueMultTerm <- maybeHas
-                                         cXFORMWITHALPHA_hasMultTerms
-                                         (getSB cXFORMWITHALPHA_nbits)
-       cXFORMWITHALPHA_alphaMultTerm <- maybeHas
-                                          cXFORMWITHALPHA_hasMultTerms
-                                          (getSB cXFORMWITHALPHA_nbits)
-       cXFORMWITHALPHA_redAddTerm <- maybeHas cXFORMWITHALPHA_hasAddTerms
-                                       (getSB cXFORMWITHALPHA_nbits)
-       cXFORMWITHALPHA_greenAddTerm <- maybeHas
-                                         cXFORMWITHALPHA_hasAddTerms
-                                         (getSB cXFORMWITHALPHA_nbits)
-       cXFORMWITHALPHA_blueAddTerm <- maybeHas cXFORMWITHALPHA_hasAddTerms
-                                        (getSB cXFORMWITHALPHA_nbits)
-       cXFORMWITHALPHA_alphaAddTerm <- maybeHas
-                                         cXFORMWITHALPHA_hasAddTerms
-                                         (getSB cXFORMWITHALPHA_nbits)
+       cXFORMWITHALPHA_multTerm <- maybeHas cXFORMWITHALPHA_hasMultTerms
+                                     (do cXFORMWITHALPHA_redMultTerm <- getSB cXFORMWITHALPHA_nbits
+                                         cXFORMWITHALPHA_greenMultTerm <- getSB
+                                                                            cXFORMWITHALPHA_nbits
+                                         cXFORMWITHALPHA_blueMultTerm <- getSB cXFORMWITHALPHA_nbits
+                                         cXFORMWITHALPHA_alphaMultTerm <- getSB
+                                                                            cXFORMWITHALPHA_nbits
+                                         return
+                                           (cXFORMWITHALPHA_redMultTerm,
+                                            cXFORMWITHALPHA_greenMultTerm,
+                                            cXFORMWITHALPHA_blueMultTerm,
+                                            cXFORMWITHALPHA_alphaMultTerm))
+       cXFORMWITHALPHA_addTerm <- maybeHas cXFORMWITHALPHA_hasAddTerms
+                                    (do cXFORMWITHALPHA_redAddTerm <- getSB cXFORMWITHALPHA_nbits
+                                        cXFORMWITHALPHA_greenAddTerm <- getSB cXFORMWITHALPHA_nbits
+                                        cXFORMWITHALPHA_blueAddTerm <- getSB cXFORMWITHALPHA_nbits
+                                        cXFORMWITHALPHA_alphaAddTerm <- getSB cXFORMWITHALPHA_nbits
+                                        return
+                                          (cXFORMWITHALPHA_redAddTerm, cXFORMWITHALPHA_greenAddTerm,
+                                           cXFORMWITHALPHA_blueAddTerm,
+                                           cXFORMWITHALPHA_alphaAddTerm))
        return (CXFORMWITHALPHA{..})
 
 \end{code}
@@ -540,6 +528,85 @@ data Tag = UnknownTag ByteString
                  defineFontInfo_fontFlagsItalic :: Bool,
                  defineFontInfo_fontFlagsBold :: Bool,
                  defineFontInfo_codeTable :: Either [UI16] [UI8]}
+         |  DefineFontInfo2{defineFontInfo2_fontID :: UI16,
+                  defineFontInfo2_fontName :: [UI8],
+                  defineFontInfo2_fontFlagsSmallText :: Bool,
+                  defineFontInfo2_fontFlagsShiftJIS :: Bool,
+                  defineFontInfo2_fontFlagsANSI :: Bool,
+                  defineFontInfo2_fontFlagsItalic :: Bool,
+                  defineFontInfo2_fontFlagsBold :: Bool,
+                  defineFontInfo2_fontFlagsWideCodes :: Bool,
+                  defineFontInfo2_languageCode :: LANGCODE,
+                  defineFontInfo2_codeTable :: [UI16]}
+         |  DefineFont2{defineFont2_fontID :: UI16,
+              defineFont2_fontFlagsShiftJIS :: Bool,
+              defineFont2_fontFlagsSmallText :: Bool,
+              defineFont2_fontFlagsANSI :: Bool,
+              defineFont2_fontFlagsWideOffsets :: Bool,
+              defineFont2_fontFlagsItalic :: Bool,
+              defineFont2_fontFlagsBold :: Bool,
+              defineFont2_languageCode :: LANGCODE,
+              defineFont2_fontName :: [UI8],
+              defineFont2_offsetTable :: Either [UI32] [UI16],
+              defineFont2_codeTableOffset :: Either UI32 UI16,
+              defineFont2_glyphShapeTable :: [SHAPE],
+              defineFont2_codeTable :: Either [UI16] [UI8],
+              defineFont2_fontLayout ::
+              Maybe (SI16, SI16, SI16, [SI16], [RECT], UI16, [KERNINGRECORD])}
+         |  DefineFont3{defineFont3_fontID :: UI16,
+              defineFont3_fontFlagsShiftJIS :: Bool,
+              defineFont3_fontFlagsSmallText :: Bool,
+              defineFont3_fontFlagsANSI :: Bool,
+              defineFont3_fontFlagsWideOffsets :: Bool,
+              defineFont3_fontFlagsWideCodes :: Bool,
+              defineFont3_fontFlagsItalic :: Bool,
+              defineFont3_fontFlagsBold :: Bool,
+              defineFont3_languageCode :: LANGCODE,
+              defineFont3_fontName :: [UI8], defineFont3_numGlyphs :: UI16,
+              defineFont3_offsetTable :: Either [UI32] [UI16],
+              defineFont3_codeTableOffset :: Either UI32 UI16,
+              defineFont3_glyphShapeTable :: [SHAPE],
+              defineFont3_codeTable :: [UI16],
+              defineFont3_fontLayout ::
+              Maybe (SI16, SI16, SI16, [SI16], [RECT], UI16, [KERNINGRECORD])}
+         |  DefineFontAlignZones{defineFontAlignZones_fontID :: UI16,
+                       defineFontAlignZones_cSMTableHint :: UB,
+                       defineFontAlignZones_zoneTable :: [ZONERECORD]}
+         |  DefineFontName{defineFontName_fontID :: UI16,
+                 defineFontName_fontName :: STRING,
+                 defineFontName_fontCopyright :: STRING}
+         |  DefineText{defineText_characterID :: UI16,
+             defineText_textBounds :: RECT, defineText_textMatrix :: MATRIX,
+             defineText_glyphBits :: UI8, defineText_advanceBits :: UI8,
+             defineText_textRecords :: TEXTRECORDS}
+         |  DefineText2{defineText2_characterID :: UI16,
+              defineText2_textBounds :: RECT, defineText2_textMatrix :: MATRIX,
+              defineText2_glyphBits :: UI8, defineText2_advanceBits :: UI8,
+              defineText2_textRecords :: TEXTRECORDS}
+         |  DefineEditText{defineEditText_characterID :: UI16,
+                 defineEditText_bounds :: RECT, defineEditText_wordWrap :: Bool,
+                 defineEditText_multiline :: Bool, defineEditText_password :: Bool,
+                 defineEditText_readOnly :: Bool, defineEditText_hasFont :: Bool,
+                 defineEditText_autoSize :: Bool, defineEditText_noSelect :: Bool,
+                 defineEditText_border :: Bool, defineEditText_wasStatic :: Bool,
+                 defineEditText_hTML :: Bool, defineEditText_useOutlines :: Bool,
+                 defineEditText_fontID :: Maybe UI16,
+                 defineEditText_fontClass :: Maybe STRING,
+                 defineEditText_fontHeight :: Maybe UI16,
+                 defineEditText_textColor :: Maybe RGBA,
+                 defineEditText_maxLength :: Maybe UI16,
+                 defineEditText_layout :: Maybe (UI8, UI16, UI16, UI16, SI16),
+                 defineEditText_variableName :: STRING,
+                 defineEditText_initialText :: Maybe STRING}
+         |  CSMTextSettings{cSMTextSettings_textID :: UI16,
+                  cSMTextSettings_useFlashType :: UB, cSMTextSettings_gridFit :: UB,
+                  cSMTextSettings_thickness :: FLOAT,
+                  cSMTextSettings_sharpness :: FLOAT}
+         |  DefineFont4{defineFont4_fontID :: UI16,
+              defineFont4_fontFlagsHasFontData :: Bool,
+              defineFont4_fontFlagsItalic :: Bool,
+              defineFont4_fontFlagsBold :: Bool, defineFont4_fontName :: STRING,
+              defineFont4_fontData :: ByteString}
 
 getRECORD = do
     rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
@@ -598,6 +665,16 @@ generatedTagGetters tagType
         46 -> Just getDefineMorphShape
         84 -> Just getDefineMorphShape2
         13 -> Just getDefineFontInfo
+        62 -> Just getDefineFontInfo2
+        48 -> Just getDefineFont2
+        75 -> Just getDefineFont3
+        73 -> Just getDefineFontAlignZones
+        88 -> Just getDefineFontName
+        11 -> Just getDefineText
+        33 -> Just getDefineText2
+        37 -> Just getDefineEditText
+        74 -> Just getCSMTextSettings
+        91 -> Just getDefineFont4
         _ -> Nothing
 
 \end{code}
@@ -1182,7 +1259,7 @@ getDoAction = do
 getACTIONRECORDs = do
     look <- lookAhead getUI8
     case look of
-      0 -> return []
+      0 -> getUI8 >> return []
       _ -> do
         actionRecord <- getACTIONRECORD
         fmap (actionRecord:) getACTIONRECORDs
@@ -2320,18 +2397,16 @@ getSHAPERECORDS shapeVer fillBits lineBits = go
        else do
           eos <- lookAhead (getUB 5)
           if eos == 0
-           then byteAlign >> return []
+           then getUB 5 >> byteAlign >> return []
            else getSTYLECHANGERECORD shapeVer fillBits lineBits >>= \x -> fmap (x:) go
 
 data SHAPERECORD
-         =  STYLECHANGERECORD{sTYLECHANGERECORD_stateNewStyles :: Bool,
-                    sTYLECHANGERECORD_move :: Maybe (UB, SB, SB),
+         =  STYLECHANGERECORD{sTYLECHANGERECORD_move :: Maybe (UB, SB, SB),
                     sTYLECHANGERECORD_fillStyle0 :: Maybe UB,
                     sTYLECHANGERECORD_fillStyle1 :: Maybe UB,
                     sTYLECHANGERECORD_lineStyle :: Maybe UB,
-                    sTYLECHANGERECORD_fillStyles :: Maybe FILLSTYLEARRAY,
-                    sTYLECHANGERECORD_lineStyles :: Maybe LINESTYLEARRAY,
-                    sTYLECHANGERECORD_um :: Maybe (UB, UB)}
+                    sTYLECHANGERECORD_s ::
+                    Maybe (FILLSTYLEARRAY, LINESTYLEARRAY, UB, UB)}
          |  STRAIGHTEDGERECORD{sTRAIGHTEDGERECORD_numBits :: UB,
                      sTRAIGHTEDGERECORD_straightEdge :: StraightEdge}
          |  CURVEDEDGERECORD{cURVEDEDGERECORD_typeFlag :: Bool,
@@ -2370,18 +2445,17 @@ getSTYLECHANGERECORD sTYLECHANGERECORD_shapeVer
        sTYLECHANGERECORD_lineStyle <- maybeHas
                                         sTYLECHANGERECORD_stateLineStyle
                                         (getUB sTYLECHANGERECORD_lineBits)
-       sTYLECHANGERECORD_fillStyles <- maybeHas
-                                         sTYLECHANGERECORD_stateNewStyles
-                                         (getFILLSTYLEARRAY sTYLECHANGERECORD_shapeVer)
-       sTYLECHANGERECORD_lineStyles <- maybeHas
-                                         sTYLECHANGERECORD_stateNewStyles
-                                         (getLINESTYLEARRAY sTYLECHANGERECORD_shapeVer)
-       sTYLECHANGERECORD_um <- maybeHas sTYLECHANGERECORD_stateNewStyles
-                                 (do sTYLECHANGERECORD_numFillBits <- getUB 4
-                                     sTYLECHANGERECORD_numLineBits <- getUB 4
-                                     return
-                                       (sTYLECHANGERECORD_numFillBits,
-                                        sTYLECHANGERECORD_numLineBits))
+       sTYLECHANGERECORD_s <- maybeHas sTYLECHANGERECORD_stateNewStyles
+                                (do sTYLECHANGERECORD_fillStyles <- getFILLSTYLEARRAY
+                                                                      sTYLECHANGERECORD_shapeVer
+                                    sTYLECHANGERECORD_lineStyles <- getLINESTYLEARRAY
+                                                                      sTYLECHANGERECORD_shapeVer
+                                    sTYLECHANGERECORD_numFillBits <- getUB 4
+                                    sTYLECHANGERECORD_numLineBits <- getUB 4
+                                    return
+                                      (sTYLECHANGERECORD_fillStyles, sTYLECHANGERECORD_lineStyles,
+                                       sTYLECHANGERECORD_numFillBits,
+                                       sTYLECHANGERECORD_numLineBits))
        _sTYLECHANGERECORD_reserved <- byteAlign
        return (STYLECHANGERECORD{..})
 
@@ -2750,8 +2824,7 @@ data MORPHLINESTYLE2 = MORPHLINESTYLE2{mORPHLINESTYLE2_startWidth
                                        mORPHLINESTYLE2_noClose :: Bool,
                                        mORPHLINESTYLE2_endCapStyle :: UB,
                                        mORPHLINESTYLE2_miterLimitFactor :: Maybe UI16,
-                                       mORPHLINESTYLE2_startColor :: Maybe RGBA,
-                                       mORPHLINESTYLE2_endColor :: Maybe RGBA,
+                                       mORPHLINESTYLE2_color :: Maybe (RGBA, RGBA),
                                        mORPHLINESTYLE2_fillType :: Maybe MORPHFILLSTYLE}
 getMORPHLINESTYLE2
   = do mORPHLINESTYLE2_startWidth <- getUI16
@@ -2768,12 +2841,10 @@ getMORPHLINESTYLE2
        mORPHLINESTYLE2_miterLimitFactor <- maybeHas
                                              (mORPHLINESTYLE2_joinStyle == 2)
                                              getUI16
-       mORPHLINESTYLE2_startColor <- maybeHas
-                                       (not mORPHLINESTYLE2_hasFillFlag)
-                                       getRGBA
-       mORPHLINESTYLE2_endColor <- maybeHas
-                                     (not mORPHLINESTYLE2_hasFillFlag)
-                                     getRGBA
+       mORPHLINESTYLE2_color <- maybeHas (not mORPHLINESTYLE2_hasFillFlag)
+                                  (do mORPHLINESTYLE2_startColor <- getRGBA
+                                      mORPHLINESTYLE2_endColor <- getRGBA
+                                      return (mORPHLINESTYLE2_startColor, mORPHLINESTYLE2_endColor))
        mORPHLINESTYLE2_fillType <- maybeHas mORPHLINESTYLE2_hasFillFlag
                                      getMORPHFILLSTYLE
        return (MORPHLINESTYLE2{..})
@@ -2821,6 +2892,366 @@ getDefineFontInfo
 
 \end{code}
 
+p180: DefineFontInfo2
+\begin{code}
+getDefineFontInfo2
+  = do defineFontInfo2_fontID <- getUI16
+       defineFontInfo2_fontNameLen <- getUI8
+       defineFontInfo2_fontName <- genericReplicateM
+                                     defineFontInfo2_fontNameLen
+                                     getUI8
+       _defineFontInfo2_fontFlagsReserved <- getUB 2
+       defineFontInfo2_fontFlagsSmallText <- getFlag
+       defineFontInfo2_fontFlagsShiftJIS <- getFlag
+       defineFontInfo2_fontFlagsANSI <- getFlag
+       defineFontInfo2_fontFlagsItalic <- getFlag
+       defineFontInfo2_fontFlagsBold <- getFlag
+       defineFontInfo2_fontFlagsWideCodes <- getFlag
+       defineFontInfo2_languageCode <- getLANGCODE
+       defineFontInfo2_codeTable <- getToEnd getUI16
+       return (DefineFontInfo2{..})
+
+\end{code}
+
+p181: DefineFont2
+\begin{code}
+getDefineFont2
+  = do defineFont2_fontID <- getUI16
+       defineFont2_fontFlagsHasLayout <- getFlag
+       defineFont2_fontFlagsShiftJIS <- getFlag
+       defineFont2_fontFlagsSmallText <- getFlag
+       defineFont2_fontFlagsANSI <- getFlag
+       defineFont2_fontFlagsWideOffsets <- getFlag
+       defineFont2_fontFlagsWideCodes <- getFlag
+       defineFont2_fontFlagsItalic <- getFlag
+       defineFont2_fontFlagsBold <- getFlag
+       defineFont2_languageCode <- getLANGCODE
+       defineFont2_fontNameLen <- getUI8
+       defineFont2_fontName <- genericReplicateM defineFont2_fontNameLen
+                                 getUI8
+       defineFont2_numGlyphs <- getUI16
+       defineFont2_offsetTable <- if defineFont2_fontFlagsWideOffsets then
+                                    fmap Left (genericReplicateM defineFont2_numGlyphs getUI32) else
+                                    fmap Right (genericReplicateM defineFont2_numGlyphs getUI16)
+       defineFont2_codeTableOffset <- if defineFont2_fontFlagsWideOffsets
+                                        then fmap Left getUI32 else fmap Right getUI16
+       defineFont2_glyphShapeTable <- genericReplicateM
+                                        defineFont2_numGlyphs
+                                        (getSHAPE 3)
+       defineFont2_codeTable <- if defineFont2_fontFlagsWideCodes then
+                                  fmap Left (genericReplicateM defineFont2_numGlyphs getUI16) else
+                                  fmap Right (genericReplicateM defineFont2_numGlyphs getUI8)
+       defineFont2_fontLayout <- maybeHas defineFont2_fontFlagsHasLayout
+                                   (do defineFont2_fontLayoutAscent <- getSI16
+                                       defineFont2_fontLayoutDescent <- getSI16
+                                       defineFont2_fontLayoutLeading <- getSI16
+                                       defineFont2_fontLayoutAdvanceTable <- genericReplicateM
+                                                                               defineFont2_numGlyphs
+                                                                               getSI16
+                                       defineFont2_fontLayoutBoundsTable <- genericReplicateM
+                                                                              defineFont2_numGlyphs
+                                                                              getRECT
+                                       defineFont2_fontLayoutKerningCount <- getUI16
+                                       defineFont2_fontLayoutKerningTable <- genericReplicateM
+                                                                               defineFont2_fontLayoutKerningCount
+                                                                               (getKERNINGRECORD
+                                                                                  defineFont2_fontFlagsWideCodes)
+                                       return
+                                         (defineFont2_fontLayoutAscent,
+                                          defineFont2_fontLayoutDescent,
+                                          defineFont2_fontLayoutLeading,
+                                          defineFont2_fontLayoutAdvanceTable,
+                                          defineFont2_fontLayoutBoundsTable,
+                                          defineFont2_fontLayoutKerningCount,
+                                          defineFont2_fontLayoutKerningTable))
+       return (DefineFont2{..})
+
+\end{code}
+
+p184: DefineFont3
+\begin{code}
+getDefineFont3
+  = do defineFont3_fontID <- getUI16
+       defineFont3_fontFlagsHasLayout <- getFlag
+       defineFont3_fontFlagsShiftJIS <- getFlag
+       defineFont3_fontFlagsSmallText <- getFlag
+       defineFont3_fontFlagsANSI <- getFlag
+       defineFont3_fontFlagsWideOffsets <- getFlag
+       defineFont3_fontFlagsWideCodes <- getFlag
+       defineFont3_fontFlagsItalic <- getFlag
+       defineFont3_fontFlagsBold <- getFlag
+       defineFont3_languageCode <- getLANGCODE
+       defineFont3_fontNameLen <- getUI8
+       defineFont3_fontName <- genericReplicateM defineFont3_fontNameLen
+                                 getUI8
+       defineFont3_numGlyphs <- getUI16
+       defineFont3_offsetTable <- if defineFont3_fontFlagsWideOffsets then
+                                    fmap Left (genericReplicateM defineFont3_numGlyphs getUI32) else
+                                    fmap Right (genericReplicateM defineFont3_numGlyphs getUI16)
+       defineFont3_codeTableOffset <- if defineFont3_fontFlagsWideOffsets
+                                        then fmap Left getUI32 else fmap Right getUI16
+       defineFont3_glyphShapeTable <- genericReplicateM
+                                        defineFont3_numGlyphs
+                                        (getSHAPE 4)
+       defineFont3_codeTable <- genericReplicateM defineFont3_numGlyphs
+                                  getUI16
+       defineFont3_fontLayout <- maybeHas defineFont3_fontFlagsHasLayout
+                                   (do defineFont3_fontLayoutAscent <- getSI16
+                                       defineFont3_fontLayoutDescent <- getSI16
+                                       defineFont3_fontLayoutLeading <- getSI16
+                                       defineFont3_fontLayoutAdvanceTable <- genericReplicateM
+                                                                               defineFont3_numGlyphs
+                                                                               getSI16
+                                       defineFont3_fontLayoutBoundsTable <- genericReplicateM
+                                                                              defineFont3_numGlyphs
+                                                                              getRECT
+                                       defineFont3_fontLayoutKerningCount <- getUI16
+                                       defineFont3_fontLayoutKerningTable <- genericReplicateM
+                                                                               defineFont3_fontLayoutKerningCount
+                                                                               (getKERNINGRECORD
+                                                                                  defineFont3_fontFlagsWideCodes)
+                                       return
+                                         (defineFont3_fontLayoutAscent,
+                                          defineFont3_fontLayoutDescent,
+                                          defineFont3_fontLayoutLeading,
+                                          defineFont3_fontLayoutAdvanceTable,
+                                          defineFont3_fontLayoutBoundsTable,
+                                          defineFont3_fontLayoutKerningCount,
+                                          defineFont3_fontLayoutKerningTable))
+       return (DefineFont3{..})
+
+\end{code}
+
+p186: DefineFontAlignZones
+\begin{code}
+getDefineFontAlignZones
+  = do defineFontAlignZones_fontID <- getUI16
+       defineFontAlignZones_cSMTableHint <- getUB 2
+       _defineFontAlignZones_reserved <- getUB 6
+       defineFontAlignZones_zoneTable <- getToEnd getZONERECORD
+       return (DefineFontAlignZones{..})
+
+\end{code}
+
+\begin{code}
+ 
+data ZONERECORD = ZONERECORD{zONERECORD_zoneData :: [ZONEDATA],
+                             zONERECORD_zoneMaskY :: Bool, zONERECORD_zoneMaskX :: Bool}
+getZONERECORD
+  = do zONERECORD_numZoneData <- getUI8
+       zONERECORD_zoneData <- genericReplicateM zONERECORD_numZoneData
+                                getZONEDATA
+       _zONERECORD_reserved <- getUB 6
+       zONERECORD_zoneMaskY <- getFlag
+       zONERECORD_zoneMaskX <- getFlag
+       return (ZONERECORD{..})
+
+\end{code}
+
+\begin{code}
+ 
+data ZONEDATA = ZONEDATA{zONEDATA_alignmentCoordinate :: FLOAT16,
+                         zONEDATA_range :: FLOAT16}
+getZONEDATA
+  = do zONEDATA_alignmentCoordinate <- getFLOAT16
+       zONEDATA_range <- getFLOAT16
+       return (ZONEDATA{..})
+
+\end{code}
+
+p188: Kerning record
+\begin{code}
+ 
+data KERNINGRECORD = KERNINGRECORD{kERNINGRECORD_fontKerningCodes
+                                   :: Either (UI16, UI16) (UI8, UI8),
+                                   kERNINGRECORD_fontKerningAdjustment :: SI16}
+getKERNINGRECORD kERNINGRECORD_fontFlagsWideCodes
+  = do kERNINGRECORD_fontKerningCodes <- if
+                                           kERNINGRECORD_fontFlagsWideCodes then
+                                           fmap Left (liftM2 (,) getUI16 getUI16) else
+                                           fmap Right (liftM2 (,) getUI8 getUI8)
+       kERNINGRECORD_fontKerningAdjustment <- getSI16
+       return (KERNINGRECORD{..})
+
+\end{code}
+
+p188: DefineFontName
+\begin{code}
+getDefineFontName
+  = do defineFontName_fontID <- getUI16
+       defineFontName_fontName <- getSTRING
+       defineFontName_fontCopyright <- getSTRING
+       return (DefineFontName{..})
+
+\end{code}
+
+p189: DefineText
+\begin{code}
+getDefineText
+  = do defineText_characterID <- getUI16
+       defineText_textBounds <- getRECT
+       defineText_textMatrix <- getMATRIX
+       defineText_glyphBits <- getUI8
+       defineText_advanceBits <- getUI8
+       defineText_textRecords <- getTEXTRECORDS 1 defineText_glyphBits
+                                   defineText_advanceBits
+       return (DefineText{..})
+
+\end{code}
+
+\begin{code}
+
+type TEXTRECORDS = [TEXTRECORD]
+
+getTEXTRECORDS textVer glyphBits advanceBits = go
+  where go = do
+          eor <- lookAhead getUI8
+          if eor == 0
+           then getUI8 >> return []
+           else getTEXTRECORD textVer glyphBits advanceBits >>= \x -> fmap (x:) go
+
+\end{code}
+
+p190: Text records
+\begin{code}
+ 
+data TEXTRECORD = TEXTRECORD{tEXTRECORD_textRecordType :: Bool,
+                             tEXTRECORD_styleFlagsHasFont :: Bool,
+                             tEXTRECORD_fontID :: Maybe UI16,
+                             tEXTRECORD_textColor :: Maybe (Either RGBA RGB),
+                             tEXTRECORD_xOffset :: Maybe SI16, tEXTRECORD_yOffset :: Maybe SI16,
+                             tEXTRECORD_textHeight :: Maybe UI16,
+                             tEXTRECORD_glyphEntries :: [GLYPHENTRY]}
+getTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
+  tEXTRECORD_advanceBits
+  = do tEXTRECORD_textRecordType <- getFlag
+       _tEXTRECORD_styleFlagsReserved <- getUB 3
+       tEXTRECORD_styleFlagsHasFont <- getFlag
+       tEXTRECORD_styleFlagsHasColor <- getFlag
+       tEXTRECORD_styleFlagsHasYOffset <- getFlag
+       tEXTRECORD_styleFlagsHasXOffset <- getFlag
+       tEXTRECORD_fontID <- maybeHas tEXTRECORD_styleFlagsHasFont getUI16
+       tEXTRECORD_textColor <- maybeHas tEXTRECORD_styleFlagsHasColor
+                                 (if tEXTRECORD_textVer == 2 then fmap Left getRGBA else
+                                    fmap Right getRGB)
+       tEXTRECORD_xOffset <- maybeHas tEXTRECORD_styleFlagsHasXOffset
+                               getSI16
+       tEXTRECORD_yOffset <- maybeHas tEXTRECORD_styleFlagsHasYOffset
+                               getSI16
+       tEXTRECORD_textHeight <- maybeHas tEXTRECORD_styleFlagsHasFont
+                                  getUI16
+       tEXTRECORD_glyphCount <- getUI8
+       tEXTRECORD_glyphEntries <- genericReplicateM tEXTRECORD_glyphCount
+                                    (getGLYPHENTRY tEXTRECORD_glyphBits tEXTRECORD_advanceBits)
+       return (TEXTRECORD{..})
+
+\end{code}
+
+p192: Glyph entry
+\begin{code}
+ 
+data GLYPHENTRY = GLYPHENTRY{gLYPHENTRY_glyphIndex :: UB,
+                             gLYPHENTRY_glyphAdvance :: SB}
+getGLYPHENTRY gLYPHENTRY_glyphBits gLYPHENTRY_advanceBits
+  = do gLYPHENTRY_glyphIndex <- getUB gLYPHENTRY_glyphBits
+       gLYPHENTRY_glyphAdvance <- getSB gLYPHENTRY_advanceBits
+       return (GLYPHENTRY{..})
+
+\end{code}
+
+p192: DefineText2
+\begin{code}
+getDefineText2
+  = do defineText2_characterID <- getUI16
+       defineText2_textBounds <- getRECT
+       defineText2_textMatrix <- getMATRIX
+       defineText2_glyphBits <- getUI8
+       defineText2_advanceBits <- getUI8
+       defineText2_textRecords <- getTEXTRECORDS 2 defineText2_glyphBits
+                                    defineText2_advanceBits
+       return (DefineText2{..})
+
+\end{code}
+
+p193: DefineEditText
+\begin{code}
+getDefineEditText
+  = do defineEditText_characterID <- getUI16
+       defineEditText_bounds <- getRECT
+       defineEditText_hasText <- getFlag
+       defineEditText_wordWrap <- getFlag
+       defineEditText_multiline <- getFlag
+       defineEditText_password <- getFlag
+       defineEditText_readOnly <- getFlag
+       defineEditText_hasTextColor <- getFlag
+       defineEditText_hasMaxLength <- getFlag
+       defineEditText_hasFont <- getFlag
+       defineEditText_hasFontClass <- getFlag
+       defineEditText_autoSize <- getFlag
+       defineEditText_hasLayout <- getFlag
+       defineEditText_noSelect <- getFlag
+       defineEditText_border <- getFlag
+       defineEditText_wasStatic <- getFlag
+       defineEditText_hTML <- getFlag
+       defineEditText_useOutlines <- getFlag
+       defineEditText_fontID <- maybeHas defineEditText_hasFont getUI16
+       defineEditText_fontClass <- maybeHas defineEditText_hasFontClass
+                                     getSTRING
+       defineEditText_fontHeight <- maybeHas defineEditText_hasFont
+                                      getUI16
+       defineEditText_textColor <- maybeHas defineEditText_hasTextColor
+                                     getRGBA
+       defineEditText_maxLength <- maybeHas defineEditText_hasMaxLength
+                                     getUI16
+       defineEditText_layout <- maybeHas defineEditText_hasLayout
+                                  (do defineEditText_layoutAlign <- getUI8
+                                      defineEditText_layoutLeftMargin <- getUI16
+                                      defineEditText_layoutRightMargin <- getUI16
+                                      defineEditText_layoutIndent <- getUI16
+                                      defineEditText_layoutLeading <- getSI16
+                                      return
+                                        (defineEditText_layoutAlign,
+                                         defineEditText_layoutLeftMargin,
+                                         defineEditText_layoutRightMargin,
+                                         defineEditText_layoutIndent, defineEditText_layoutLeading))
+       defineEditText_variableName <- getSTRING
+       defineEditText_initialText <- maybeHas defineEditText_hasText
+                                       getSTRING
+       return (DefineEditText{..})
+
+\end{code}
+
+p196: CSMTextSettings
+\begin{code}
+getCSMTextSettings
+  = do cSMTextSettings_textID <- getUI16
+       cSMTextSettings_useFlashType <- getUB 2
+       cSMTextSettings_gridFit <- getUB 3
+       _cSMTextSettings_reserved <- getUB 3
+       cSMTextSettings_thickness <- getFLOAT
+       cSMTextSettings_sharpness <- getFLOAT
+       _cSMTextSettings_reserved <- getUI8
+       return (CSMTextSettings{..})
+
+\end{code}
+
+p198: DefineFont4
+\begin{code}
+getDefineFont4
+  = do defineFont4_fontID <- getUI16
+       _defineFont4_fontFlagsReserved <- getUB 5
+       defineFont4_fontFlagsHasFontData <- getFlag
+       defineFont4_fontFlagsItalic <- getFlag
+       defineFont4_fontFlagsBold <- getFlag
+       defineFont4_fontName <- getSTRING
+       defineFont4_fontData <- getRemainingLazyByteString
+       return (DefineFont4{..})
+
+\end{code}
+
+
+Chapter 11: Sounds
+~~~~~~~~~~~~~~~~~~
 
 \begin{code}
 
