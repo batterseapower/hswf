@@ -7,7 +7,6 @@ import Utilities
 import qualified Data.ByteString.Lazy as BS
 import Data.Char
 import Data.Ratio
-import Data.List
 
 import Foreign.Storable
 import Foreign.C.Types
@@ -512,6 +511,26 @@ data Tag = UnknownTag ByteString
                   defineBitsJPEG4_deblockParam :: UI16,
                   defineBitsJPEG4_imageData :: [UI8],
                   defineBitsJPEG4_bitmapAlphaData :: ByteString}
+         |  DefineMorphShape{defineMorphShape_characterId :: UI16,
+                   defineMorphShape_startBounds :: RECT,
+                   defineMorphShape_endBounds :: RECT,
+                   defineMorphShape_offset :: UI32,
+                   defineMorphShape_morphFillStyles :: MORPHFILLSTYLEARRAY,
+                   defineMorphShape_morphLineStyles :: MORPHLINESTYLEARRAY,
+                   defineMorphShape_startEdges :: SHAPE,
+                   defineMorphShape_endEdges :: SHAPE}
+         |  DefineMorphShape2{defineMorphShape2_characterId :: UI16,
+                    defineMorphShape2_startBounds :: RECT,
+                    defineMorphShape2_endBounds :: RECT,
+                    defineMorphShape2_startEdgeBounds :: RECT,
+                    defineMorphShape2_endEdgeBounds :: RECT,
+                    defineMorphShape2_usesNonScalingStrokes :: Bool,
+                    defineMorphShape2_usesScalingStrokes :: Bool,
+                    defineMorphShape2_offset :: UI32,
+                    defineMorphShape2_morphFillStyles :: MORPHFILLSTYLEARRAY,
+                    defineMorphShape2_morphLineStyles :: MORPHLINESTYLEARRAY,
+                    defineMorphShape2_startEdges :: SHAPE,
+                    defineMorphShape2_endEdges :: SHAPE}
 
 getRECORD = do
     rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
@@ -566,6 +585,8 @@ generatedTagGetters tagType
         20 -> Just getDefineBitsLossless
         36 -> Just getDefineBitsLossless2
         90 -> Just getDefineBitsJPEG4
+        46 -> Just getDefineMorphShape
+        84 -> Just getDefineMorphShape2
         _ -> Nothing
 
 \end{code}
@@ -654,10 +675,10 @@ p38: PlaceObject3
 getPlaceObject3 = do
     [placeFlagHasClipActions, placeFlagHasClipDepth, placeFlagHasName,
      placeFlagHasRatio, placeFlagHasColorTransform, placeFlagHasMatrix,
-     placeFlagHasCharacter, placeObject3_placeFlagMove] <- sequence (replicate 8 getFlag)
+     placeFlagHasCharacter, placeObject3_placeFlagMove] <- replicateM 8 getFlag
     _reserved <- getUB 3
     [placeObject3_placeFlagHasImage, placeObject3_placeFlagHasClassName, placeFlagHasCacheAsBitmap,
-     placeFlagHasBlendMode, placeFlagHasFilterList] <- sequence (replicate 5 getFlag)
+     placeFlagHasBlendMode, placeFlagHasFilterList] <- replicateM 5 getFlag
     placeObject3_depth <- getUI16
     placeObject3_className <- maybeHas (placeObject3_placeFlagHasClassName || (placeObject3_placeFlagHasImage && placeFlagHasCharacter)) getSTRING
     placeObject3_characterId <- maybeHas placeFlagHasCharacter getUI16
@@ -688,7 +709,7 @@ type FILTERLIST = [FILTER]
 
 getFILTERLIST = do
     numberOfFilters <- getUI8
-    sequence $ genericReplicate numberOfFilters getFILTER
+    genericReplicateM numberOfFilters getFILTER
 
 data FILTER = DropShadowFilter DROPSHADOWFILTER
             | BlurFilter BLURFILTER
@@ -719,8 +740,7 @@ p42: Color Matrix filter
 data COLORMATRIXFILTER = COLORMATRIXFILTER{cOLORMATRIXFILTER_matrix
                                            :: [FLOAT]}
 getCOLORMATRIXFILTER
-  = do cOLORMATRIXFILTER_matrix <- sequence
-                                     (genericReplicate 20 getFLOAT)
+  = do cOLORMATRIXFILTER_matrix <- genericReplicateM 20 getFLOAT
        return (COLORMATRIXFILTER{..})
 
 \end{code}
@@ -742,10 +762,9 @@ getCONVOLUTIONFILTER
        cONVOLUTIONFILTER_matrixY <- getUI8
        cONVOLUTIONFILTER_divisor <- getFLOAT
        cONVOLUTIONFILTER_bias <- getFLOAT
-       cONVOLUTIONFILTER_matrix <- sequence
-                                     (genericReplicate
-                                        (cONVOLUTIONFILTER_matrixX * cONVOLUTIONFILTER_matrixY)
-                                        getFLOAT)
+       cONVOLUTIONFILTER_matrix <- genericReplicateM
+                                     (cONVOLUTIONFILTER_matrixX * cONVOLUTIONFILTER_matrixY)
+                                     getFLOAT
        cONVOLUTIONFILTER_defaultColor <- getRGBA
        _cONVOLUTIONFILTER_reserved <- getUB 6
        cONVOLUTIONFILTER_clamp <- getFlag
@@ -864,11 +883,12 @@ data GRADIENTGLOWFILTER = GRADIENTGLOWFILTER{gRADIENTGLOWFILTER_numColors
                                              gRADIENTGLOWFILTER_passes :: UB}
 getGRADIENTGLOWFILTER
   = do gRADIENTGLOWFILTER_numColors <- getUI8
-       gRADIENTGLOWFILTER_gradientColors <- sequence
-                                              (genericReplicate gRADIENTGLOWFILTER_numColors
-                                                 getRGBA)
-       gRADIENTGLOWFILTER_gradientRatio <- sequence
-                                             (genericReplicate gRADIENTGLOWFILTER_numColors getUI8)
+       gRADIENTGLOWFILTER_gradientColors <- genericReplicateM
+                                              gRADIENTGLOWFILTER_numColors
+                                              getRGBA
+       gRADIENTGLOWFILTER_gradientRatio <- genericReplicateM
+                                             gRADIENTGLOWFILTER_numColors
+                                             getUI8
        gRADIENTGLOWFILTER_blurX <- getFIXED
        gRADIENTGLOWFILTER_blurY <- getFIXED
        gRADIENTGLOWFILTER_angle <- getFIXED
@@ -901,12 +921,12 @@ data GRADIENTBEVELFILTER = GRADIENTBEVELFILTER{gRADIENTBEVELFILTER_numColors
                                                gRADIENTBEVELFILTER_passes :: UB}
 getGRADIENTBEVELFILTER
   = do gRADIENTBEVELFILTER_numColors <- getUI8
-       gRADIENTBEVELFILTER_gradientColors <- sequence
-                                               (genericReplicate gRADIENTBEVELFILTER_numColors
-                                                  getRGBA)
-       gRADIENTBEVELFILTER_gradientRatio <- sequence
-                                              (genericReplicate gRADIENTBEVELFILTER_numColors
-                                                 getUI8)
+       gRADIENTBEVELFILTER_gradientColors <- genericReplicateM
+                                               gRADIENTBEVELFILTER_numColors
+                                               getRGBA
+       gRADIENTBEVELFILTER_gradientRatio <- genericReplicateM
+                                              gRADIENTBEVELFILTER_numColors
+                                              getUI8
        gRADIENTBEVELFILTER_blurX <- getFIXED
        gRADIENTBEVELFILTER_blurY <- getFIXED
        gRADIENTBEVELFILTER_angle <- getFIXED
@@ -1099,9 +1119,8 @@ p62: SymbolClass
 \begin{code}
 getSymbolClass
   = do symbolClass_numSymbols <- getUI16
-       symbolClass_tagsNames <- sequence
-                                  (genericReplicate symbolClass_numSymbols
-                                     (liftM2 (,) getUI16 getSTRING))
+       symbolClass_tagsNames <- genericReplicateM symbolClass_numSymbols
+                                  (liftM2 (,) getUI16 getSTRING)
        return (SymbolClass{..})
 
 \end{code}
@@ -1127,15 +1146,13 @@ p66: DefineSceneAndFrameLabelData
 \begin{code}
 getDefineSceneAndFrameLabelData
   = do defineSceneAndFrameLabelData_sceneCount <- getEncodedU32
-       defineSceneAndFrameLabelData_offsetNames <- sequence
-                                                     (genericReplicate
-                                                        defineSceneAndFrameLabelData_sceneCount
-                                                        (liftM2 (,) getEncodedU32 getSTRING))
+       defineSceneAndFrameLabelData_offsetNames <- genericReplicateM
+                                                     defineSceneAndFrameLabelData_sceneCount
+                                                     (liftM2 (,) getEncodedU32 getSTRING)
        defineSceneAndFrameLabelData_frameLabelCount <- getEncodedU32
-       defineSceneAndFrameLabelData_frameNumLabels <- sequence
-                                                        (genericReplicate
-                                                           defineSceneAndFrameLabelData_frameLabelCount
-                                                           (liftM2 (,) getEncodedU32 getSTRING))
+       defineSceneAndFrameLabelData_frameNumLabels <- genericReplicateM
+                                                        defineSceneAndFrameLabelData_frameLabelCount
+                                                        (liftM2 (,) getEncodedU32 getSTRING)
        return (DefineSceneAndFrameLabelData{..})
 
 \end{code}
@@ -1801,8 +1818,9 @@ p96: ActionConstantPool
 \begin{code}
 getActionConstantPool
   = do actionConstantPool_count <- getUI16
-       actionConstantPool_constantPool <- sequence
-                                            (genericReplicate actionConstantPool_count getSTRING)
+       actionConstantPool_constantPool <- genericReplicateM
+                                            actionConstantPool_count
+                                            getSTRING
        return (ActionConstantPool{..})
 
 \end{code}
@@ -1812,8 +1830,9 @@ p97: ActionDefineFunction
 getActionDefineFunction
   = do actionDefineFunction_functionName <- getSTRING
        actionDefineFunction_numParams <- getUI16
-       actionDefineFunction_params <- sequence
-                                        (genericReplicate actionDefineFunction_numParams getSTRING)
+       actionDefineFunction_params <- genericReplicateM
+                                        actionDefineFunction_numParams
+                                        getSTRING
        actionDefineFunction_codeSize <- getUI16
        return (ActionDefineFunction{..})
 
@@ -2071,9 +2090,9 @@ getActionDefineFunction2
        actionDefineFunction2_preloadThisFlag <- getFlag
        _actionDefineFunction2_reserved <- getUB 7
        actionDefineFunction2_preloadGlobalFlag <- getFlag
-       actionDefineFunction2_parameters <- sequence
-                                             (genericReplicate actionDefineFunction2_numParams
-                                                getREGISTERPARAM)
+       actionDefineFunction2_parameters <- genericReplicateM
+                                             actionDefineFunction2_numParams
+                                             getREGISTERPARAM
        actionDefineFunction2_codeSize <- getUI16
        return (ActionDefineFunction2{..})
 
@@ -2122,12 +2141,10 @@ getActionTry
                                 getSTRING
        actionTry_catchRegister <- maybeHas actionTry_catchInRegisterFlag
                                     getUI8
-       actionTry_tryBody <- sequence
-                              (genericReplicate actionTry_trySize getUI8)
-       actionTry_catchBody <- sequence
-                                (genericReplicate actionTry_catchSize getUI8)
-       actionTry_finallyBody <- sequence
-                                  (genericReplicate actionTry_finallySize getUI8)
+       actionTry_tryBody <- genericReplicateM actionTry_trySize getUI8
+       actionTry_catchBody <- genericReplicateM actionTry_catchSize getUI8
+       actionTry_finallyBody <- genericReplicateM actionTry_finallySize
+                                  getUI8
        return (ActionTry{..})
 
 \end{code}
@@ -2155,53 +2172,47 @@ Chapter 6: Shapes
 p127: Fill styles
 \begin{code}
 
-data FILLSTYLEARRAY = FILLSTYLEARRAY { fILLSTYLEARRAY_fillStyleCount :: UI16, fILLSTYLEARRAY_fillStyles :: [FILLSTYLE] }
+type FILLSTYLEARRAY = [FILLSTYLE]
 
 getFILLSTYLEARRAY shapeVer = do
-    fillStyleCount <- getUI8
-    fILLSTYLEARRAY_fillStyleCount <- case fillStyleCount of
-        0xFF -> getUI16
-        _    -> return $ fromIntegral fillStyleCount
-    fILLSTYLEARRAY_fillStyles <- sequence $ genericReplicate fILLSTYLEARRAY_fillStyleCount (getFILLSTYLE shapeVer)
-    return $ FILLSTYLEARRAY {..}
+    count <- getUI8
+    count <- if count == 0xFF then getUI16 else return (fromIntegral count)
+    genericReplicateM count (getFILLSTYLE shapeVer)
+
+data LinearRadial = Linear | Radial
+
+data RepeatingClipped = Repeating | Clipped
 
 data FILLSTYLE = SolidFill { fILLSTYLE_color :: Either RGB RGBA }
-               | LinearGradientFill { fILLSTYLE_gradientMatrix :: MATRIX, fILLSTYLE_gradient :: GRADIENT }
-               | RadialGradientFill { fILLSTYLE_gradientMatrix :: MATRIX, fILLSTYLE_gradient :: GRADIENT }
+               | GradientFill { fILLSTYLE_linearRadial :: LinearRadial, fILLSTYLE_gradientMatrix :: MATRIX, fILLSTYLE_gradient :: GRADIENT }
                | FocalRadialGradientFill { fILLSTYLE_gradientMatrix :: MATRIX, fILLSTYLE_focalGradient :: FOCALGRADIENT }
-               | RepeatingBitmapFill { fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
-               | ClippedBitmapFill { fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
-               | NonSmoothedRepeatingBitmapFill { fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
-               | NonSmoothedClippedBitmapFill { fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
+               | BitmapFill { fILLSTYLE_repeatingClipped :: RepeatingClipped, fILLSTYLE_smoothed :: Bool, fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
 
 getFILLSTYLE shapeVer = do
     fillStyleType <- getUI8
     case fillStyleType of
         0x00 -> fmap SolidFill $ if shapeVer <= 2 then fmap Left getRGB else fmap Right getRGBA
-        0x10 -> liftM2 LinearGradientFill getMATRIX (getGRADIENT shapeVer)
-        0x12 -> liftM2 RadialGradientFill getMATRIX (getGRADIENT shapeVer)
+        0x10 -> liftM2 (GradientFill Linear) getMATRIX (getGRADIENT shapeVer)
+        0x12 -> liftM2 (GradientFill Radial) getMATRIX (getGRADIENT shapeVer)
         0x13 -> liftM2 FocalRadialGradientFill getMATRIX (getFOCALGRADIENT shapeVer)
-        0x40 -> liftM2 RepeatingBitmapFill getUI16 getMATRIX
-        0x41 -> liftM2 ClippedBitmapFill getUI16 getMATRIX
-        0x42 -> liftM2 NonSmoothedRepeatingBitmapFill getUI16 getMATRIX
-        0x43 -> liftM2 NonSmoothedClippedBitmapFill getUI16 getMATRIX
+        0x40 -> liftM2 (BitmapFill Repeating True) getUI16 getMATRIX
+        0x41 -> liftM2 (BitmapFill Clipped   True) getUI16 getMATRIX
+        0x42 -> liftM2 (BitmapFill Repeating False) getUI16 getMATRIX
+        0x43 -> liftM2 (BitmapFill Clipped   False) getUI16 getMATRIX
 
 \end{code}
 
 p130: Line styles
 \begin{code}
 
-data LINESTYLEARRAY = LINESTYLEARRAY { lINESTYLEARRAY_lineStyleCount :: UI16, lINESTYLEARRAY_lineStyles :: Either [LINESTYLE] [LINESTYLE2] }
+type LINESTYLEARRAY = Either [LINESTYLE] [LINESTYLE2]
 
 getLINESTYLEARRAY shapeVer = do
-    lineStyleCount <- getUI8
-    lINESTYLEARRAY_lineStyleCount <- case lineStyleCount of
-        0xFF -> getUI16
-        _    -> return $ fromIntegral lineStyleCount
-    lINESTYLEARRAY_lineStyles <- if shapeVer <= 3
-                                 then fmap Left  $ sequence $ genericReplicate lINESTYLEARRAY_lineStyleCount (getLINESTYLE shapeVer)
-                                 else fmap Right $ sequence $ genericReplicate lINESTYLEARRAY_lineStyleCount getLINESTYLE2
-    return $ LINESTYLEARRAY {..}
+    count <- getUI8
+    count <- if count == 0xFF then getUI16 else return (fromIntegral count)
+    if shapeVer <= 3
+     then fmap Left  $ genericReplicateM count (getLINESTYLE shapeVer)
+     else fmap Right $ genericReplicateM count getLINESTYLE2
 
 
 data LINESTYLE = LINESTYLE { lINESTYLE_width :: UI16, lINESTYLE_color :: Either RGB RGBA }
@@ -2468,9 +2479,8 @@ getGRADIENT gRADIENT_shapeVer
   = do gRADIENT_spreadMode <- getUB 2
        gRADIENT_interpolationMode <- getUB 2
        gRADIENT_numGradients <- getUB 4
-       gRADIENT_gradientRecords <- sequence
-                                     (genericReplicate gRADIENT_numGradients
-                                        (getGRADRECORD gRADIENT_shapeVer))
+       gRADIENT_gradientRecords <- genericReplicateM gRADIENT_numGradients
+                                     (getGRADRECORD gRADIENT_shapeVer)
        return (GRADIENT{..})
 
 \end{code}
@@ -2486,9 +2496,9 @@ getFOCALGRADIENT fOCALGRADIENT_shapeVer
   = do fOCALGRADIENT_spreadMode <- getUB 2
        fOCALGRADIENT_interpolationMode <- getUB 2
        fOCALGRADIENT_numGradients <- getUB 4
-       fOCALGRADIENT_gradientRecords <- sequence
-                                          (genericReplicate fOCALGRADIENT_numGradients
-                                             (getGRADRECORD fOCALGRADIENT_shapeVer))
+       fOCALGRADIENT_gradientRecords <- genericReplicateM
+                                          fOCALGRADIENT_numGradients
+                                          (getGRADRECORD fOCALGRADIENT_shapeVer)
        fOCALGRADIENT_focalPoint <- getFIXED8
        return (FOCALGRADIENT{..})
 
@@ -2541,8 +2551,9 @@ p149: DefineBitsJPEG3
 getDefineBitsJPEG3
   = do defineBitsJPEG3_characterID <- getUI16
        defineBitsJPEG3_alphaDataOffset <- getUI32
-       defineBitsJPEG3_imageData <- sequence
-                                      (genericReplicate defineBitsJPEG3_alphaDataOffset getUI8)
+       defineBitsJPEG3_imageData <- genericReplicateM
+                                      defineBitsJPEG3_alphaDataOffset
+                                      getUI8
        defineBitsJPEG3_bitmapAlphaData <- getRemainingLazyByteString
        return (DefineBitsJPEG3{..})
 
@@ -2584,8 +2595,9 @@ getDefineBitsJPEG4
   = do defineBitsJPEG4_characterID <- getUI16
        defineBitsJPEG4_alphaDataOffset <- getUI32
        defineBitsJPEG4_deblockParam <- getUI16
-       defineBitsJPEG4_imageData <- sequence
-                                      (genericReplicate defineBitsJPEG4_alphaDataOffset getUI8)
+       defineBitsJPEG4_imageData <- genericReplicateM
+                                      defineBitsJPEG4_alphaDataOffset
+                                      getUI8
        defineBitsJPEG4_bitmapAlphaData <- getRemainingLazyByteString
        return (DefineBitsJPEG4{..})
 
@@ -2594,6 +2606,172 @@ getDefineBitsJPEG4
 
 Chapter 9: Shape Morphing
 ~~~~~~~~~~~~~~~~~~~~~~~~~
+
+p159: DefineMorphShape
+\begin{code}
+getDefineMorphShape
+  = do defineMorphShape_characterId <- getUI16
+       defineMorphShape_startBounds <- getRECT
+       defineMorphShape_endBounds <- getRECT
+       defineMorphShape_offset <- getUI32
+       defineMorphShape_morphFillStyles <- getMORPHFILLSTYLEARRAY
+       defineMorphShape_morphLineStyles <- getMORPHLINESTYLEARRAY 1
+       defineMorphShape_startEdges <- getSHAPE 3
+       defineMorphShape_endEdges <- getSHAPE 3
+       return (DefineMorphShape{..})
+
+\end{code}
+
+p161: DefineMorphShape2
+\begin{code}
+getDefineMorphShape2
+  = do defineMorphShape2_characterId <- getUI16
+       defineMorphShape2_startBounds <- getRECT
+       defineMorphShape2_endBounds <- getRECT
+       defineMorphShape2_startEdgeBounds <- getRECT
+       defineMorphShape2_endEdgeBounds <- getRECT
+       _defineMorphShape2_reserved <- getUB 6
+       defineMorphShape2_usesNonScalingStrokes <- getFlag
+       defineMorphShape2_usesScalingStrokes <- getFlag
+       defineMorphShape2_offset <- getUI32
+       defineMorphShape2_morphFillStyles <- getMORPHFILLSTYLEARRAY
+       defineMorphShape2_morphLineStyles <- getMORPHLINESTYLEARRAY 2
+       defineMorphShape2_startEdges <- getSHAPE 3
+       defineMorphShape2_endEdges <- getSHAPE 3
+       return (DefineMorphShape2{..})
+
+\end{code}
+
+p163: Morph fill styles
+\begin{code}
+
+type MORPHFILLSTYLEARRAY = [MORPHFILLSTYLE]
+
+getMORPHFILLSTYLEARRAY = do
+    count <- getUI8
+    count <- if count == 0xFF then getUI16 else return (fromIntegral count)
+    genericReplicateM count getMORPHFILLSTYLE
+
+data MORPHFILLSTYLE = SolidMorphFill { mORPHFILLSTYLE_startColor :: RGBA, mORPHFILLSTYLE_endColor :: RGBA }
+                    | LinearGradientMorphFill { mORPHFILLSTYLE_linearRadial :: LinearRadial, mORPHFILLSTYLE_startGradientMatrix :: MATRIX, mORPHFILLSTYLE_endGradientMatrix :: MATRIX, mORPHFILLSTYLE_gradient :: MORPHGRADIENT }
+                    | BitmapMorphFill { mORPHFILLSTYLE_repeatingClipped :: RepeatingClipped, mORPHFILLSTYLE_smoothed :: Bool, mORPHFILLSTYLE_bitmapId :: UI16, mORPHFILLSTYLE_startBitmapMatrix :: MATRIX, mORPHFILLSTYLE_endBitmapMatrix :: MATRIX }
+
+getMORPHFILLSTYLE = do
+    fillStyleType <- getUI8
+    case fillStyleType of
+      0x00 -> liftM2 SolidMorphFill getRGBA getRGBA
+      0x10 -> liftM3 (LinearGradientMorphFill Linear) getMATRIX getMATRIX getMORPHGRADIENT
+      0x12 -> liftM3 (LinearGradientMorphFill Radial) getMATRIX getMATRIX getMORPHGRADIENT
+      0x40 -> liftM3 (BitmapMorphFill Repeating True) getUI16 getMATRIX getMATRIX
+      0x41 -> liftM3 (BitmapMorphFill Clipped   True) getUI16 getMATRIX getMATRIX
+      0x42 -> liftM3 (BitmapMorphFill Repeating False) getUI16 getMATRIX getMATRIX
+      0x43 -> liftM3 (BitmapMorphFill Clipped   False) getUI16 getMATRIX getMATRIX
+
+\end{code}
+
+p163: Morph gradient values
+\begin{code}
+
+type MORPHGRADIENT = [MORPHGRADRECORD]
+
+getMORPHGRADIENT = do
+    count <- getUI8
+    genericReplicateM count getMORPHGRADRECORD
+
+\end{code}
+
+\begin{code}
+ 
+data MORPHGRADRECORD = MORPHGRADRECORD{mORPHGRADRECORD_startRatio
+                                       :: UI8,
+                                       mORPHGRADRECORD_startColor :: RGBA,
+                                       mORPHGRADRECORD_endRatio :: UI8,
+                                       mORPHGRADRECORD_endColor :: RGBA}
+getMORPHGRADRECORD
+  = do mORPHGRADRECORD_startRatio <- getUI8
+       mORPHGRADRECORD_startColor <- getRGBA
+       mORPHGRADRECORD_endRatio <- getUI8
+       mORPHGRADRECORD_endColor <- getRGBA
+       return (MORPHGRADRECORD{..})
+
+\end{code}
+
+p165: Morph line styles
+\begin{code}
+
+type MORPHLINESTYLEARRAY = Either [MORPHLINESTYLE] [MORPHLINESTYLE2]
+
+getMORPHLINESTYLEARRAY morphVersion = do
+    count <- getUI8
+    count <- if count == 0xFF then getUI16 else return (fromIntegral count)
+    case morphVersion of
+      1 -> fmap Left  $ genericReplicateM count getMORPHLINESTYLE
+      2 -> fmap Right $ genericReplicateM count getMORPHLINESTYLE2
+
+\end{code}
+
+\begin{code}
+ 
+data MORPHLINESTYLE = MORPHLINESTYLE{mORPHLINESTYLE_startWidth ::
+                                     UI16,
+                                     mORPHLINESTYLE_endWidth :: UI16,
+                                     mORPHLINESTYLE_startColor :: RGBA,
+                                     mORPHLINESTYLE_endColor :: RGBA}
+getMORPHLINESTYLE
+  = do mORPHLINESTYLE_startWidth <- getUI16
+       mORPHLINESTYLE_endWidth <- getUI16
+       mORPHLINESTYLE_startColor <- getRGBA
+       mORPHLINESTYLE_endColor <- getRGBA
+       return (MORPHLINESTYLE{..})
+
+\end{code}
+
+\begin{code}
+ 
+data MORPHLINESTYLE2 = MORPHLINESTYLE2{mORPHLINESTYLE2_startWidth
+                                       :: UI16,
+                                       mORPHLINESTYLE2_endWidth :: UI16,
+                                       mORPHLINESTYLE2_startCapStyle :: UB,
+                                       mORPHLINESTYLE2_joinStyle :: UB,
+                                       mORPHLINESTYLE2_noHScaleFlag :: Bool,
+                                       mORPHLINESTYLE2_noVScaleFlag :: Bool,
+                                       mORPHLINESTYLE2_pixelHintingFlag :: Bool,
+                                       mORPHLINESTYLE2_noClose :: Bool,
+                                       mORPHLINESTYLE2_endCapStyle :: UB,
+                                       mORPHLINESTYLE2_miterLimitFactor :: Maybe UI16,
+                                       mORPHLINESTYLE2_startColor :: Maybe RGBA,
+                                       mORPHLINESTYLE2_endColor :: Maybe RGBA,
+                                       mORPHLINESTYLE2_fillType :: Maybe MORPHFILLSTYLE}
+getMORPHLINESTYLE2
+  = do mORPHLINESTYLE2_startWidth <- getUI16
+       mORPHLINESTYLE2_endWidth <- getUI16
+       mORPHLINESTYLE2_startCapStyle <- getUB 2
+       mORPHLINESTYLE2_joinStyle <- getUB 2
+       mORPHLINESTYLE2_hasFillFlag <- getFlag
+       mORPHLINESTYLE2_noHScaleFlag <- getFlag
+       mORPHLINESTYLE2_noVScaleFlag <- getFlag
+       mORPHLINESTYLE2_pixelHintingFlag <- getFlag
+       _mORPHLINESTYLE2_reserved <- getUB 5
+       mORPHLINESTYLE2_noClose <- getFlag
+       mORPHLINESTYLE2_endCapStyle <- getUB 2
+       mORPHLINESTYLE2_miterLimitFactor <- maybeHas
+                                             (mORPHLINESTYLE2_joinStyle == 2)
+                                             getUI16
+       mORPHLINESTYLE2_startColor <- maybeHas
+                                       (not mORPHLINESTYLE2_hasFillFlag)
+                                       getRGBA
+       mORPHLINESTYLE2_endColor <- maybeHas
+                                     (not mORPHLINESTYLE2_hasFillFlag)
+                                     getRGBA
+       mORPHLINESTYLE2_fillType <- maybeHas mORPHLINESTYLE2_hasFillFlag
+                                     getMORPHFILLSTYLE
+       return (MORPHLINESTYLE2{..})
+
+\end{code}
+
+
+Chapter 10: Fonts and Text
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 \begin{code}
 

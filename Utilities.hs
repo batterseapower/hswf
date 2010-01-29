@@ -2,12 +2,14 @@ module Utilities (
     module Utilities,
     
     module Control.Monad,
-    module Data.Maybe
+    module Data.Maybe,
+    module Data.List
   ) where
 
 import Control.Monad
 
 import Data.Maybe
+import Data.List
 
 
 orElse = flip fromMaybe
@@ -37,4 +39,7 @@ maybeHas :: Monad m => Bool -> m b -> m (Maybe b)
 maybeHas flag act
   | flag      = liftM Just act
   | otherwise = return Nothing
+
+genericReplicateM :: (Integral a, Monad m) => a -> m b -> m [b]
+genericReplicateM n act = sequence $ genericReplicate n act
 

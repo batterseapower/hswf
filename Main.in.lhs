@@ -7,7 +7,6 @@ import Utilities
 import qualified Data.ByteString.Lazy as BS
 import Data.Char
 import Data.Ratio
-import Data.List
 
 import Foreign.Storable
 import Foreign.C.Types
@@ -449,10 +448,10 @@ p38: PlaceObject3
 getPlaceObject3 = do
     [placeFlagHasClipActions, placeFlagHasClipDepth, placeFlagHasName,
      placeFlagHasRatio, placeFlagHasColorTransform, placeFlagHasMatrix,
-     placeFlagHasCharacter, placeObject3_placeFlagMove] <- sequence (replicate 8 getFlag)
+     placeFlagHasCharacter, placeObject3_placeFlagMove] <- replicateM 8 getFlag
     _reserved <- getUB 3
     [placeObject3_placeFlagHasImage, placeObject3_placeFlagHasClassName, placeFlagHasCacheAsBitmap,
-     placeFlagHasBlendMode, placeFlagHasFilterList] <- sequence (replicate 5 getFlag)
+     placeFlagHasBlendMode, placeFlagHasFilterList] <- replicateM 5 getFlag
     placeObject3_depth <- getUI16
     placeObject3_className <- maybeHas (placeObject3_placeFlagHasClassName || (placeObject3_placeFlagHasImage && placeFlagHasCharacter)) getSTRING
     placeObject3_characterId <- maybeHas placeFlagHasCharacter getUI16
@@ -483,7 +482,7 @@ type FILTERLIST = [FILTER]
 
 getFILTERLIST = do
     numberOfFilters <- getUI8
-    sequence $ genericReplicate numberOfFilters getFILTER
+    genericReplicateM numberOfFilters getFILTER
 
 data FILTER = DropShadowFilter DROPSHADOWFILTER
             | BlurFilter BLURFILTER
@@ -1698,53 +1697,47 @@ Chapter 6: Shapes
 p127: Fill styles
 \begin{code}
 
-data FILLSTYLEARRAY = FILLSTYLEARRAY { fILLSTYLEARRAY_fillStyleCount :: UI16, fILLSTYLEARRAY_fillStyles :: [FILLSTYLE] }
+type FILLSTYLEARRAY = [FILLSTYLE]
 
 getFILLSTYLEARRAY shapeVer = do
-    fillStyleCount <- getUI8
-    fILLSTYLEARRAY_fillStyleCount <- case fillStyleCount of
-        0xFF -> getUI16
-        _    -> return $ fromIntegral fillStyleCount
-    fILLSTYLEARRAY_fillStyles <- sequence $ genericReplicate fILLSTYLEARRAY_fillStyleCount (getFILLSTYLE shapeVer)
-    return $ FILLSTYLEARRAY {..}
+    count <- getUI8
+    count <- if count == 0xFF then getUI16 else return (fromIntegral count)
+    genericReplicateM count (getFILLSTYLE shapeVer)
+
+data LinearRadial = Linear | Radial
+
+data RepeatingClipped = Repeating | Clipped
 
 data FILLSTYLE = SolidFill { fILLSTYLE_color :: Either RGB RGBA }
-               | LinearGradientFill { fILLSTYLE_gradientMatrix :: MATRIX, fILLSTYLE_gradient :: GRADIENT }
-               | RadialGradientFill { fILLSTYLE_gradientMatrix :: MATRIX, fILLSTYLE_gradient :: GRADIENT }
+               | GradientFill { fILLSTYLE_linearRadial :: LinearRadial, fILLSTYLE_gradientMatrix :: MATRIX, fILLSTYLE_gradient :: GRADIENT }
                | FocalRadialGradientFill { fILLSTYLE_gradientMatrix :: MATRIX, fILLSTYLE_focalGradient :: FOCALGRADIENT }
-               | RepeatingBitmapFill { fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
-               | ClippedBitmapFill { fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
-               | NonSmoothedRepeatingBitmapFill { fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
-               | NonSmoothedClippedBitmapFill { fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
+               | BitmapFill { fILLSTYLE_repeatingClipped :: RepeatingClipped, fILLSTYLE_smoothed :: Bool, fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
 
 getFILLSTYLE shapeVer = do
     fillStyleType <- getUI8
     case fillStyleType of
         0x00 -> fmap SolidFill $ if shapeVer <= 2 then fmap Left getRGB else fmap Right getRGBA
-        0x10 -> liftM2 LinearGradientFill getMATRIX (getGRADIENT shapeVer)
-        0x12 -> liftM2 RadialGradientFill getMATRIX (getGRADIENT shapeVer)
+        0x10 -> liftM2 (GradientFill Linear) getMATRIX (getGRADIENT shapeVer)
+        0x12 -> liftM2 (GradientFill Radial) getMATRIX (getGRADIENT shapeVer)
         0x13 -> liftM2 FocalRadialGradientFill getMATRIX (getFOCALGRADIENT shapeVer)
-        0x40 -> liftM2 RepeatingBitmapFill getUI16 getMATRIX
-        0x41 -> liftM2 ClippedBitmapFill getUI16 getMATRIX
-        0x42 -> liftM2 NonSmoothedRepeatingBitmapFill getUI16 getMATRIX
-        0x43 -> liftM2 NonSmoothedClippedBitmapFill getUI16 getMATRIX
+        0x40 -> liftM2 (BitmapFill Repeating True) getUI16 getMATRIX
+        0x41 -> liftM2 (BitmapFill Clipped   True) getUI16 getMATRIX
+        0x42 -> liftM2 (BitmapFill Repeating False) getUI16 getMATRIX
+        0x43 -> liftM2 (BitmapFill Clipped   False) getUI16 getMATRIX
 
 \end{code}
 
 p130: Line styles
 \begin{code}
 
-data LINESTYLEARRAY = LINESTYLEARRAY { lINESTYLEARRAY_lineStyleCount :: UI16, lINESTYLEARRAY_lineStyles :: Either [LINESTYLE] [LINESTYLE2] }
+type LINESTYLEARRAY = Either [LINESTYLE] [LINESTYLE2]
 
 getLINESTYLEARRAY shapeVer = do
-    lineStyleCount <- getUI8
-    lINESTYLEARRAY_lineStyleCount <- case lineStyleCount of
-        0xFF -> getUI16
-        _    -> return $ fromIntegral lineStyleCount
-    lINESTYLEARRAY_lineStyles <- if shapeVer <= 3
-                                 then fmap Left  $ sequence $ genericReplicate lINESTYLEARRAY_lineStyleCount (getLINESTYLE shapeVer)
-                                 else fmap Right $ sequence $ genericReplicate lINESTYLEARRAY_lineStyleCount getLINESTYLE2
-    return $ LINESTYLEARRAY {..}
+    count <- getUI8
+    count <- if count == 0xFF then getUI16 else return (fromIntegral count)
+    if shapeVer <= 3
+     then fmap Left  $ genericReplicateM count (getLINESTYLE shapeVer)
+     else fmap Right $ genericReplicateM count getLINESTYLE2
 
 
 data LINESTYLE = LINESTYLE { lINESTYLE_width :: UI16, lINESTYLE_color :: Either RGB RGBA }
@@ -2040,6 +2033,135 @@ BitmapAlphaData BYTE[]               ZLIB compressed array of alpha data. Only s
 
 Chapter 9: Shape Morphing
 ~~~~~~~~~~~~~~~~~~~~~~~~~
+
+p159: DefineMorphShape
+\begin{record}
+DefineMorphShape
+Field           Type                   Comment
+Header          RECORDHEADER           Tag type = 46
+CharacterId     UI16                   ID for this character
+StartBounds     RECT                   Bounds of the start shape
+EndBounds       RECT                   Bounds of the end shape
+Offset          UI32                   Indicates offset to EndEdges
+MorphFillStyles MORPHFILLSTYLEARRAY    Fill style information is stored in the same manner as for a standard shape; however, each fill consists of interleaved information based on a single style type to accommodate morphing.
+MorphLineStyles MORPHLINESTYLEARRAY(1) Line style information is stored in the same manner as for a standard shape; however, each line consists of interleaved information based on a single style type to accommodate morphing.
+StartEdges      SHAPE(3)               Contains the set of edges and the style bits that indicate style changes (for example, MoveTo, FillStyle, and LineStyle). Number of edges must equal the number of edges in EndEdges.
+EndEdges        SHAPE(3)               Contains only the set of edges, with no style information. Number of edges must equal the number of edges in StartEdges.
+\end{record}
+
+p161: DefineMorphShape2
+\begin{record}
+DefineMorphShape2
+Field                 Type                   Comment
+Header                RECORDHEADER           Tag type = 84
+CharacterId           UI16                   ID for this character
+StartBounds           RECT                   Bounds of the start shape
+EndBounds             RECT                   Bounds of the end shape
+StartEdgeBounds       RECT                   Bounds of the start shape, excluding strokes
+EndEdgeBounds         RECT                   Bounds of the end shape, excluding strokes
+Reserved              UB[6]                  Must be 0
+UsesNonScalingStrokes UB[1]                  If 1, the shape contains at least one non-scaling stroke.
+UsesScalingStrokes    UB[1]                  If 1, the shape contains at least one scaling stroke.
+Offset                UI32                   Indicates offset to EndEdges
+MorphFillStyles       MORPHFILLSTYLEARRAY    Fill style information is stored in the same manner as for a standard shape; however, each fill consists of interleaved information based on a single style type to accommodate morphing.
+MorphLineStyles       MORPHLINESTYLEARRAY(2) Line style information is stored in the same manner as for a standard shape; however, each line consists of interleaved information based on a single style type to accommodate morphing.
+StartEdges            SHAPE(3)               Contains the set of edges and the style bits that indicate style changes (for example, MoveTo, FillStyle, and LineStyle). Number of edges must equal the number of edges in EndEdges.
+EndEdges              SHAPE(3)               Contains only the set of edges, with no style information. Number of edges must equal the number of edges in StartEdges.
+\end{record}
+
+p163: Morph fill styles
+\begin{code}
+
+type MORPHFILLSTYLEARRAY = [MORPHFILLSTYLE]
+
+getMORPHFILLSTYLEARRAY = do
+    count <- getUI8
+    count <- if count == 0xFF then getUI16 else return (fromIntegral count)
+    genericReplicateM count getMORPHFILLSTYLE
+
+data MORPHFILLSTYLE = SolidMorphFill { mORPHFILLSTYLE_startColor :: RGBA, mORPHFILLSTYLE_endColor :: RGBA }
+                    | LinearGradientMorphFill { mORPHFILLSTYLE_linearRadial :: LinearRadial, mORPHFILLSTYLE_startGradientMatrix :: MATRIX, mORPHFILLSTYLE_endGradientMatrix :: MATRIX, mORPHFILLSTYLE_gradient :: MORPHGRADIENT }
+                    | BitmapMorphFill { mORPHFILLSTYLE_repeatingClipped :: RepeatingClipped, mORPHFILLSTYLE_smoothed :: Bool, mORPHFILLSTYLE_bitmapId :: UI16, mORPHFILLSTYLE_startBitmapMatrix :: MATRIX, mORPHFILLSTYLE_endBitmapMatrix :: MATRIX }
+
+getMORPHFILLSTYLE = do
+    fillStyleType <- getUI8
+    case fillStyleType of
+      0x00 -> liftM2 SolidMorphFill getRGBA getRGBA
+      0x10 -> liftM3 (LinearGradientMorphFill Linear) getMATRIX getMATRIX getMORPHGRADIENT
+      0x12 -> liftM3 (LinearGradientMorphFill Radial) getMATRIX getMATRIX getMORPHGRADIENT
+      0x40 -> liftM3 (BitmapMorphFill Repeating True) getUI16 getMATRIX getMATRIX
+      0x41 -> liftM3 (BitmapMorphFill Clipped   True) getUI16 getMATRIX getMATRIX
+      0x42 -> liftM3 (BitmapMorphFill Repeating False) getUI16 getMATRIX getMATRIX
+      0x43 -> liftM3 (BitmapMorphFill Clipped   False) getUI16 getMATRIX getMATRIX
+
+\end{code}
+
+p163: Morph gradient values
+\begin{code}
+
+type MORPHGRADIENT = [MORPHGRADRECORD]
+
+getMORPHGRADIENT = do
+    count <- getUI8
+    genericReplicateM count getMORPHGRADRECORD
+
+\end{code}
+
+\begin{record}
+MORPHGRADRECORD
+Field      Type Comment
+StartRatio UI8  Ratio value for start shape.
+StartColor RGBA Color of gradient for start shape.
+EndRatio   UI8  Ratio value for end shape.
+EndColor   RGBA Color of gradient for end shape
+\end{record}
+
+p165: Morph line styles
+\begin{code}
+
+type MORPHLINESTYLEARRAY = Either [MORPHLINESTYLE] [MORPHLINESTYLE2]
+
+getMORPHLINESTYLEARRAY morphVersion = do
+    count <- getUI8
+    count <- if count == 0xFF then getUI16 else return (fromIntegral count)
+    case morphVersion of
+      1 -> fmap Left  $ genericReplicateM count getMORPHLINESTYLE
+      2 -> fmap Right $ genericReplicateM count getMORPHLINESTYLE2
+
+\end{code}
+
+\begin{record}
+MORPHLINESTYLE
+Field      Type Comment
+StartWidth UI16 Width of line in start shape in twips.
+EndWidth   UI16 Width of line in end shape in twips.
+StartColor RGBA Color value including alpha channel information for start shape.
+EndColor   RGBA Color value including alpha channel information for end shape.
+\end{record}
+
+\begin{record}
+MORPHLINESTYLE2
+Field            Type                               Comment
+StartWidth       UI16                               Width of line in start shape in twips.
+EndWidth         UI16                               Width of line in end shape in twips.
+StartCapStyle    UB[2]                              Start-cap style: 0 = Round cap 1 = No cap 2 = Square cap
+JoinStyle        UB[2]                              Join style: 0 = Round join 1 = Bevel join 2 = Miter join
+HasFillFlag      UB[1]                              If 1, fill is defined in FillType. If 0, uses StartColor and EndColor fields.
+NoHScaleFlag     UB[1]                              If 1, stroke thickness will not scale if the object is scaled horizontally.
+NoVScaleFlag     UB[1]                              If 1, stroke thickness will not scale if the object is scaled vertically.
+PixelHintingFlag UB[1]                              If 1, all anchors will be aligned to full pixels.
+Reserved         UB[5]                              Must be 0.
+NoClose          UB[1]                              If 1, stroke will not be closed if the stroke’s last point matches its first point. Flash Player will apply caps instead of a join.
+EndCapStyle      UB[2]                              End-cap style: 0 = Round cap 1 = No cap 2 = Square cap
+MiterLimitFactor If JoinStyle = 2, UI16             Miter limit factor as an 8.8 fixed-point value.
+StartColor       If HasFillFlag = 0, RGBA           Color value including alpha channel information for start shape.
+EndColor         If HasFillFlag = 0, RGBA           Color value including alpha channel information for end shape.
+FillType         If HasFillFlag = 1, MORPHFILLSTYLE Fill style.
+\end{record}
+
+
+Chapter 10: Fonts and Text
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 \begin{code}
 
