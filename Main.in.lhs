@@ -2460,6 +2460,111 @@ FontData             BYTE[]       When present, this is an OpenType CFF font, as
 Chapter 11: Sounds
 ~~~~~~~~~~~~~~~~~~
 
+p202: DefineSound
+\begin{record}
+DefineSound                                                                                                               Sound
+Field            Type         Comment
+Header           RECORDHEADER Tag type = 14
+SoundId          UI16         ID for this sound.
+SoundFormat      UB[4]        Format of SoundData. See “Audio coding formats” on page 201.                                                                             
+SoundRate        UB[2]        The sampling rate. This is ignored for Nellymoser and Speex codecs. 5.5kHz is not allowed for MP3. 0 = 5.5 kHz 1 = 11 kHz 2 = 22 kHz 3 = 44 kHz
+SoundSize        UB[1]        Size of each sample. This parameter only pertains to uncompressed formats. This is ignored for compressed formats which always decode to 16 bits internally. 0 = snd8Bit 1 = snd16Bit
+SoundType        UB[1]        Mono or stereo sound. This is ignored for Nellymoser and Speex. 0 = sndMono 1 = sndStereo
+SoundSampleCount UI32         Number of samples. Not affected by mono/stereo setting; for stereo sounds this is the number of sample pairs.
+SoundData        BYTE[]       The sound data; varies by format.
+\end{record}
+
+p204: StartSound
+\begin{record}
+StartSound
+Field     Type         Comment
+Header    RECORDHEADER Tag type = 15
+SoundId   UI16         ID of sound character to play.
+SoundInfo SOUNDINFO    Sound style information.
+\end{record}
+
+p205: StartSound2
+\begin{record}
+StartSound2
+Field          Type         Comment
+Header         RECORDHEADER Tag type = 89
+SoundClassName STRING       Name of the sound class to play.
+SoundInfo      SOUNDINFO    Sound style information.
+\end{record}
+
+p205: SOUNDINFO
+\begin{record}
+SOUNDINFO
+Field           Type                                     Comment
+Reserved        UB[2]                                    Always 0.
+SyncStop        UB[1]                                    Stop the sound now.
+SyncNoMultiple  UB[1]                                    Don’t start the sound if already playing.
+HasEnvelope     UB[1]                                    Has envelope information.
+HasLoops        UB[1]                                    Has loop information.
+HasOutPoint     UB[1]                                    Has out-point information.
+HasInPoint      UB[1]                                    Has in-point information.
+InPoint         If HasInPoint, UI32                      Number of samples to skip at beginning of sound.
+OutPoint        If HasOutPoint, UI32                     Position in samples of last sample to play.
+LoopCount       If HasLoops, UI16                        Sound loop count.
+EnvPoints       If HasEnvelope, UI8                      Sound Envelope point count.
+EnvelopeRecords If HasEnvelope, SOUNDENVELOPE[EnvPoints] Sound
+\end{record}
+
+p206: SOUNDENVELOPE
+\begin{record}
+SOUNDENVELOPE
+Field      Type Comment
+Pos44      UI32 Position of envelope point as a number of 44 kHz samples. Multiply accordingly if using a sampling rate less than 44 kHz.
+LeftLevel  UI16 Volume level for left channel. Minimum is 0, maximum is 32768.
+RightLevel UI16 Volume level for right channel. Minimum is 0, maximum is 32768.
+\end{record}
+
+p207: SoundStreamHead
+\begin{record}
+SoundStreamHead
+Field                  Type                                Comment
+Header                 RECORDHEADER                        Tag type = 18
+Reserved               UB[4]                               Always zero.
+PlaybackSoundRate      UB[2]                               Playback sampling rate 0 = 5.5 kHz 1 = 11 kHz 2 = 22 kHz 3 = 44 kHz
+PlaybackSoundSize      UB[1]                               Playback sample size. Always 1 (16 bit).
+PlaybackSoundType      UB[1]                               Number of playback channels: mono or stereo. 0 = sndMono 1 = sndStereo
+StreamSoundCompression UB[4]                               Format of streaming sound data. 1 = ADPCM SWF 4 and later only: 2 = MP3                       
+StreamSoundRate        UB[2]                               The sampling rate of the streaming sound data. 0 = 5.5 kHz 1 = 11 kHz 2 = 22 kHz 3 = 44 kHz
+StreamSoundSize        UB[1]                               The sample size of the streaming sound data. Always 1 (16 bit).
+StreamSoundType        UB[1]                               Number of channels in the streaming sound data. 0 = sndMono 1 = sndStereo
+StreamSoundSampleCount UI16                                Average number of samples in each SoundStreamBlock. Not affected by mono/stereo setting; for stereo sounds this is the number of sample pairs.
+LatencySeek            If StreamSoundCompression = 2, SI16 See “MP3 sound data” on page 216. The value here should match the SeekSamples field in the first SoundStreamBlock for this stream.
+\end{record}
+
+p209: SoundStreamHead2
+\begin{record}
+SoundStreamHead2
+Field                  Type                                 Comment
+Header                 RECORDHEADER                         Tag type = 45
+Reserved               UB[4]                                Always zero.
+PlaybackSoundRate      UB[2]                                Playback sampling rate. 0 = 5.5 kHz 1 = 11 kHz 2 = 22 kHz 3 = 44 kHz
+PlaybackSoundSize      UB[1]                                Playback sample size. 0 = 8-bit 1 = 16-bit                                     
+PlaybackSoundType      UB[1]                                Number of playback channels. 0 = sndMono 1 = sndStereo
+StreamSoundCompression UB[4]                                Format of SoundData. See “Audio coding formats” on page 201.                                                         
+StreamSoundRate        UB[2]                                The sampling rate of the streaming sound data. 5.5 kHz is not allowed for MP3. 0 = 5.5 kHz 1 = 11 kHz 2 = 22 kHz 3 = 44 kHz
+StreamSoundSize        UB[1]                                Size of each sample. Always 16 bit for compressed formats. May be 8 or 16 bit for uncompressed formats. 0 = 8-bit 1 = 16-bit                        
+StreamSoundType        UB[1]                                Number of channels in the streaming sound data. 0 = sndMono 1 = sndStereo
+StreamSoundSampleCount UI16                                 Average number of samples in each SoundStreamBlock. Not affected by mono/stereo setting; for stereo sounds this is the number of sample pairs.
+LatencySeek            If StreamSoundCompression = 2, SI16  See MP3 sound data. The value here should match the SeekSamples field in the first SoundStreamBlock for this stream.
+\end{record}
+
+p210: SoundStreamBlock
+\begin{record}
+SoundStreamBlock
+Field           Type         Comment
+Header          RECORDHEADER Tag type = 19
+StreamSoundData BYTE[]       Compressed sound data
+\end{record}
+
+
+Chapter 12: Buttons
+~~~~~~~~~~~~~~~~~~~
+
 \begin{code}
 
 \end{code}

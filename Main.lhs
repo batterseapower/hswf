@@ -607,6 +607,34 @@ data Tag = UnknownTag ByteString
               defineFont4_fontFlagsItalic :: Bool,
               defineFont4_fontFlagsBold :: Bool, defineFont4_fontName :: STRING,
               defineFont4_fontData :: ByteString}
+         |  DefineSound{defineSound_soundId :: UI16,
+              defineSound_soundFormat :: UB, defineSound_soundRate :: UB,
+              defineSound_soundSize :: Bool, defineSound_soundType :: Bool,
+              defineSound_soundSampleCount :: UI32,
+              defineSound_soundData :: ByteString}
+         |  StartSound{startSound_soundId :: UI16,
+             startSound_soundInfo :: SOUNDINFO}
+         |  StartSound2{startSound2_soundClassName :: STRING,
+              startSound2_soundInfo :: SOUNDINFO}
+         |  SoundStreamHead{soundStreamHead_playbackSoundRate :: UB,
+                  soundStreamHead_playbackSoundSize :: Bool,
+                  soundStreamHead_playbackSoundType :: Bool,
+                  soundStreamHead_streamSoundCompression :: UB,
+                  soundStreamHead_streamSoundRate :: UB,
+                  soundStreamHead_streamSoundSize :: Bool,
+                  soundStreamHead_streamSoundType :: Bool,
+                  soundStreamHead_streamSoundSampleCount :: UI16,
+                  soundStreamHead_latencySeek :: Maybe SI16}
+         |  SoundStreamHead2{soundStreamHead2_playbackSoundRate :: UB,
+                   soundStreamHead2_playbackSoundSize :: Bool,
+                   soundStreamHead2_playbackSoundType :: Bool,
+                   soundStreamHead2_streamSoundCompression :: UB,
+                   soundStreamHead2_streamSoundRate :: UB,
+                   soundStreamHead2_streamSoundSize :: Bool,
+                   soundStreamHead2_streamSoundType :: Bool,
+                   soundStreamHead2_streamSoundSampleCount :: UI16,
+                   soundStreamHead2_latencySeek :: Maybe SI16}
+         |  SoundStreamBlock{soundStreamBlock_streamSoundData :: ByteString}
 
 getRECORD = do
     rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
@@ -675,6 +703,12 @@ generatedTagGetters tagType
         37 -> Just getDefineEditText
         74 -> Just getCSMTextSettings
         91 -> Just getDefineFont4
+        14 -> Just getDefineSound
+        15 -> Just getStartSound
+        89 -> Just getStartSound2
+        18 -> Just getSoundStreamHead
+        45 -> Just getSoundStreamHead2
+        19 -> Just getSoundStreamBlock
         _ -> Nothing
 
 \end{code}
@@ -3252,6 +3286,130 @@ getDefineFont4
 
 Chapter 11: Sounds
 ~~~~~~~~~~~~~~~~~~
+
+p202: DefineSound
+\begin{code}
+getDefineSound
+  = do defineSound_soundId <- getUI16
+       defineSound_soundFormat <- getUB 4
+       defineSound_soundRate <- getUB 2
+       defineSound_soundSize <- getFlag
+       defineSound_soundType <- getFlag
+       defineSound_soundSampleCount <- getUI32
+       defineSound_soundData <- getRemainingLazyByteString
+       return (DefineSound{..})
+
+\end{code}
+
+p204: StartSound
+\begin{code}
+getStartSound
+  = do startSound_soundId <- getUI16
+       startSound_soundInfo <- getSOUNDINFO
+       return (StartSound{..})
+
+\end{code}
+
+p205: StartSound2
+\begin{code}
+getStartSound2
+  = do startSound2_soundClassName <- getSTRING
+       startSound2_soundInfo <- getSOUNDINFO
+       return (StartSound2{..})
+
+\end{code}
+
+p205: SOUNDINFO
+\begin{code}
+ 
+data SOUNDINFO = SOUNDINFO{sOUNDINFO_syncStop :: Bool,
+                           sOUNDINFO_syncNoMultiple :: Bool, sOUNDINFO_inPoint :: Maybe UI32,
+                           sOUNDINFO_outPoint :: Maybe UI32,
+                           sOUNDINFO_loopCount :: Maybe UI16,
+                           sOUNDINFO_env :: Maybe (UI8, [SOUNDENVELOPE])}
+getSOUNDINFO
+  = do _sOUNDINFO_reserved <- getUB 2
+       sOUNDINFO_syncStop <- getFlag
+       sOUNDINFO_syncNoMultiple <- getFlag
+       sOUNDINFO_hasEnvelope <- getFlag
+       sOUNDINFO_hasLoops <- getFlag
+       sOUNDINFO_hasOutPoint <- getFlag
+       sOUNDINFO_hasInPoint <- getFlag
+       sOUNDINFO_inPoint <- maybeHas sOUNDINFO_hasInPoint getUI32
+       sOUNDINFO_outPoint <- maybeHas sOUNDINFO_hasOutPoint getUI32
+       sOUNDINFO_loopCount <- maybeHas sOUNDINFO_hasLoops getUI16
+       sOUNDINFO_env <- maybeHas sOUNDINFO_hasEnvelope
+                          (do sOUNDINFO_envPoints <- getUI8
+                              sOUNDINFO_envelopeRecords <- genericReplicateM sOUNDINFO_envPoints
+                                                             getSOUNDENVELOPE
+                              return (sOUNDINFO_envPoints, sOUNDINFO_envelopeRecords))
+       return (SOUNDINFO{..})
+
+\end{code}
+
+p206: SOUNDENVELOPE
+\begin{code}
+ 
+data SOUNDENVELOPE = SOUNDENVELOPE{sOUNDENVELOPE_pos44 :: UI32,
+                                   sOUNDENVELOPE_leftLevel :: UI16,
+                                   sOUNDENVELOPE_rightLevel :: UI16}
+getSOUNDENVELOPE
+  = do sOUNDENVELOPE_pos44 <- getUI32
+       sOUNDENVELOPE_leftLevel <- getUI16
+       sOUNDENVELOPE_rightLevel <- getUI16
+       return (SOUNDENVELOPE{..})
+
+\end{code}
+
+p207: SoundStreamHead
+\begin{code}
+getSoundStreamHead
+  = do _soundStreamHead_reserved <- getUB 4
+       soundStreamHead_playbackSoundRate <- getUB 2
+       soundStreamHead_playbackSoundSize <- getFlag
+       soundStreamHead_playbackSoundType <- getFlag
+       soundStreamHead_streamSoundCompression <- getUB 4
+       soundStreamHead_streamSoundRate <- getUB 2
+       soundStreamHead_streamSoundSize <- getFlag
+       soundStreamHead_streamSoundType <- getFlag
+       soundStreamHead_streamSoundSampleCount <- getUI16
+       soundStreamHead_latencySeek <- maybeHas
+                                        (soundStreamHead_streamSoundCompression == 2)
+                                        getSI16
+       return (SoundStreamHead{..})
+
+\end{code}
+
+p209: SoundStreamHead2
+\begin{code}
+getSoundStreamHead2
+  = do _soundStreamHead2_reserved <- getUB 4
+       soundStreamHead2_playbackSoundRate <- getUB 2
+       soundStreamHead2_playbackSoundSize <- getFlag
+       soundStreamHead2_playbackSoundType <- getFlag
+       soundStreamHead2_streamSoundCompression <- getUB 4
+       soundStreamHead2_streamSoundRate <- getUB 2
+       soundStreamHead2_streamSoundSize <- getFlag
+       soundStreamHead2_streamSoundType <- getFlag
+       soundStreamHead2_streamSoundSampleCount <- getUI16
+       soundStreamHead2_latencySeek <- maybeHas
+                                         (soundStreamHead2_streamSoundCompression == 2)
+                                         getSI16
+       return (SoundStreamHead2{..})
+
+\end{code}
+
+p210: SoundStreamBlock
+\begin{code}
+getSoundStreamBlock
+  = do soundStreamBlock_streamSoundData <- getRemainingLazyByteString
+       return (SoundStreamBlock{..})
+
+\end{code}
+
+
+Chapter 12: Buttons
+~~~~~~~~~~~~~~~~~~~
 
 \begin{code}
 
