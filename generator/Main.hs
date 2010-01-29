@@ -112,16 +112,18 @@ parseRecordLines (name:headers:ls) = Record name fields
   where
     header_words = map length $ split (keepDelimsR $ condense $ oneOf " ") headers
     [name_offset, type_offset, _end_offset] = case header_words of [a, b, c] -> [a, b, c]; _ -> error ("parseRecordLines headers:\n" ++ show header_words)
-    fields = [Field { field_name = strip name, field_type = parseType (strip typ_str), field_comment = comment, field_excluded = Nothing }
+    
+    fields = [Field { field_name = strip name, field_type = typ, field_comment = comment, field_excluded = Nothing }
              | l <- ls
              , let (name, l')         = splitAt name_offset l
                    (typ_str, comment) = splitAt type_offset l'
+                   typ = case parseType (strip typ_str) of Left errs -> error (unlines [name, typ_str, show errs]); Right typ -> typ
              ]
     
     strip = reverse . dropWhile isSpace . reverse . dropWhile isSpace
 
-parseType :: String -> Type
-parseType s = case parse typ "<memory>" s of Left errs -> error (unlines [s, show errs]); Right ty -> ty
+parseType :: String -> Either ParseError Type
+parseType s = parse typ "<memory>" s
   where
     typ = do
         optional <- optionality
@@ -134,7 +136,7 @@ parseType s = case parse typ "<memory>" s of Left errs -> error (unlines [s, sho
               <|> return False
               <?> "optionality clause"
     
-    condition = do { string "If"; spaces; e <- expr; char ','; spaces; return e }
+    condition = do { string "If"; spaces; e <- expr; optional (char ','); spaces; return e }
             <?> "condition"
     
     tycon = many1 alphaNum

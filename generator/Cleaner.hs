@@ -56,21 +56,27 @@ fixupIndentation (name:ls) = name : [pad fieldname typindent ++ pad typ commenti
   where
     pad s n = s ++ replicate (n - length s) ' '
     
-    considered_ls = zipWith consider (False:repeat True) ls
+    considered_ls = zipWith consider (True:repeat False) ls
     
     (fieldnames, typs, comments) = unzip3 considered_ls
     typindent = maximum (map length fieldnames) + 1
     commentindent = maximum (map length typs) + 1
     
-    consider bodyline l = (fieldname, unwords typ, unwords comment)
+    consider headerline l = (fieldname, unwords typ, unwords comment)
       where
         fieldname:ws = words l
-        (typ, comment) = spanRev (\w -> (length w <= 1 || not (looksLikeType w)) && (w /= "Type" || bodyline) && not (partOfArrayExpr w)) ws
+        (typ, comment) = breakRev partOfTypeField ws
 
-    looksLikeType w = w /= "ID" && length (fst (span (\c -> isUpper c || isDigit c) w)) >= 2
-    partOfArrayExpr w = any (`isInfixOf` w) ["*", "+", "]", "["]
+        partOfTypeField w = looksLikeType w || (w == "Type" && headerline) || partOfArrayExpr w
 
-    spanRev p xs = case span p (reverse xs) of (as, bs) -> (reverse bs, reverse as)
+        looksLikeType w = length w > 1 &&
+                          w /= "ID" &&
+                          length (fst (span (\c -> isUpper c || isDigit c) w)) >= 2 &&
+                          all (not . (`isInfixOf` w)) [")", "("] &&
+                          not (all isDigit w)
+        partOfArrayExpr w = any (`isInfixOf` w) ["*", "+", "]", "["]
+
+        breakRev p xs = case break p (reverse xs) of (as, bs) -> (reverse bs, reverse as)
 
 -- CONVOLUTIONFILTER
 -- Field         Type                     Comment

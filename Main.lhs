@@ -22,20 +22,6 @@ import System.IO.Unsafe
 Chapter 1: Basic Data Types
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-p11: Coordinates and twips
-\begin{code}
-
-type Twips = Integer
-type LogicalPixels = Integer
-
-twipsToLogicalPixels :: Twips -> LogicalPixels
-twipsToLogicalPixels = (`div` 20)
-
-
-data Point = Point { x :: Twips, y :: Twips }
-
-\end{code}
-
 p12: Integer types and byte order
 \begin{code}
 
@@ -413,7 +399,7 @@ getSwfFileHeader = do
 p27: Tag format
 \begin{code}
 
-data RECORDHEADER = RECORDHEADER { tagType :: UI16, tagLength :: SI32 }
+data RECORDHEADER = RECORDHEADER { rECORDHEADER_tagType :: UI16, rECORDHEADER_tagLength :: SI32 }
 
 getRECORDHEADER :: SwfGet RECORDHEADER
 getRECORDHEADER = do
@@ -429,31 +415,35 @@ Chapter 3: The Display List
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 \begin{code}
 
-data RECORD = RECORD { recordHeader :: RECORDHEADER, recordTag :: Tag }
+data RECORD = RECORD { rECORD_recordHeader :: RECORDHEADER, rECORD_recordTag :: Tag }
 
-data Tag = PlaceObject2 { placeFlagMove :: Bool, depth :: UI16, placeObject2_characterId :: Maybe UI16, placeObject2_matrix :: Maybe MATRIX, placeObject2_colorTransform :: Maybe CXFORMWITHALPHA, ratio :: Maybe UI16, name :: Maybe STRING, clipDepth :: Maybe UI16, clipActions :: Maybe CLIPACTIONS }
-         | PlaceObject3 { placeFlagMove :: Bool, placeFlagHasImage :: Bool, placeFlagHasClassName :: Bool, depth :: UI16, className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, ratio :: Maybe UI16, name :: Maybe STRING, clipDepth :: Maybe UI16, surfaceFilterList :: Maybe FILTERLIST, blendMode :: Maybe BlendMode, bitmapCache :: Maybe UI8, clipActions :: Maybe CLIPACTIONS }
-         | RemoveObject { characterId :: UI16, depth :: UI16 }
-         | RemoveObject2 { depth :: UI16 }
-         | ShowFrame
+data Tag = PlaceObject3 { placeObject3_placeFlagMove :: Bool, placeObject3_placeFlagHasImage :: Bool, placeObject3_placeFlagHasClassName :: Bool, placeObject3_depth :: UI16, placeObject3_className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, placeObject3_ratio :: Maybe UI16, placeObject3_name :: Maybe STRING, placeObject3_clipDepth :: Maybe UI16, placeObject3_surfaceFilterList :: Maybe FILTERLIST, placeObject3_blendMode :: Maybe BlendMode, placeObject3_bitmapCache :: Maybe UI8, placeObject3_clipActions :: Maybe CLIPACTIONS }
          |  PlaceObject{placeObject_characterId :: UI16,
               placeObject_depth :: UI16, placeObject_matrix :: MATRIX,
               placeObject_colorTransform :: Maybe CXFORM}
+         |  PlaceObject2{placeObject2_placeFlagMove :: Bool,
+               placeObject2_depth :: UI16, placeObject2_characterId :: Maybe UI16,
+               placeObject2_matrix :: Maybe MATRIX,
+               placeObject2_colorTransform :: Maybe CXFORMWITHALPHA,
+               placeObject2_ratio :: Maybe UI16,
+               placeObject2_name :: Maybe STRING,
+               placeObject2_clipDepth :: Maybe UI16,
+               placeObject2_clipActions :: Maybe CLIPACTIONS}
+         |  RemoveObject{removeObject_characterId :: UI16,
+               removeObject_depth :: UI16}
+         |  RemoveObject2{removeObject2_depth :: UI16}
+         |  ShowFrame{}
          |  SetBackgroundColor{setBackgroundColor_backgroundColor :: RGB}
          | UnknownTag ByteString
 
 getRECORD = do
-    recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
+    rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
 
-    let mb_getter = case tagType of
-          1  -> Just getShowFrame
-          5  -> Just getRemoveObject
-          26 -> Just getPlaceObject2
-          28 -> Just getRemoveObject2
+    let mb_getter = case rECORDHEADER_tagType of
           70 -> Just getPlaceObject3
-          _  -> generatedTagGetters tagType
+          _  -> generatedTagGetters rECORDHEADER_tagType
 
-    recordTag <- nestSwfGet (fromIntegral tagLength) $ case mb_getter of
+    rECORD_recordTag <- nestSwfGet (fromIntegral rECORDHEADER_tagLength) $ case mb_getter of
       Nothing     -> fmap UnknownTag getRemainingLazyByteString
       Just getter -> getter
 
@@ -465,6 +455,10 @@ getRECORD = do
 generatedTagGetters tagType
   = case tagType of
         4 -> Just getPlaceObject
+        26 -> Just getPlaceObject2
+        5 -> Just getRemoveObject
+        28 -> Just getRemoveObject2
+        1 -> Just getShowFrame
         9 -> Just getSetBackgroundColor
         _ -> Nothing
 
@@ -484,41 +478,60 @@ getPlaceObject
 
 p35: PlaceObject2
 \begin{code}
+getPlaceObject2
+  = do placeObject2_placeFlagHasClipActions <- getFlag
+       placeObject2_placeFlagHasClipDepth <- getFlag
+       placeObject2_placeFlagHasName <- getFlag
+       placeObject2_placeFlagHasRatio <- getFlag
+       placeObject2_placeFlagHasColorTransform <- getFlag
+       placeObject2_placeFlagHasMatrix <- getFlag
+       placeObject2_placeFlagHasCharacter <- getFlag
+       placeObject2_placeFlagMove <- getFlag
+       placeObject2_depth <- getUI16
+       placeObject2_characterId <- maybeHas
+                                     placeObject2_placeFlagHasCharacter
+                                     getUI16
+       placeObject2_matrix <- maybeHas placeObject2_placeFlagHasMatrix
+                                getMATRIX
+       placeObject2_colorTransform <- maybeHas
+                                        placeObject2_placeFlagHasColorTransform
+                                        getCXFORMWITHALPHA
+       placeObject2_ratio <- maybeHas placeObject2_placeFlagHasRatio
+                               getUI16
+       placeObject2_name <- maybeHas placeObject2_placeFlagHasName
+                              getSTRING
+       placeObject2_clipDepth <- maybeHas
+                                   placeObject2_placeFlagHasClipDepth
+                                   getUI16
+       placeObject2_clipActions <- maybeHas
+                                     placeObject2_placeFlagHasClipActions
+                                     getCLIPACTIONS
+       return (PlaceObject2{..})
 
-getPlaceObject2 = do
-    [placeFlagHasClipActions, placeFlagHasClipDepth, placeFlagHasName,
-     placeFlagHasRatio, placeFlagHasColorTransform, placeFlagHasMatrix,
-     placeFlagHasCharacter, placeFlagMove] <- sequence (replicate 8 getFlag)
-    depth <- getUI16
-    placeObject2_characterId <- maybeHas placeFlagHasCharacter getUI16
-    placeObject2_matrix <- maybeHas placeFlagHasMatrix getMATRIX
-    placeObject2_colorTransform <- maybeHas placeFlagHasColorTransform getCXFORMWITHALPHA
-    ratio <- maybeHas placeFlagHasRatio getUI16
-    name <- maybeHas placeFlagHasName getSTRING
-    clipDepth <- maybeHas placeFlagHasClipDepth getUI16
-    clipActions <- maybeHas placeFlagHasClipActions getCLIPACTIONS
-    return $ PlaceObject2 {..}
+\end{code}
 
-data CLIPACTIONS = CLIPACTIONS { allEventFlags :: CLIPEVENTFLAGS, clipActionRecords :: [CLIPACTIONRECORD] }
+\begin{code}
+
+data CLIPACTIONS = CLIPACTIONS { cLIPACTIONS_allEventFlags :: CLIPEVENTFLAGS, cLIPACTIONS_clipActionRecords :: [CLIPACTIONRECORD] }
 
 getCLIPACTIONS = do
     _reserved <- getUI16
-    allEventFlags <- getCLIPEVENTFLAGS
+    cLIPACTIONS_allEventFlags <- getCLIPEVENTFLAGS
     let go = do clipActionRecord <- getCLIPACTIONRECORD
                 end <- fmap null $ lookAhead getCLIPEVENTFLAGS
                 if end then return []
                        else fmap (clipActionRecord:) $ go
-    clipActionRecords <- go
+    cLIPACTIONS_clipActionRecords <- go
     _clipActionEndFlag <- getCLIPEVENTFLAGS
     return $ CLIPACTIONS {..}
 
-data CLIPACTIONRECORD = CLIPACTIONRECORD { eventFlags :: CLIPEVENTFLAGS, keyCode :: Maybe UI8, actions :: [ACTIONRECORD] }
+data CLIPACTIONRECORD = CLIPACTIONRECORD { cLIPACTIONRECORD_eventFlags :: CLIPEVENTFLAGS, cLIPACTIONRECORD_keyCode :: Maybe UI8, cLIPACTIONRECORD_actions :: [ACTIONRECORD] }
 
 getCLIPACTIONRECORD = do
-    eventFlags <- getCLIPEVENTFLAGS
+    cLIPACTIONRECORD_eventFlags <- getCLIPEVENTFLAGS
     actionRecordSize <- getUI32
-    (keyCode, actions) <- nestSwfGet (fromIntegral actionRecordSize) $ do
-        keyCode <- maybeHas (ClipEventKeyPress `elem` eventFlags) getUI8
+    (cLIPACTIONRECORD_keyCode, cLIPACTIONRECORD_actions) <- nestSwfGet (fromIntegral actionRecordSize) $ do
+        keyCode <- maybeHas (ClipEventKeyPress `elem` cLIPACTIONRECORD_eventFlags) getUI8
         let go = do action <- getACTIONRECORD
                     condM isEmpty
                       (return [])
@@ -535,22 +548,22 @@ p38: PlaceObject3
 getPlaceObject3 = do
     [placeFlagHasClipActions, placeFlagHasClipDepth, placeFlagHasName,
      placeFlagHasRatio, placeFlagHasColorTransform, placeFlagHasMatrix,
-     placeFlagHasCharacter, placeFlagMove] <- sequence (replicate 8 getFlag)
+     placeFlagHasCharacter, placeObject3_placeFlagMove] <- sequence (replicate 8 getFlag)
     _reserved <- getUB 3
-    [placeFlagHasImage, placeFlagHasClassName, placeFlagHasCacheAsBitmap,
+    [placeObject3_placeFlagHasImage, placeObject3_placeFlagHasClassName, placeFlagHasCacheAsBitmap,
      placeFlagHasBlendMode, placeFlagHasFilterList] <- sequence (replicate 5 getFlag)
-    depth <- getUI16
-    className <- maybeHas (placeFlagHasClassName || (placeFlagHasImage && placeFlagHasCharacter)) getSTRING
+    placeObject3_depth <- getUI16
+    placeObject3_className <- maybeHas (placeObject3_placeFlagHasClassName || (placeObject3_placeFlagHasImage && placeFlagHasCharacter)) getSTRING
     placeObject3_characterId <- maybeHas placeFlagHasCharacter getUI16
     placeObject3_matrix <- maybeHas placeFlagHasMatrix getMATRIX
     placeObject3_colorTransform <- maybeHas placeFlagHasColorTransform getCXFORMWITHALPHA
-    ratio <- maybeHas placeFlagHasRatio getUI16
-    name <- maybeHas placeFlagHasName getSTRING
-    clipDepth <- maybeHas placeFlagHasClipDepth getUI16
-    surfaceFilterList <- maybeHas placeFlagHasFilterList getFILTERLIST
-    blendMode <- maybeHas placeFlagHasBlendMode getBlendMode
-    bitmapCache <- maybeHas placeFlagHasCacheAsBitmap getUI8
-    clipActions <- maybeHas placeFlagHasClipActions getCLIPACTIONS
+    placeObject3_ratio <- maybeHas placeFlagHasRatio getUI16
+    placeObject3_name <- maybeHas placeFlagHasName getSTRING
+    placeObject3_clipDepth <- maybeHas placeFlagHasClipDepth getUI16
+    placeObject3_surfaceFilterList <- maybeHas placeFlagHasFilterList getFILTERLIST
+    placeObject3_blendMode <- maybeHas placeFlagHasBlendMode getBlendMode
+    placeObject3_bitmapCache <- maybeHas placeFlagHasCacheAsBitmap getUI8
+    placeObject3_clipActions <- maybeHas placeFlagHasClipActions getCLIPACTIONS
     return $ PlaceObject3 {..}
 
 data BlendMode = Normal0 | Normal1 | Layer | Multiply | Screen | Lighten | Darken
@@ -596,19 +609,13 @@ getFILTER = do
 
 p42: Color Matrix filter
 \begin{code}
-
-data COLORMATRIXFILTER = COLORMATRIXFILTER { rRow :: (FLOAT, FLOAT, FLOAT, FLOAT, FLOAT),
-                                             gRow :: (FLOAT, FLOAT, FLOAT, FLOAT, FLOAT),
-                                             bRow :: (FLOAT, FLOAT, FLOAT, FLOAT, FLOAT),
-                                             aRow :: (FLOAT, FLOAT, FLOAT, FLOAT, FLOAT) }
-
-getCOLORMATRIXFILTER = do
-    let getRow = liftM5 (,,,,) getFLOAT getFLOAT getFLOAT getFLOAT getFLOAT
-    rRow <- getRow
-    gRow <- getRow
-    bRow <- getRow
-    aRow <- getRow
-    return $ COLORMATRIXFILTER {..}
+ 
+data COLORMATRIXFILTER = COLORMATRIXFILTER{cOLORMATRIXFILTER_matrix
+                                           :: [FLOAT]}
+getCOLORMATRIXFILTER
+  = do cOLORMATRIXFILTER_matrix <- sequence
+                                     (genericReplicate 20 getFLOAT)
+       return (COLORMATRIXFILTER{..})
 
 \end{code}
 
@@ -838,24 +845,27 @@ getCLIPEVENTFLAGS = do
 
 p52: RemoveObject
 \begin{code}
-
-getRemoveObject = liftM2 RemoveObject getUI16 getUI16
+getRemoveObject
+  = do removeObject_characterId <- getUI16
+       removeObject_depth <- getUI16
+       return (RemoveObject{..})
 
 \end{code}
 
 p52: RemoveObject2
 \begin{code}
-
-getRemoveObject2 = liftM RemoveObject2 getUI16
+getRemoveObject2
+  = do removeObject2_depth <- getUI16
+       return (RemoveObject2{..})
 
 \end{code}
 
 p52: ShowFrame
 \begin{code}
-
-getShowFrame = return ShowFrame
+getShowFrame = do return (ShowFrame{..})
 
 \end{code}
+
 
 Chapter 1: Basic Data Types
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
