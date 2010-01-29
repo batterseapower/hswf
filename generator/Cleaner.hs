@@ -53,34 +53,40 @@ fixupLineBreaks (l1:l2:ls)
 -- PreserveAlpha UB[1] Preserve the alpha
 
 fixupIndentation :: [String] -> [String]
-fixupIndentation (name:ls) = name : [pad fieldname typindent ++ pad typ commentindent ++ comment | (fieldname, typ, comment) <- considered_ls]
+fixupIndentation (name:ls)
+  | all (not . isSpace) name
+  = name : go ls
+  | otherwise
+  = head (words (head ls)) : go (name : ls)
   where
-    pad s n = s ++ replicate (n - length s) ' '
-    
-    considered_ls = zipWith consider (True:repeat False) ls
-    
-    (fieldnames, typs, comments) = unzip3 considered_ls
-    typindent = maximum (map length fieldnames) + 1
-    commentindent = maximum (map length typs) + 1
-    
-    consider headerline l = (fieldname, unwords typ, unwords comment)
+    go ls = [pad fieldname typindent ++ pad typ commentindent ++ comment | (fieldname, typ, comment) <- considered_ls]
       where
-        fieldname:ws = words l
-        (typ, comment) = breakRev partOfTypeField ws
+        pad s n = s ++ replicate (n - length s) ' '
+    
+        considered_ls = zipWith consider (True:repeat False) ls
+    
+        (fieldnames, typs, comments) = unzip3 considered_ls
+        typindent = maximum (map length fieldnames) + 1
+        commentindent = maximum (map length typs) + 1
+    
+        consider headerline l = (fieldname, unwords typ, unwords comment)
+          where
+            fieldname:ws = words l
+            (typ, comment) = breakRev partOfTypeField ws
 
-        partOfTypeField w = looksLikeType w || (w == "Type" && headerline) || partOfArrayExpr w
+            partOfTypeField w = looksLikeType w || (w == "Type" && headerline) || partOfArrayExpr w
 
-        looksLikeType w = length w > 1 &&
-                          w /= "ID" && w /= "SWF" &&
-                          length (fst (span (\c -> isUpper c || isDigit c) (dropPrefix "Encoded" w))) >= 2 &&
-                          all (not . (`isInfixOf` w)) [")", "("] &&
-                          not (all isDigit w)
-        partOfArrayExpr w = any (`isInfixOf` w) ["*", "+", "]", "["]
+            looksLikeType w = length w > 1 &&
+                              w /= "ID" && w /= "SWF" && w /= "URL" &&
+                              length (fst (span (\c -> isUpper c || isDigit c) (dropPrefix "Encoded" w))) >= 2 &&
+                              all (not . (`isInfixOf` w)) [")", "("] &&
+                              not (all isDigit w)
+            partOfArrayExpr w = any (`isInfixOf` w) ["*", "+", "]", "["]
 
-        dropPrefix pr xs | take (length pr) xs == pr = drop (length pr) xs
-                         | otherwise                 = xs
+            dropPrefix pr xs | take (length pr) xs == pr = drop (length pr) xs
+                             | otherwise                 = xs
 
-        breakRev p xs = case break p (reverse xs) of (as, bs) -> (reverse bs, reverse as)
+            breakRev p xs = case break p (reverse xs) of (as, bs) -> (reverse bs, reverse as)
 
 -- CONVOLUTIONFILTER
 -- Field         Type                     Comment

@@ -877,11 +877,15 @@ getACTIONRECORDHEADER = do
 data ACTIONRECORD = ACTIONRECORD { aCTIONRECORD_actionRecordHeader :: ACTIONRECORDHEADER, aCTIONRECORD_actionRecordAction :: Action }
 
 data Action = UnknownAction (Maybe ByteString)
-            | ActionGotoFrame { frame :: UI16 }
+            | ActionPush { actionPush_actionPushLiteral :: ActionPushLiteral }
 \genconstructors{action}
 
 getACTIONRECORD = do
     aCTIONRECORD_actionRecordHeader@(ACTIONRECORDHEADER {..}) <- getACTIONRECORDHEADER
+    
+    let mb_getter = case aCTIONRECORDHEADER_actionCode of
+                      0x96 -> Just getActionPush
+                      _    -> generatedActionGetters aCTIONRECORDHEADER_actionCode
     
     aCTIONRECORD_actionRecordAction <- case aCTIONRECORDHEADER_actionLength of
        -- No payload: tags < 0x80
@@ -891,9 +895,6 @@ getACTIONRECORD = do
       Just aCTIONRECORDHEADER_actionLength -> nestSwfGet (fromIntegral aCTIONRECORDHEADER_actionLength) $ case mb_getter of
         Just getter -> getter
         Nothing     -> fmap (UnknownAction . Just) getRemainingLazyByteString
-        where mb_getter = case aCTIONRECORDHEADER_actionCode of
-                            0x81 -> Just $ fmap ActionGotoFrame getUI16
-                            _    -> generatedActionGetters aCTIONRECORDHEADER_actionCode
     
     return $ ACTIONRECORD {..}
 
@@ -901,6 +902,116 @@ getACTIONRECORD = do
 
 \gengetters{action}
 
+p69: ActionGotoFrame
+\begin{record}
+ActionGotoFrame
+Field           Type               Comment
+ActionGotoFrame ACTIONRECORDHEADER ActionCode = 0x81; Length is always 2
+Frame           UI16               Frame index
+\end{record}
+
+p69: ActionGetURL
+\begin{record}
+ActionGetURL
+Field        Type               Comment
+ActionGetURL ACTIONRECORDHEADER ActionCode = 0x83
+UrlString    STRING             Target URL string
+TargetString STRING             Target string
+\end{record}
+
+p69: ActionNextFrame
+\begin{record}
+ActionNextFrame
+Field           Type               Comment
+ActionNextFrame ACTIONRECORDHEADER ActionCode = 0x04
+\end{record}
+
+p70: ActionPreviousFrame
+\begin{record}
+ActionPreviousFrame
+Field               Type               Comment
+ActionPreviousFrame ACTIONRECORDHEADER ActionCode = 0x05
+\end{record}
+
+p70: ActionPlay
+\begin{record}
+ActionPlay
+Field      Type               Comment
+ActionPlay ACTIONRECORDHEADER ActionCode = 0x06
+\end{record}
+
+p70: ActionStop
+\begin{record}
+ActionStop
+Field      Type               Comment
+ActionStop ACTIONRECORDHEADER ActionCode = 0x07
+\end{record}
+
+p70: ActionToggleQuality
+\begin{record}
+ActionToggleQuality
+Field               Type               Comment
+ActionToggleQuality ACTIONRECORDHEADER ActionCode = 0x08
+\end{record}
+
+p70: ActionStopSounds
+\begin{record}
+ActionStopSounds
+Field            Type               Comment
+ActionStopSounds ACTIONRECORDHEADER ActionCode = 0x09
+\end{record}
+
+p71: ActionWaitForFrame
+\begin{record}
+ActionWaitForFrame
+Field              Type               Comment
+ActionWaitForFrame ACTIONRECORDHEADER ActionCode = 0x8A; Length is always 3
+Frame              UI16               Frame to wait for
+SkipCount          UI8                Number of actions to skip if frame is not loaded
+\end{record}
+
+p71: ActionSetTarget
+\begin{record}
+ActionSetTarget
+Field           Type               Comment
+ActionSetTarget ACTIONRECORDHEADER ActionCode = 0x8B
+TargetName      STRING             Target of action target
+\end{record}
+
+p71: ActionGoToLabel
+\begin{record}
+ActionGoToLabel
+Field           Type               Comment
+ActionGoToLabel ACTIONRECORDHEADER ActionCode = 0x8C
+Label           STRING             Frame label
+\end{record}
+
+p74: ActionPush
+\begin{code}
+
+data ActionPushLiteral
+  = ActionPushString STRING
+  | ActionPushFloat FLOAT
+  | ActionPushRegisterNumber UI8
+  | ActionPushBoolean UI8
+  | ActionPushDouble DOUBLE
+  | ActionPushInteger UI32
+  | ActionPushConstant8 UI8
+  | ActionPushConstant16 UI16
+
+getActionPush = do
+    typ <- getUI8
+    fmap ActionPush $ case typ of
+        0 -> fmap ActionPushString getSTRING
+        1 -> fmap ActionPushFloat getFLOAT
+        4 -> fmap ActionPushRegisterNumber getUI8
+        5 -> fmap ActionPushBoolean getUI8
+        6 -> fmap ActionPushDouble getDOUBLE
+        7 -> fmap ActionPushInteger getUI32
+        8 -> fmap ActionPushConstant8 getUI8
+        9 -> fmap ActionPushConstant16 getUI16
+
+\end{code}
 \begin{code}
 
 main :: IO ()

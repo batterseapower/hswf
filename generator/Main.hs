@@ -227,7 +227,7 @@ recordToDecls (Record { record_name, record_fields })
   
   | (Field field_name (Type False Nothing "ACTIONRECORDHEADER" Nothing) comment Nothing):record_fields <- record_fields
   , field_name == record_name
-  , [(action_code, _)] <- readHex $ drop (length "ActionCode = ") comment
+  , [(action_code, _)] <- readHex $ drop (length "ActionCode = 0x") comment
   , (datacon, getter) <- process record_fields
   = (Just (Action, PLit (Int action_code), record_name, datacon), [getter])
   

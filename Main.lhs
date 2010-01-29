@@ -1126,10 +1126,27 @@ getACTIONRECORDHEADER = do
 data ACTIONRECORD = ACTIONRECORD { aCTIONRECORD_actionRecordHeader :: ACTIONRECORDHEADER, aCTIONRECORD_actionRecordAction :: Action }
 
 data Action = UnknownAction (Maybe ByteString)
-            | ActionGotoFrame { frame :: UI16 }
+            | ActionPush { actionPush_actionPushLiteral :: ActionPushLiteral }
+         |  ActionGotoFrame{actionGotoFrame_frame :: UI16}
+         |  ActionGetURL{actionGetURL_urlString :: STRING,
+               actionGetURL_targetString :: STRING}
+         |  ActionNextFrame{}
+         |  ActionPreviousFrame{}
+         |  ActionPlay{}
+         |  ActionStop{}
+         |  ActionToggleQuality{}
+         |  ActionStopSounds{}
+         |  ActionWaitForFrame{actionWaitForFrame_frame :: UI16,
+                     actionWaitForFrame_skipCount :: UI8}
+         |  ActionSetTarget{actionSetTarget_targetName :: STRING}
+         |  ActionGoToLabel{actionGoToLabel_label :: STRING}
 
 getACTIONRECORD = do
     aCTIONRECORD_actionRecordHeader@(ACTIONRECORDHEADER {..}) <- getACTIONRECORDHEADER
+    
+    let mb_getter = case aCTIONRECORDHEADER_actionCode of
+                      0x96 -> Just getActionPush
+                      _    -> generatedActionGetters aCTIONRECORDHEADER_actionCode
     
     aCTIONRECORD_actionRecordAction <- case aCTIONRECORDHEADER_actionLength of
        -- No payload: tags < 0x80
@@ -1139,9 +1156,6 @@ getACTIONRECORD = do
       Just aCTIONRECORDHEADER_actionLength -> nestSwfGet (fromIntegral aCTIONRECORDHEADER_actionLength) $ case mb_getter of
         Just getter -> getter
         Nothing     -> fmap (UnknownAction . Just) getRemainingLazyByteString
-        where mb_getter = case aCTIONRECORDHEADER_actionCode of
-                            0x81 -> Just $ fmap ActionGotoFrame getUI16
-                            _    -> generatedActionGetters aCTIONRECORDHEADER_actionCode
     
     return $ ACTIONRECORD {..}
 
@@ -1150,10 +1164,125 @@ getACTIONRECORD = do
 \begin{code}
 generatedActionGetters actionCode
   = case actionCode of
+        129 -> Just getActionGotoFrame
+        131 -> Just getActionGetURL
+        4 -> Just getActionNextFrame
+        5 -> Just getActionPreviousFrame
+        6 -> Just getActionPlay
+        7 -> Just getActionStop
+        8 -> Just getActionToggleQuality
+        9 -> Just getActionStopSounds
+        138 -> Just getActionWaitForFrame
+        139 -> Just getActionSetTarget
+        140 -> Just getActionGoToLabel
         _ -> Nothing
 
 \end{code}
 
+p69: ActionGotoFrame
+\begin{code}
+getActionGotoFrame
+  = do actionGotoFrame_frame <- getUI16
+       return (ActionGotoFrame{..})
+
+\end{code}
+
+p69: ActionGetURL
+\begin{code}
+getActionGetURL
+  = do actionGetURL_urlString <- getSTRING
+       actionGetURL_targetString <- getSTRING
+       return (ActionGetURL{..})
+
+\end{code}
+
+p69: ActionNextFrame
+\begin{code}
+getActionNextFrame = do return (ActionNextFrame{..})
+
+\end{code}
+
+p70: ActionPreviousFrame
+\begin{code}
+getActionPreviousFrame = do return (ActionPreviousFrame{..})
+
+\end{code}
+
+p70: ActionPlay
+\begin{code}
+getActionPlay = do return (ActionPlay{..})
+
+\end{code}
+
+p70: ActionStop
+\begin{code}
+getActionStop = do return (ActionStop{..})
+
+\end{code}
+
+p70: ActionToggleQuality
+\begin{code}
+getActionToggleQuality = do return (ActionToggleQuality{..})
+
+\end{code}
+
+p70: ActionStopSounds
+\begin{code}
+getActionStopSounds = do return (ActionStopSounds{..})
+
+\end{code}
+
+p71: ActionWaitForFrame
+\begin{code}
+getActionWaitForFrame
+  = do actionWaitForFrame_frame <- getUI16
+       actionWaitForFrame_skipCount <- getUI8
+       return (ActionWaitForFrame{..})
+
+\end{code}
+
+p71: ActionSetTarget
+\begin{code}
+getActionSetTarget
+  = do actionSetTarget_targetName <- getSTRING
+       return (ActionSetTarget{..})
+
+\end{code}
+
+p71: ActionGoToLabel
+\begin{code}
+getActionGoToLabel
+  = do actionGoToLabel_label <- getSTRING
+       return (ActionGoToLabel{..})
+
+\end{code}
+
+p74: ActionPush
+\begin{code}
+
+data ActionPushLiteral
+  = ActionPushString STRING
+  | ActionPushFloat FLOAT
+  | ActionPushRegisterNumber UI8
+  | ActionPushBoolean UI8
+  | ActionPushDouble DOUBLE
+  | ActionPushInteger UI32
+  | ActionPushConstant8 UI8
+  | ActionPushConstant16 UI16
+
+getActionPush = do
+    typ <- getUI8
+    fmap ActionPush $ case typ of
+        0 -> fmap ActionPushString getSTRING
+        1 -> fmap ActionPushFloat getFLOAT
+        4 -> fmap ActionPushRegisterNumber getUI8
+        5 -> fmap ActionPushBoolean getUI8
+        6 -> fmap ActionPushDouble getDOUBLE
+        7 -> fmap ActionPushInteger getUI32
+        8 -> fmap ActionPushConstant8 getUI8
+        9 -> fmap ActionPushConstant16 getUI16
+
+\end{code}
 \begin{code}
 
 main :: IO ()
