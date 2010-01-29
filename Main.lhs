@@ -1,3 +1,4 @@
+\begin{code}
 module Main where
 
 import Binary
@@ -8,6 +9,7 @@ import Control.Arrow ((***))
 import qualified Data.ByteString.Lazy as BS
 import Data.Char
 import Data.Ratio
+import Data.List
 
 import Foreign.Storable
 import Foreign.C.Types
@@ -340,7 +342,7 @@ getSwfFileHeader = do
     version <- getUI8
     fileLength <- getUI32
     
-    modify (\e -> e { swfVersion = version }) $ decompressRemainder (fromIntegral fileLength) $ do
+    (if compressed then modify (\e -> e { swfVersion = version }) . decompressRemainder (fromIntegral fileLength) else id) $ do
         frameSize <- getRECT
         -- TODO: assert XMin/YMin are 0
         frameRate <- getFIXED8
@@ -370,6 +372,7 @@ data RECORD = RECORD { recordHeader :: RECORDHEADER, recordTag :: Tag }
 
 data Tag = PlaceObject { placeObject_characterId :: UI16, depth :: UI16, placeObject_matrix :: MATRIX, placeObject_colorTransform :: Maybe CXFORM }
          | PlaceObject2 { placeFlagMove :: Bool, depth :: UI16, placeObject2_characterId :: Maybe UI16, placeObject2_matrix :: Maybe MATRIX, placeObject2_colorTransform :: Maybe CXFORMWITHALPHA, ratio :: Maybe UI16, name :: Maybe STRING, clipDepth :: Maybe UI16, clipActions :: Maybe CLIPACTIONS }
+         | PlaceObject3 { placeFlagMove :: Bool, placeFlagHasImage :: Bool, placeFlagHasClassName :: Bool, depth :: UI16, className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, ratio :: Maybe UI16, name :: Maybe STRING, clipDepth :: Maybe UI16, surfaceFilterList :: Maybe FILTERLIST, blendMode :: Maybe BlendMode, bitmapCache :: Maybe UI8, clipActions :: Maybe CLIPACTIONS }
          | UnknownTag ByteString
 
 getRECORD = do
@@ -378,6 +381,7 @@ getRECORD = do
     let mb_getter = case tagType of
           4  -> Just getPlaceObject
           26 -> Just getPlaceObject2
+          70 -> Just getPlaceObject3
           _  -> Nothing
 
     recordTag <- nestSwfGet (fromIntegral tagLength) $ case mb_getter of
@@ -442,6 +446,286 @@ getCLIPACTIONRECORD = do
     return $ CLIPACTIONRECORD {..}
 
 
+-- p38: PlaceObject3
+
+getPlaceObject3 = do
+    [placeFlagHasClipActions, placeFlagHasClipDepth, placeFlagHasName,
+     placeFlagHasRatio, placeFlagHasColorTransform, placeFlagHasMatrix,
+     placeFlagHasCharacter, placeFlagMove] <- sequence (replicate 8 getFlag)
+    _reserved <- getUB 3
+    [placeFlagHasImage, placeFlagHasClassName, placeFlagHasCacheAsBitmap,
+     placeFlagHasBlendMode, placeFlagHasFilterList] <- sequence (replicate 5 getFlag)
+    depth <- getUI16
+    className <- maybeHas (placeFlagHasClassName || (placeFlagHasImage && placeFlagHasCharacter)) getSTRING
+    placeObject3_characterId <- maybeHas placeFlagHasCharacter getUI16
+    placeObject3_matrix <- maybeHas placeFlagHasMatrix getMATRIX
+    placeObject3_colorTransform <- maybeHas placeFlagHasColorTransform getCXFORMWITHALPHA
+    ratio <- maybeHas placeFlagHasRatio getUI16
+    name <- maybeHas placeFlagHasName getSTRING
+    clipDepth <- maybeHas placeFlagHasClipDepth getUI16
+    surfaceFilterList <- maybeHas placeFlagHasFilterList getFILTERLIST
+    blendMode <- maybeHas placeFlagHasBlendMode getBlendMode
+    bitmapCache <- maybeHas placeFlagHasCacheAsBitmap getUI8
+    clipActions <- maybeHas placeFlagHasClipActions getCLIPACTIONS
+    return $ PlaceObject3 {..}
+
+data BlendMode = Normal0 | Normal1 | Layer | Multiply | Screen | Lighten | Darken
+               | Difference | Add | Subtract | Invert | Alpha | Erase | Overlay
+               | Hardlight | UnknownBlendMode UI8
+
+getBlendMode = do
+    i <- getUI8
+    return $ case lookup i ([0..] `zip` [Normal0, Normal1, Layer, Multiply, Screen, Lighten,
+                                         Darken, Difference, Add, Subtract, Invert, Alpha,
+                                         Erase, Overlay, Hardlight]) of
+      Just bm -> bm
+      Nothing -> UnknownBlendMode i
+
+type FILTERLIST = [FILTER]
+
+getFILTERLIST = do
+    numberOfFilters <- getUI8
+    sequence $ genericReplicate numberOfFilters getFILTER
+
+data FILTER = DropShadowFilter DROPSHADOWFILTER
+            | BlurFilter BLURFILTER
+            | GlowFilter GLOWFILTER
+            | BevelFilter BEVELFILTER
+            | GradientGlowFilter GRADIENTGLOWFILTER
+            | ConvolutionFilter CONVOLUTIONFILTER
+            | ColorMatrixFilter COLORMATRIXFILTER
+            | GradientBevelFilter GRADIENTBEVELFILTER
+
+getFILTER = do
+    filterID <- getUI8
+    case filterID of
+        0 -> fmap DropShadowFilter getDROPSHADOWFILTER
+        1 -> fmap BlurFilter getBLURFILTER
+        2 -> fmap GlowFilter getGLOWFILTER
+        3 -> fmap BevelFilter getBEVELFILTER
+        4 -> fmap GradientGlowFilter getGRADIENTGLOWFILTER
+        5 -> fmap ConvolutionFilter getCONVOLUTIONFILTER
+        6 -> fmap ColorMatrixFilter getCOLORMATRIXFILTER
+        7 -> fmap GradientBevelFilter getGRADIENTBEVELFILTER
+
+\end{code}
+
+p42: Color Matrix filter
+\begin{code}
+
+data COLORMATRIXFILTER = COLORMATRIXFILTER { rRow :: (FLOAT, FLOAT, FLOAT, FLOAT, FLOAT),
+                                             gRow :: (FLOAT, FLOAT, FLOAT, FLOAT, FLOAT),
+                                             bRow :: (FLOAT, FLOAT, FLOAT, FLOAT, FLOAT),
+                                             aRow :: (FLOAT, FLOAT, FLOAT, FLOAT, FLOAT) }
+
+getCOLORMATRIXFILTER = do
+    let getRow = liftM5 (,,,,) getFLOAT getFLOAT getFLOAT getFLOAT getFLOAT
+    rRow <- getRow
+    gRow <- getRow
+    bRow <- getRow
+    aRow <- getRow
+    return $ COLORMATRIXFILTER {..}
+
+\end{code}
+
+p43: Convolution filter
+\begin{code}
+ 
+data CONVOLUTIONFILTER = CONVOLUTIONFILTER{cONVOLUTIONFILTER_matrixX
+                                           :: UI8,
+                                           cONVOLUTIONFILTER_matrixY :: UI8,
+                                           cONVOLUTIONFILTER_divisor :: FLOAT,
+                                           cONVOLUTIONFILTER_bias :: FLOAT,
+                                           cONVOLUTIONFILTER_matrix :: [FLOAT],
+                                           cONVOLUTIONFILTER_defaultColor :: RGBA,
+                                           cONVOLUTIONFILTER_clamp :: Bool,
+                                           cONVOLUTIONFILTER_preserveAlpha :: Bool}
+getCONVOLUTIONFILTER
+  = do cONVOLUTIONFILTER_matrixX <- getUI8
+       cONVOLUTIONFILTER_matrixY <- getUI8
+       cONVOLUTIONFILTER_divisor <- getFLOAT
+       cONVOLUTIONFILTER_bias <- getFLOAT
+       cONVOLUTIONFILTER_matrix <- sequence
+                                     (genericReplicate
+                                        (cONVOLUTIONFILTER_matrixX * cONVOLUTIONFILTER_matrixY)
+                                        getFLOAT)
+       cONVOLUTIONFILTER_defaultColor <- getRGBA
+       _cONVOLUTIONFILTER_reserved <- getUB 6
+       cONVOLUTIONFILTER_clamp <- getFlag
+       cONVOLUTIONFILTER_preserveAlpha <- getFlag
+       return (CONVOLUTIONFILTER{..})
+
+\end{code}
+
+p44: Blur filter
+\begin{code}
+ 
+data BLURFILTER = BLURFILTER{bLURFILTER_blurX :: FIXED,
+                             bLURFILTER_blurY :: FIXED, bLURFILTER_passes :: UB}
+getBLURFILTER
+  = do bLURFILTER_blurX <- getFIXED
+       bLURFILTER_blurY <- getFIXED
+       bLURFILTER_passes <- getUB 5
+       _bLURFILTER_reserved <- getUB 3
+       return (BLURFILTER{..})
+
+\end{code}
+
+p45: Drop Shadow filter
+\begin{code}
+ 
+data DROPSHADOWFILTER = DROPSHADOWFILTER{dROPSHADOWFILTER_dropShadowColor
+                                         :: RGBA,
+                                         dROPSHADOWFILTER_blurX :: FIXED,
+                                         dROPSHADOWFILTER_blurY :: FIXED,
+                                         dROPSHADOWFILTER_angle :: FIXED,
+                                         dROPSHADOWFILTER_distance :: FIXED,
+                                         dROPSHADOWFILTER_strength :: FIXED8,
+                                         dROPSHADOWFILTER_innerShadow :: Bool,
+                                         dROPSHADOWFILTER_knockout :: Bool,
+                                         dROPSHADOWFILTER_compositeSource :: Bool,
+                                         dROPSHADOWFILTER_passes :: UB}
+getDROPSHADOWFILTER
+  = do dROPSHADOWFILTER_dropShadowColor <- getRGBA
+       dROPSHADOWFILTER_blurX <- getFIXED
+       dROPSHADOWFILTER_blurY <- getFIXED
+       dROPSHADOWFILTER_angle <- getFIXED
+       dROPSHADOWFILTER_distance <- getFIXED
+       dROPSHADOWFILTER_strength <- getFIXED8
+       dROPSHADOWFILTER_innerShadow <- getFlag
+       dROPSHADOWFILTER_knockout <- getFlag
+       dROPSHADOWFILTER_compositeSource <- getFlag
+       dROPSHADOWFILTER_passes <- getUB 5
+       return (DROPSHADOWFILTER{..})
+
+\end{code}
+
+p46: Glow filter
+\begin{code}
+ 
+data GLOWFILTER = GLOWFILTER{gLOWFILTER_glowColor :: RGBA,
+                             gLOWFILTER_blurX :: FIXED, gLOWFILTER_blurY :: FIXED,
+                             gLOWFILTER_strength :: FIXED8, gLOWFILTER_innerGlow :: Bool,
+                             gLOWFILTER_knockout :: Bool, gLOWFILTER_compositeSource :: Bool,
+                             gLOWFILTER_passes :: UB}
+getGLOWFILTER
+  = do gLOWFILTER_glowColor <- getRGBA
+       gLOWFILTER_blurX <- getFIXED
+       gLOWFILTER_blurY <- getFIXED
+       gLOWFILTER_strength <- getFIXED8
+       gLOWFILTER_innerGlow <- getFlag
+       gLOWFILTER_knockout <- getFlag
+       gLOWFILTER_compositeSource <- getFlag
+       gLOWFILTER_passes <- getUB 5
+       return (GLOWFILTER{..})
+
+\end{code}
+
+p48: Bevel filter
+\begin{code}
+ 
+data BEVELFILTER = BEVELFILTER{bEVELFILTER_shadowColor :: RGBA,
+                               bEVELFILTER_highlightColor :: RGBA, bEVELFILTER_blurX :: FIXED,
+                               bEVELFILTER_blurY :: FIXED, bEVELFILTER_angle :: FIXED,
+                               bEVELFILTER_distance :: FIXED, bEVELFILTER_strength :: FIXED8,
+                               bEVELFILTER_innerShadow :: Bool, bEVELFILTER_knockout :: Bool,
+                               bEVELFILTER_compositeSource :: Bool, bEVELFILTER_onTop :: Bool,
+                               bEVELFILTER_passes :: UB}
+getBEVELFILTER
+  = do bEVELFILTER_shadowColor <- getRGBA
+       bEVELFILTER_highlightColor <- getRGBA
+       bEVELFILTER_blurX <- getFIXED
+       bEVELFILTER_blurY <- getFIXED
+       bEVELFILTER_angle <- getFIXED
+       bEVELFILTER_distance <- getFIXED
+       bEVELFILTER_strength <- getFIXED8
+       bEVELFILTER_innerShadow <- getFlag
+       bEVELFILTER_knockout <- getFlag
+       bEVELFILTER_compositeSource <- getFlag
+       bEVELFILTER_onTop <- getFlag
+       bEVELFILTER_passes <- getUB 4
+       return (BEVELFILTER{..})
+
+\end{code}
+
+p48: Gradient Glow and Gradient Bevel filters
+\begin{code}
+ 
+data GRADIENTGLOWFILTER = GRADIENTGLOWFILTER{gRADIENTGLOWFILTER_numColors
+                                             :: UI8,
+                                             gRADIENTGLOWFILTER_gradientColors :: [RGBA],
+                                             gRADIENTGLOWFILTER_gradientRatio :: [UI8],
+                                             gRADIENTGLOWFILTER_blurX :: FIXED,
+                                             gRADIENTGLOWFILTER_blurY :: FIXED,
+                                             gRADIENTGLOWFILTER_angle :: FIXED,
+                                             gRADIENTGLOWFILTER_distance :: FIXED,
+                                             gRADIENTGLOWFILTER_strength :: FIXED8,
+                                             gRADIENTGLOWFILTER_innerShadow :: Bool,
+                                             gRADIENTGLOWFILTER_knockout :: Bool,
+                                             gRADIENTGLOWFILTER_compositeSource :: Bool,
+                                             gRADIENTGLOWFILTER_onTop :: Bool,
+                                             gRADIENTGLOWFILTER_passes :: UB}
+getGRADIENTGLOWFILTER
+  = do gRADIENTGLOWFILTER_numColors <- getUI8
+       gRADIENTGLOWFILTER_gradientColors <- sequence
+                                              (genericReplicate gRADIENTGLOWFILTER_numColors
+                                                 getRGBA)
+       gRADIENTGLOWFILTER_gradientRatio <- sequence
+                                             (genericReplicate gRADIENTGLOWFILTER_numColors getUI8)
+       gRADIENTGLOWFILTER_blurX <- getFIXED
+       gRADIENTGLOWFILTER_blurY <- getFIXED
+       gRADIENTGLOWFILTER_angle <- getFIXED
+       gRADIENTGLOWFILTER_distance <- getFIXED
+       gRADIENTGLOWFILTER_strength <- getFIXED8
+       gRADIENTGLOWFILTER_innerShadow <- getFlag
+       gRADIENTGLOWFILTER_knockout <- getFlag
+       gRADIENTGLOWFILTER_compositeSource <- getFlag
+       gRADIENTGLOWFILTER_onTop <- getFlag
+       gRADIENTGLOWFILTER_passes <- getUB 4
+       return (GRADIENTGLOWFILTER{..})
+
+\end{code}
+
+\begin{code}
+ 
+data GRADIENTBEVELFILTER = GRADIENTBEVELFILTER{gRADIENTBEVELFILTER_numColors
+                                               :: UI8,
+                                               gRADIENTBEVELFILTER_gradientColors :: [RGBA],
+                                               gRADIENTBEVELFILTER_gradientRatio :: [UI8],
+                                               gRADIENTBEVELFILTER_blurX :: FIXED,
+                                               gRADIENTBEVELFILTER_blurY :: FIXED,
+                                               gRADIENTBEVELFILTER_angle :: FIXED,
+                                               gRADIENTBEVELFILTER_distance :: FIXED,
+                                               gRADIENTBEVELFILTER_strength :: FIXED8,
+                                               gRADIENTBEVELFILTER_innerShadow :: Bool,
+                                               gRADIENTBEVELFILTER_knockout :: Bool,
+                                               gRADIENTBEVELFILTER_compositeSource :: Bool,
+                                               gRADIENTBEVELFILTER_onTop :: Bool,
+                                               gRADIENTBEVELFILTER_passes :: UB}
+getGRADIENTBEVELFILTER
+  = do gRADIENTBEVELFILTER_numColors <- getUI8
+       gRADIENTBEVELFILTER_gradientColors <- sequence
+                                               (genericReplicate gRADIENTBEVELFILTER_numColors
+                                                  getRGBA)
+       gRADIENTBEVELFILTER_gradientRatio <- sequence
+                                              (genericReplicate gRADIENTBEVELFILTER_numColors
+                                                 getUI8)
+       gRADIENTBEVELFILTER_blurX <- getFIXED
+       gRADIENTBEVELFILTER_blurY <- getFIXED
+       gRADIENTBEVELFILTER_angle <- getFIXED
+       gRADIENTBEVELFILTER_distance <- getFIXED
+       gRADIENTBEVELFILTER_strength <- getFIXED8
+       gRADIENTBEVELFILTER_innerShadow <- getFlag
+       gRADIENTBEVELFILTER_knockout <- getFlag
+       gRADIENTBEVELFILTER_compositeSource <- getFlag
+       gRADIENTBEVELFILTER_onTop <- getFlag
+       gRADIENTBEVELFILTER_passes <- getUB 4
+       return (GRADIENTBEVELFILTER{..})
+
+\end{code}
+
+\begin{code}
+
 -- p50: CLIPEVENTFLAGS
 
 data CLIPEVENTFLAG = ClipEventKeyUp | ClipEventKeyDown | ClipEventMouseUp | ClipEventMouseDown | ClipEventMouseMove
@@ -503,3 +787,5 @@ main = do
     bs <- BS.readFile file
     let (header, _rest) = runSwfGet (SwfGetEnv { swfVersion = error "swfVersion not known yet!" }) bs getSwfFileHeader
     print $ version header
+\end{code}
+

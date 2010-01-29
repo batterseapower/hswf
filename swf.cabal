@@ -11,7 +11,7 @@ Synopsis:           A library for SWF roundtripping and creation
 Category:           Language
 
 Executable swf
-    Main-Is:        Main.hs
+    Main-Is:        Main.lhs
     Build-Depends:  base >= 4 && < 5, bytestring >= 0.9.1.5 && < 0.10, zlib >= 0.5.2.0 && < 0.6, binary >= 0.5.0.2 && < 0.6
     Extensions:     PatternGuards, RecordWildCards, TupleSections, Rank2Types
 
