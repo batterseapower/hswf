@@ -4,8 +4,6 @@ module Main where
 import Binary
 import Utilities
 
-import Control.Arrow ((***))
-
 import qualified Data.ByteString.Lazy as BS
 import Data.Char
 import Data.Ratio
@@ -278,89 +276,108 @@ getRECT
 \end{code}
 
 p20: MATRIX record
+
 \begin{code}
-
-data MATRIX = MATRIX { scale :: Maybe (FIXED, FIXED), rotateSkew :: Maybe (FIXED, FIXED), translate :: (SI32, SI32) }
-
-getMATRIX = do
-    hasScale <- getFlag
-    scale <- maybeHas hasScale $ do
-        nScaleBits <- getBitCount 5
-        scaleX <- getFB nScaleBits
-        scaleY <- getFB nScaleBits
-        return (scaleX, scaleY)
-    
-    hasRotate <- getFlag
-    rotateSkew <- maybeHas hasRotate $ do
-        nRotateBits <- getBitCount 5
-        rotateSkew0 <- getFB nRotateBits
-        rotateSkew1 <- getFB nRotateBits
-        return (rotateSkew0, rotateSkew1)
-    
-    nTranslateBits <- getBitCount 5
-    translate <- liftM2 (,) (getSB nTranslateBits) (getSB nTranslateBits)
-    
-    return $ MATRIX {..}
-
-transformByMATRIX :: Fractional a => (a, a) -> MATRIX -> (a, a)
-transformByMATRIX (x, y) m = (x *  (fst scale') + y * snd rotateSkew' + fromIntegral (fst (translate m)),
-                              x * fst rotateSkew' + y * snd scale' + fromIntegral (snd (translate m)))
-  where scale' = maybe (0, 0) (fIXEDToFractional *** fIXEDToFractional) $ scale m
-        rotateSkew' = maybe (0, 0) (fIXEDToFractional *** fIXEDToFractional) $ rotateSkew m
+ 
+data MATRIX = MATRIX{mATRIX_hasScale :: Bool,
+                     mATRIX_scale :: Maybe (UB, FB, FB), mATRIX_hasRotate :: Bool,
+                     mATRIX_rotate :: Maybe (UB, FB, FB), mATRIX_nTranslateBits :: UB,
+                     mATRIX_translateX :: SB, mATRIX_translateY :: SB}
+getMATRIX
+  = do mATRIX_hasScale <- getFlag
+       mATRIX_scale <- maybeHas mATRIX_hasScale
+                         (do mATRIX_nScaleBits <- getUB 5
+                             mATRIX_scaleX <- getFB mATRIX_nScaleBits
+                             mATRIX_scaleY <- getFB mATRIX_nScaleBits
+                             return (mATRIX_nScaleBits, mATRIX_scaleX, mATRIX_scaleY))
+       mATRIX_hasRotate <- getFlag
+       mATRIX_rotate <- maybeHas mATRIX_hasRotate
+                          (do mATRIX_nRotateBits <- getUB 5
+                              mATRIX_rotateSkew0 <- getFB mATRIX_nRotateBits
+                              mATRIX_rotateSkew1 <- getFB mATRIX_nRotateBits
+                              return
+                                (mATRIX_nRotateBits, mATRIX_rotateSkew0, mATRIX_rotateSkew1))
+       mATRIX_nTranslateBits <- getUB 5
+       mATRIX_translateX <- getSB mATRIX_nTranslateBits
+       mATRIX_translateY <- getSB mATRIX_nTranslateBits
+       return (MATRIX{..})
 
 \end{code}
 
 p22: Color transform record
 \begin{code}
-
-data CXFORM = CXFORM { multTerms :: Maybe (SI32, SI32, SI32), addTerms :: Maybe (SI32, SI32, SI32) }
-
-getCXFORM = do
-    hasAddTerms <- getFlag
-    hasMultTerms <- getFlag
-    nbits <- getBitCount 4
-  
-    multTerms <- maybeHas hasMultTerms $ liftM3 (,,) (getSB nbits) (getSB nbits) (getSB nbits)
-    addTerms <- maybeHas hasAddTerms $ liftM3 (,,) (getSB nbits) (getSB nbits) (getSB nbits)
-    
-    return $ CXFORM {..}
-
-transformByCXFORM :: Integral a => (a, a, a) -> CXFORM -> (a, a, a)
-transformByCXFORM rgb c = (component fst3, component snd3, component thd3)
-   where multTerms' = multTerms c `orElse` (1, 1, 1)
-         addTerms' = addTerms c `orElse` (0, 0, 0)
-         clamp x = round $ max 0 $ min 255 $ x
-         
-         component :: Integral a => (forall b. (b, b, b) -> b) -> a
-         component sel = clamp ((fromIntegral (sel rgb) * fromIntegral (sel multTerms') / (256.0 :: Rational)) + fromIntegral (sel addTerms'))
-
+ 
+data CXFORM = CXFORM{cXFORM_hasAddTerms :: Bool,
+                     cXFORM_hasMultTerms :: Bool, cXFORM_nbits :: UB,
+                     cXFORM_redMultTerm :: Maybe SB, cXFORM_greenMultTerm :: Maybe SB,
+                     cXFORM_blueMultTerm :: Maybe SB, cXFORM_redAddTerm :: Maybe SB,
+                     cXFORM_greenAddTerm :: Maybe SB, cXFORM_blueAddTerm :: Maybe SB}
+getCXFORM
+  = do cXFORM_hasAddTerms <- getFlag
+       cXFORM_hasMultTerms <- getFlag
+       cXFORM_nbits <- getUB 4
+       cXFORM_redMultTerm <- maybeHas cXFORM_hasMultTerms
+                               (getSB cXFORM_nbits)
+       cXFORM_greenMultTerm <- maybeHas cXFORM_hasMultTerms
+                                 (getSB cXFORM_nbits)
+       cXFORM_blueMultTerm <- maybeHas cXFORM_hasMultTerms
+                                (getSB cXFORM_nbits)
+       cXFORM_redAddTerm <- maybeHas cXFORM_hasAddTerms
+                              (getSB cXFORM_nbits)
+       cXFORM_greenAddTerm <- maybeHas cXFORM_hasAddTerms
+                                (getSB cXFORM_nbits)
+       cXFORM_blueAddTerm <- maybeHas cXFORM_hasAddTerms
+                               (getSB cXFORM_nbits)
+       return (CXFORM{..})
 
 \end{code}
 
 p23: Color transform with alpha record
+
 \begin{code}
-
-data CXFORMWITHALPHA = CXFORMWITHALPHA { multTermsWithAlpha :: Maybe (SI32, SI32, SI32, SI32), addTermsWithAlpha :: Maybe (SI32, SI32, SI32, SI32) }
-
-getCXFORMWITHALPHA = do
-    hasAddTerms <- getFlag
-    hasMultTerms <- getFlag
-    nbits <- getBitCount 4
-  
-    multTermsWithAlpha <- maybeHas hasMultTerms $ liftM4 (,,,) (getSB nbits) (getSB nbits) (getSB nbits) (getSB nbits)
-    addTermsWithAlpha <- maybeHas hasAddTerms $ liftM4 (,,,) (getSB nbits) (getSB nbits) (getSB nbits) (getSB nbits)
-    
-    return $ CXFORMWITHALPHA {..}
-
-transformByCXFORMWITHALPHA :: Integral a => (a, a, a, a) -> CXFORMWITHALPHA -> (a, a, a, a)
-transformByCXFORMWITHALPHA rgba c = (component fst4, component snd4, component thd4, component fth4)
-   where multTerms' = multTermsWithAlpha c `orElse` (1, 1, 1, 1)
-         addTerms' = addTermsWithAlpha c `orElse` (0, 0, 0, 0)
-         clamp x = round $ max 0 $ min 255 $ x
-         component :: Integral a => (forall b. (b, b, b, b) -> b) -> a
-         component sel = clamp ((fromIntegral (sel rgba) * fromIntegral (sel multTerms') / (256.0 :: Rational)) + fromIntegral (sel addTerms'))
+ 
+data CXFORMWITHALPHA = CXFORMWITHALPHA{cXFORMWITHALPHA_hasAddTerms
+                                       :: Bool,
+                                       cXFORMWITHALPHA_hasMultTerms :: Bool,
+                                       cXFORMWITHALPHA_nbits :: UB,
+                                       cXFORMWITHALPHA_redMultTerm :: Maybe SB,
+                                       cXFORMWITHALPHA_greenMultTerm :: Maybe SB,
+                                       cXFORMWITHALPHA_blueMultTerm :: Maybe SB,
+                                       cXFORMWITHALPHA_alphaMultTerm :: Maybe SB,
+                                       cXFORMWITHALPHA_redAddTerm :: Maybe SB,
+                                       cXFORMWITHALPHA_greenAddTerm :: Maybe SB,
+                                       cXFORMWITHALPHA_blueAddTerm :: Maybe SB,
+                                       cXFORMWITHALPHA_alphaAddTerm :: Maybe SB}
+getCXFORMWITHALPHA
+  = do cXFORMWITHALPHA_hasAddTerms <- getFlag
+       cXFORMWITHALPHA_hasMultTerms <- getFlag
+       cXFORMWITHALPHA_nbits <- getUB 4
+       cXFORMWITHALPHA_redMultTerm <- maybeHas
+                                        cXFORMWITHALPHA_hasMultTerms
+                                        (getSB cXFORMWITHALPHA_nbits)
+       cXFORMWITHALPHA_greenMultTerm <- maybeHas
+                                          cXFORMWITHALPHA_hasMultTerms
+                                          (getSB cXFORMWITHALPHA_nbits)
+       cXFORMWITHALPHA_blueMultTerm <- maybeHas
+                                         cXFORMWITHALPHA_hasMultTerms
+                                         (getSB cXFORMWITHALPHA_nbits)
+       cXFORMWITHALPHA_alphaMultTerm <- maybeHas
+                                          cXFORMWITHALPHA_hasMultTerms
+                                          (getSB cXFORMWITHALPHA_nbits)
+       cXFORMWITHALPHA_redAddTerm <- maybeHas cXFORMWITHALPHA_hasAddTerms
+                                       (getSB cXFORMWITHALPHA_nbits)
+       cXFORMWITHALPHA_greenAddTerm <- maybeHas
+                                         cXFORMWITHALPHA_hasAddTerms
+                                         (getSB cXFORMWITHALPHA_nbits)
+       cXFORMWITHALPHA_blueAddTerm <- maybeHas cXFORMWITHALPHA_hasAddTerms
+                                        (getSB cXFORMWITHALPHA_nbits)
+       cXFORMWITHALPHA_alphaAddTerm <- maybeHas
+                                         cXFORMWITHALPHA_hasAddTerms
+                                         (getSB cXFORMWITHALPHA_nbits)
+       return (CXFORMWITHALPHA{..})
 
 \end{code}
+
 
 Chapter 2: SWF Structure Summary
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -415,12 +432,14 @@ Chapter 3: The Display List
 
 data RECORD = RECORD { recordHeader :: RECORDHEADER, recordTag :: Tag }
 
-data Tag = PlaceObject { placeObject_characterId :: UI16, depth :: UI16, placeObject_matrix :: MATRIX, placeObject_colorTransform :: Maybe CXFORM }
-         | PlaceObject2 { placeFlagMove :: Bool, depth :: UI16, placeObject2_characterId :: Maybe UI16, placeObject2_matrix :: Maybe MATRIX, placeObject2_colorTransform :: Maybe CXFORMWITHALPHA, ratio :: Maybe UI16, name :: Maybe STRING, clipDepth :: Maybe UI16, clipActions :: Maybe CLIPACTIONS }
+data Tag = PlaceObject2 { placeFlagMove :: Bool, depth :: UI16, placeObject2_characterId :: Maybe UI16, placeObject2_matrix :: Maybe MATRIX, placeObject2_colorTransform :: Maybe CXFORMWITHALPHA, ratio :: Maybe UI16, name :: Maybe STRING, clipDepth :: Maybe UI16, clipActions :: Maybe CLIPACTIONS }
          | PlaceObject3 { placeFlagMove :: Bool, placeFlagHasImage :: Bool, placeFlagHasClassName :: Bool, depth :: UI16, className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, ratio :: Maybe UI16, name :: Maybe STRING, clipDepth :: Maybe UI16, surfaceFilterList :: Maybe FILTERLIST, blendMode :: Maybe BlendMode, bitmapCache :: Maybe UI8, clipActions :: Maybe CLIPACTIONS }
          | RemoveObject { characterId :: UI16, depth :: UI16 }
          | RemoveObject2 { depth :: UI16 }
          | ShowFrame
+         |  PlaceObject{placeObject_characterId :: UI16,
+              placeObject_depth :: UI16, placeObject_matrix :: MATRIX,
+              placeObject_colorTransform :: Maybe CXFORM}
          |  SetBackgroundColor{setBackgroundColor_backgroundColor :: RGB}
          | UnknownTag ByteString
 
@@ -429,7 +448,6 @@ getRECORD = do
 
     let mb_getter = case tagType of
           1  -> Just getShowFrame
-          4  -> Just getPlaceObject
           5  -> Just getRemoveObject
           26 -> Just getPlaceObject2
           28 -> Just getRemoveObject2
@@ -447,6 +465,7 @@ getRECORD = do
 \begin{code}
 generatedTagGetters tagType
   = case tagType of
+        4 -> Just getPlaceObject
         9 -> Just getSetBackgroundColor
         _ -> Nothing
 
@@ -454,14 +473,13 @@ generatedTagGetters tagType
 
 p34: PlaceObject
 \begin{code}
-
-getPlaceObject = do
-    placeObject_characterId <- getUI16
-    depth <- getUI16
-    placeObject_matrix <- getMATRIX
-    placeObject_colorTransform <- condM isEmpty (return Nothing) (fmap Just getCXFORM)
-    return $ PlaceObject {..}
-
+getPlaceObject
+  = do placeObject_characterId <- getUI16
+       placeObject_depth <- getUI16
+       placeObject_matrix <- getMATRIX
+       placeObject_colorTransform <- maybeHasM (fmap not isEmpty)
+                                       getCXFORM
+       return (PlaceObject{..})
 
 \end{code}
 
@@ -858,7 +876,7 @@ data ACTIONRECORDHEADER = ACTIONRECORDHEADER { actionCode :: UI8, actionLength :
 
 getACTIONRECORDHEADER = do
     actionCode <- getUI8
-    actionLength <- maybeHasF (actionCode .&. 0x80) getUI16
+    actionLength <- maybeHas ((actionCode .&. 0x80) /= 0) getUI16
     return $ ACTIONRECORDHEADER {..}
 
 data ACTIONRECORD = ACTIONRECORD { actionRecordHeader :: ACTIONRECORDHEADER, actionRecordAction :: Action }

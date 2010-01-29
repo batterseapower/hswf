@@ -1,3 +1,4 @@
+{-# LANGUAGE PatternGuards #-}
 module Main where
 
 import Data.Char
@@ -19,17 +20,24 @@ import Data.List
 -- Clamp UB[1] Clamp mode
 -- PreserveAlpha UB[1] Preserve the alpha
 
-main = interact (unlines . fixupIndentation . fixupLineBreaks . waitForAll . lines)
+main = interact (unlines . waitForAll . wrapRecord . fixupIndentation . fixupLineBreaks . killBlanks . lines)
 
 waitForAll :: [String] -> [String]
 waitForAll xs = length xs `seq` xs
+
+killBlanks :: [String] -> [String]
+killBlanks = filter (not . null) . map strip
+  where strip = reverse . dropWhile isSpace . reverse . dropWhile isSpace
 
 fixupLineBreaks :: [String] -> [String]
 fixupLineBreaks [] = []
 fixupLineBreaks [l] = [l]
 fixupLineBreaks (l1:l2:ls)
-  | isLower (head l2) = fixupLineBreaks ((l1 ++ ' ':l2):ls)
-  | otherwise         = l1 : fixupLineBreaks (l2:ls)
+  | (l2c:_) <- l2
+  , isLower l2c || isDigit l2c || length (words l2) < 3
+  = fixupLineBreaks ((l1 ++ ' ':l2):ls)
+  | otherwise
+  = l1 : fixupLineBreaks (l2:ls)
 
 -- CONVOLUTIONFILTER
 -- Field Type Comment
@@ -59,7 +67,7 @@ fixupIndentation (name:ls) = name : [pad fieldname typindent ++ pad typ commenti
         fieldname:ws = words l
         (typ, comment) = spanRev (\w -> (length w <= 1 || not (looksLikeType w)) && (w /= "Type" || bodyline) && not (partOfArrayExpr w)) ws
 
-    looksLikeType w = length (fst (span (\c -> isUpper c || isDigit c) w)) >= 2
+    looksLikeType w = w /= "ID" && length (fst (span (\c -> isUpper c || isDigit c) w)) >= 2
     partOfArrayExpr w = any (`isInfixOf` w) ["*", "+", "]", "["]
 
     spanRev p xs = case span p (reverse xs) of (as, bs) -> (reverse bs, reverse as)
@@ -75,3 +83,5 @@ fixupIndentation (name:ls) = name : [pad fieldname typindent ++ pad typ commenti
 -- Reserved      UB[6]                    Must be 0
 -- Clamp         UB[1]                    Clamp mode
 -- PreserveAlpha UB[1]                    Preserve the alpha
+
+wrapRecord ls = "\\begin{record}" : ls ++ ["\\end{record}"]

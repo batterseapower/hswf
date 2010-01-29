@@ -4,8 +4,6 @@ module Main where
 import Binary
 import Utilities
 
-import Control.Arrow ((***))
-
 import qualified Data.ByteString.Lazy as BS
 import Data.Char
 import Data.Ratio
@@ -263,89 +261,56 @@ Ymax  SB[Nbits] y maximum position for rectangle in twips
 \end{record}
 
 p20: MATRIX record
-\begin{code}
 
-data MATRIX = MATRIX { scale :: Maybe (FIXED, FIXED), rotateSkew :: Maybe (FIXED, FIXED), translate :: (SI32, SI32) }
-
-getMATRIX = do
-    hasScale <- getFlag
-    scale <- maybeHas hasScale $ do
-        nScaleBits <- getBitCount 5
-        scaleX <- getFB nScaleBits
-        scaleY <- getFB nScaleBits
-        return (scaleX, scaleY)
-    
-    hasRotate <- getFlag
-    rotateSkew <- maybeHas hasRotate $ do
-        nRotateBits <- getBitCount 5
-        rotateSkew0 <- getFB nRotateBits
-        rotateSkew1 <- getFB nRotateBits
-        return (rotateSkew0, rotateSkew1)
-    
-    nTranslateBits <- getBitCount 5
-    translate <- liftM2 (,) (getSB nTranslateBits) (getSB nTranslateBits)
-    
-    return $ MATRIX {..}
-
-transformByMATRIX :: Fractional a => (a, a) -> MATRIX -> (a, a)
-transformByMATRIX (x, y) m = (x *  (fst scale') + y * snd rotateSkew' + fromIntegral (fst (translate m)),
-                              x * fst rotateSkew' + y * snd scale' + fromIntegral (snd (translate m)))
-  where scale' = maybe (0, 0) (fIXEDToFractional *** fIXEDToFractional) $ scale m
-        rotateSkew' = maybe (0, 0) (fIXEDToFractional *** fIXEDToFractional) $ rotateSkew m
-
-\end{code}
+\begin{record}
+MATRIX
+Field          Type                              Comment
+HasScale       UB[1]                             Has scale values if equal to 1
+NScaleBits     If HasScale = 1, UB[5]            Bits in each scale value field
+ScaleX         If HasScale = 1, FB[NScaleBits]   x scale value
+ScaleY         If HasScale = 1, FB[NScaleBits]   y scale value
+HasRotate      UB[1]                             Has rotate and skew values if equal to 1
+NRotateBits    If HasRotate = 1, UB[5]           Bits in each rotate value field
+RotateSkew0    If HasRotate = 1, FB[NRotateBits] First rotate and skew value
+RotateSkew1    If HasRotate = 1, FB[NRotateBits] Second rotate and skew value
+NTranslateBits UB[5]                             Bits in each translate value field
+TranslateX     SB[NTranslateBits]                x translate value in twips
+TranslateY     SB[NTranslateBits]                y translate value in twips
+\end{record}
 
 p22: Color transform record
-\begin{code}
-
-data CXFORM = CXFORM { multTerms :: Maybe (SI32, SI32, SI32), addTerms :: Maybe (SI32, SI32, SI32) }
-
-getCXFORM = do
-    hasAddTerms <- getFlag
-    hasMultTerms <- getFlag
-    nbits <- getBitCount 4
-  
-    multTerms <- maybeHas hasMultTerms $ liftM3 (,,) (getSB nbits) (getSB nbits) (getSB nbits)
-    addTerms <- maybeHas hasAddTerms $ liftM3 (,,) (getSB nbits) (getSB nbits) (getSB nbits)
-    
-    return $ CXFORM {..}
-
-transformByCXFORM :: Integral a => (a, a, a) -> CXFORM -> (a, a, a)
-transformByCXFORM rgb c = (component fst3, component snd3, component thd3)
-   where multTerms' = multTerms c `orElse` (1, 1, 1)
-         addTerms' = addTerms c `orElse` (0, 0, 0)
-         clamp x = round $ max 0 $ min 255 $ x
-         
-         component :: Integral a => (forall b. (b, b, b) -> b) -> a
-         component sel = clamp ((fromIntegral (sel rgb) * fromIntegral (sel multTerms') / (256.0 :: Rational)) + fromIntegral (sel addTerms'))
-
-
-\end{code}
+\begin{record}
+CXFORM
+Field         Type                           Comment
+HasAddTerms   UB[1]                          Has color addition values if equal to 1
+HasMultTerms  UB[1]                          Has color multiply values if equal to 1
+Nbits         UB[4]                          Bits in each value field
+RedMultTerm   If HasMultTerms = 1, SB[Nbits] Red multiply value
+GreenMultTerm If HasMultTerms = 1, SB[Nbits] Green multiply value
+BlueMultTerm  If HasMultTerms = 1, SB[Nbits] Blue multiply value
+RedAddTerm    If HasAddTerms = 1, SB[Nbits]  Red addition value
+GreenAddTerm  If HasAddTerms = 1, SB[Nbits]  Green addition value
+BlueAddTerm   If HasAddTerms = 1, SB[Nbits]  Blue addition value
+\end{record}
 
 p23: Color transform with alpha record
-\begin{code}
 
-data CXFORMWITHALPHA = CXFORMWITHALPHA { multTermsWithAlpha :: Maybe (SI32, SI32, SI32, SI32), addTermsWithAlpha :: Maybe (SI32, SI32, SI32, SI32) }
+\begin{record}
+CXFORMWITHALPHA
+Field         Type                           Comment
+HasAddTerms   UB[1]                          Has color addition values if equal to 1
+HasMultTerms  UB[1]                          Has color multiply values if equal to 1
+Nbits         UB[4]                          Bits in each value field
+RedMultTerm   If HasMultTerms = 1, SB[Nbits] Red multiply value
+GreenMultTerm If HasMultTerms = 1, SB[Nbits] Green multiply value
+BlueMultTerm  If HasMultTerms = 1, SB[Nbits] Blue multiply value
+AlphaMultTerm If HasMultTerms = 1, SB[Nbits] Alpha multiply value
+RedAddTerm    If HasAddTerms = 1, SB[Nbits]  Red addition value
+GreenAddTerm  If HasAddTerms = 1, SB[Nbits]  Green addition value
+BlueAddTerm   If HasAddTerms = 1, SB[Nbits]  Blue addition value
+AlphaAddTerm  If HasAddTerms = 1, SB[Nbits]  Transparency addition value
+\end{record}
 
-getCXFORMWITHALPHA = do
-    hasAddTerms <- getFlag
-    hasMultTerms <- getFlag
-    nbits <- getBitCount 4
-  
-    multTermsWithAlpha <- maybeHas hasMultTerms $ liftM4 (,,,) (getSB nbits) (getSB nbits) (getSB nbits) (getSB nbits)
-    addTermsWithAlpha <- maybeHas hasAddTerms $ liftM4 (,,,) (getSB nbits) (getSB nbits) (getSB nbits) (getSB nbits)
-    
-    return $ CXFORMWITHALPHA {..}
-
-transformByCXFORMWITHALPHA :: Integral a => (a, a, a, a) -> CXFORMWITHALPHA -> (a, a, a, a)
-transformByCXFORMWITHALPHA rgba c = (component fst4, component snd4, component thd4, component fth4)
-   where multTerms' = multTermsWithAlpha c `orElse` (1, 1, 1, 1)
-         addTerms' = addTermsWithAlpha c `orElse` (0, 0, 0, 0)
-         clamp x = round $ max 0 $ min 255 $ x
-         component :: Integral a => (forall b. (b, b, b, b) -> b) -> a
-         component sel = clamp ((fromIntegral (sel rgba) * fromIntegral (sel multTerms') / (256.0 :: Rational)) + fromIntegral (sel addTerms'))
-
-\end{code}
 
 Chapter 2: SWF Structure Summary
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -400,8 +365,7 @@ Chapter 3: The Display List
 
 data RECORD = RECORD { recordHeader :: RECORDHEADER, recordTag :: Tag }
 
-data Tag = PlaceObject { placeObject_characterId :: UI16, depth :: UI16, placeObject_matrix :: MATRIX, placeObject_colorTransform :: Maybe CXFORM }
-         | PlaceObject2 { placeFlagMove :: Bool, depth :: UI16, placeObject2_characterId :: Maybe UI16, placeObject2_matrix :: Maybe MATRIX, placeObject2_colorTransform :: Maybe CXFORMWITHALPHA, ratio :: Maybe UI16, name :: Maybe STRING, clipDepth :: Maybe UI16, clipActions :: Maybe CLIPACTIONS }
+data Tag = PlaceObject2 { placeFlagMove :: Bool, depth :: UI16, placeObject2_characterId :: Maybe UI16, placeObject2_matrix :: Maybe MATRIX, placeObject2_colorTransform :: Maybe CXFORMWITHALPHA, ratio :: Maybe UI16, name :: Maybe STRING, clipDepth :: Maybe UI16, clipActions :: Maybe CLIPACTIONS }
          | PlaceObject3 { placeFlagMove :: Bool, placeFlagHasImage :: Bool, placeFlagHasClassName :: Bool, depth :: UI16, className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, ratio :: Maybe UI16, name :: Maybe STRING, clipDepth :: Maybe UI16, surfaceFilterList :: Maybe FILTERLIST, blendMode :: Maybe BlendMode, bitmapCache :: Maybe UI8, clipActions :: Maybe CLIPACTIONS }
          | RemoveObject { characterId :: UI16, depth :: UI16 }
          | RemoveObject2 { depth :: UI16 }
@@ -414,7 +378,6 @@ getRECORD = do
 
     let mb_getter = case tagType of
           1  -> Just getShowFrame
-          4  -> Just getPlaceObject
           5  -> Just getRemoveObject
           26 -> Just getPlaceObject2
           28 -> Just getRemoveObject2
@@ -432,17 +395,15 @@ getRECORD = do
 \gengetters{tag}
 
 p34: PlaceObject
-\begin{code}
-
-getPlaceObject = do
-    placeObject_characterId <- getUI16
-    depth <- getUI16
-    placeObject_matrix <- getMATRIX
-    placeObject_colorTransform <- condM isEmpty (return Nothing) (fmap Just getCXFORM)
-    return $ PlaceObject {..}
-
-
-\end{code}
+\begin{record}
+PlaceObject
+Field          Type              Comment
+Header         RECORDHEADER      Tag type = 4
+CharacterId    UI16              ID of character to place
+Depth          UI16              Depth of character
+Matrix         MATRIX            Transform matrix data
+ColorTransform (optional) CXFORM Color transform data
+\end{record}
 
 p35: PlaceObject2
 \begin{code}
@@ -751,7 +712,7 @@ data ACTIONRECORDHEADER = ACTIONRECORDHEADER { actionCode :: UI8, actionLength :
 
 getACTIONRECORDHEADER = do
     actionCode <- getUI8
-    actionLength <- maybeHasF (actionCode .&. 0x80) getUI16
+    actionLength <- maybeHas ((actionCode .&. 0x80) /= 0) getUI16
     return $ ACTIONRECORDHEADER {..}
 
 data ACTIONRECORD = ACTIONRECORD { actionRecordHeader :: ACTIONRECORDHEADER, actionRecordAction :: Action }

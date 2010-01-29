@@ -30,8 +30,8 @@ condM mcond mt mf = do
     if cond then mt else mf
 
 
-maybeHasF :: (Num a, Monad m) => a -> m b -> m (Maybe b)
-maybeHasF = maybeHas . (/= 0)
+maybeHasM :: Monad m => m Bool -> m b -> m (Maybe b)
+maybeHasM ma mb = ma >>= \a -> maybeHas a mb
 
 maybeHas :: Monad m => Bool -> m b -> m (Maybe b)
 maybeHas flag act
