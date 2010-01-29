@@ -314,10 +314,10 @@ Chapter 2: SWF Structure Summary
 p25: The SWF header
 \begin{code}
 
-data SwfFileHeader = SwfFileHeader { compressed :: Bool, version :: UI8, fileLength :: UI32 {- after decompression -}, frameSize :: RECT {- Twips -}, frameRate :: FIXED8, frameCount :: UI16 }
+data Swf = Swf { compressed :: Bool, version :: UI8, fileLength :: UI32 {- after decompression -}, frameSize :: RECT {- Twips -}, frameRate :: FIXED8, frameCount :: UI16, tags :: [RECORD] }
 
-getSwfFileHeader :: SwfGet (SwfFileHeader, ByteString)
-getSwfFileHeader = do
+getSwf :: SwfGet Swf
+getSwf = do
     signature_1 <- fmap fromIntegral getWord8
     compressed <- case lookup signature_1 [(ord 'F', False), (ord 'C', True)] of
         Just c  -> return c
@@ -334,9 +334,8 @@ getSwfFileHeader = do
         -- TODO: assert XMin/YMin are 0
         frameRate <- getFIXED8
         frameCount <- getUI16
-        
-        rest <- getRemainingLazyByteString
-        return (SwfFileHeader {..}, rest)
+        tags <- getToEnd getRECORD
+        return Swf {..}
 
 \end{code}
 
@@ -2763,6 +2762,6 @@ main :: IO ()
 main = do
     [file] <- getArgs
     bs <- BS.readFile file
-    let (header, _rest) = runSwfGet (SwfGetEnv { swfVersion = error "swfVersion not known yet!" }) bs getSwfFileHeader
-    print $ version header
+    let swf = runSwfGet (SwfGetEnv { swfVersion = error "swfVersion not known yet!" }) bs getSwf
+    print $ version swf
 \end{code}
