@@ -17,7 +17,7 @@ import Text.ParserCombinators.Parsec.Expr
 
 import Numeric
 
-import Language.Haskell.Exts.Syntax hiding (Type, Assoc(..))
+import Language.Haskell.Exts.Syntax hiding (Type, TyCon, Assoc(..))
 import qualified Language.Haskell.Exts.Syntax as LHE
 import qualified Language.Haskell.Exts.Pretty as LHEP
 
@@ -39,19 +39,23 @@ unParseChunk _ (NonRecordChunk ls) = (Nothing, ls)
 unParseChunk _ (RecordChunk r) = (mb_specialinfo, codeBlock decls)
   where (mb_specialinfo, decls) = recordToDecls $ r { record_fields = identifyExclusions $ identifyComposites $ simplify $ record_fields r }
 unParseChunk specialinfos (GenGettersChunk gen) = (Nothing, codeBlock [decl])
-  where (varName, getterName) = case gen of Tag    -> ("tagType",    "generatedTagGetters")
-                                            Action -> ("actionCode", "generatedActionGetters")
+  where (varName, getterName) = case gen of
+            Tag         -> ("tagType",    "generatedTagGetters")
+            Action      -> ("actionCode", "generatedActionGetters")
+            ShapeRecord -> error "No getter for generated shape records"
     
         decl = FunBind [Match noSrcLoc (Ident getterName) [PVar (Ident varName)] Nothing (UnGuardedRhs dispatcher) (BDecls [])]
         dispatcher = Case (var varName) (alts ++ [default_alt])
         alts = [Alt noSrcLoc pat (UnGuardedAlt (App (Con $ qname "Just") (var $ "get" ++ recordName))) (BDecls []) | (gen', pat, recordName, _) <- specialinfos, gen' == gen]
         default_alt = Alt noSrcLoc PWildCard (UnGuardedAlt (Con $ qname "Nothing")) (BDecls [])
-unParseChunk specialinfos (GenConstructorsChunk gen) = (Nothing, ["         |" ++ LHEP.prettyPrint datacon | (gen', _, _, datacon) <- specialinfos, gen' == gen])
+unParseChunk specialinfos (GenConstructorsChunk gen) = (Nothing, ["         " ++ (if firstalt then "=" else "|") ++ LHEP.prettyPrint datacon | (firstalt, datacon) <- (exhaustive : repeat False) `zip` datacons])
+  where exhaustive = gen == ShapeRecord
+        datacons = [datacon | (gen', _, _, datacon) <- specialinfos, gen' == gen]
 
 codeBlock ls = "\\begin{code}" : map LHEP.prettyPrint ls ++ ["", "\\end{code}"]
 
 
-data Generatable = Tag | Action
+data Generatable = Tag | Action | ShapeRecord
                  deriving (Eq, Show)
 
 type SpecialInfo = (Generatable, Pat, RecordName, QualConDecl)
@@ -66,6 +70,7 @@ type RecordName = String
 
 data Record = Record {
     record_name :: RecordName,
+    record_params :: [FieldName],
     record_fields :: [Field]
   } deriving (Show)
 
@@ -81,7 +86,8 @@ data Field = Field {
 data WhyExcluded = IsReserved | IsPresenceFlag FieldName | IsLength FieldName
                  deriving (Show)
 
-type TyCon = String
+data TyCon = TyCon String [FieldExpr]
+           deriving (Show)
 
 data Type = Type { type_cond :: Maybe FieldExpr, type_tycons :: [TyCon], type_repeats :: Repeats }
           | CompositeType { type_composite_cond :: FieldExpr, type_fields :: [Field] } -- Inserted by analysis
@@ -102,7 +108,7 @@ data FieldExpr = LitE Int
 data FieldUnOp = Not
                deriving (Eq, Show)
 
-data FieldBinOp = Plus | Mult | Equals
+data FieldBinOp = Plus | Mult | Equals | Or | And
                 deriving (Eq, Show)
 
 
@@ -114,10 +120,11 @@ parseFile contents = goNo [] (lines contents)
       | Just chunk <- lookup l commands = NonRecordChunk acc : chunk : goNo [] ls
       | l == "\\begin{record}"          = NonRecordChunk acc : goYes [] ls
       | otherwise                       = goNo (acc ++ [l]) ls
-      where commands = [("\\gengetters{tag}",         GenGettersChunk Tag),
-                        ("\\genconstructors{tag}",    GenConstructorsChunk Tag),
-                        ("\\gengetters{action}",      GenGettersChunk Action),
-                        ("\\genconstructors{action}", GenConstructorsChunk Action)]
+      where commands = [("\\gengetters{tag}",              GenGettersChunk Tag),
+                        ("\\genconstructors{tag}",         GenConstructorsChunk Tag),
+                        ("\\gengetters{action}",           GenGettersChunk Action),
+                        ("\\genconstructors{action}",      GenConstructorsChunk Action),
+                        ("\\genconstructors{shaperecord}", GenConstructorsChunk ShapeRecord)]
     
     goYes acc [] = error "Unclosed record!"
     goYes acc (l:ls)
@@ -125,8 +132,10 @@ parseFile contents = goNo [] (lines contents)
       | otherwise            = goYes (acc ++ [l]) ls
 
 parseRecordLines :: [String] -> Record
-parseRecordLines (name:headers:ls) = Record name fields
+parseRecordLines (header_line:headers:ls) = Record name params fields
   where
+    (name, params) = parseExactly headerline header_line
+    
     header_words = map length $ split (keepDelimsR $ condense $ oneOf " ") headers
     [name_offset, type_offset, _end_offset] = case header_words of [a, b, c] -> [a, b, c]; _ -> error ("parseRecordLines headers:\n" ++ show header_words)
     
@@ -139,48 +148,66 @@ parseRecordLines (name:headers:ls) = Record name fields
     
     strip = reverse . dropWhile isSpace . reverse . dropWhile isSpace
 
+
+parseExactly :: Parser a -> String -> a
+parseExactly ma s = case parse ma "<memory>" s of Left errs -> error (show errs); Right a -> a
+
 parseType :: String -> Either ParseError Type
 parseType s = parse typ "<memory>" s
-  where
-    typ = do
-        optional <- optionality
-        mb_condition <- optionMaybe condition
-        cons <- fmap return tycon <|> tycons
-        repeats <- if optional
-                    then return OptionallyAtEnd
-                    else repeatspecifier
-        return $ Type mb_condition cons repeats
-    
-    repeatspecifier = between (char '[') (char ']') (fmap NumberOfTimes expr <|> return RepeatsUntilEnd)
-                  <|> return Once
-                  <?> "repeat specifier"
-    
-    optionality = do { string "(optional)"; spaces; return True }
-              <|> return False
-              <?> "optionality clause"
-    
-    condition = do { string "If"; spaces; e <- expr; optional (char ','); spaces; return e }
-            <?> "condition"
-    
-    tycon = many1 alphaNum
-        <?> "type constructor"
-    
-    tycons = between (char '<') (char '>') $ sepBy tycon (char ',' >> spaces)
-    
-    expr = buildExpressionParser table (do { e <- factor; spaces; return e })
-       <?> "expression"
-    
-    table = [[op "*" (BinOpE Mult) AssocLeft], [op "+" (BinOpE Plus) AssocLeft], [op "=" (BinOpE Equals) AssocLeft]]
-            where op s f assoc = Infix (do{ string s; spaces; return f}) assoc
-    
-    factor = between (char '(') (char ')') expr
-         <|> field
-         <|> literal
-         <?> "array length expression factor"
-    
-    field = do { x <- letter; xs <- many alphaNum; return (FieldE $ x:xs) }
-    
-    literal = fmap (LitE . read) $ many1 digit
+
+typ = do
+    optional <- optionality
+    mb_condition <- optionMaybe condition
+    cons <- fmap return tycon <|> tycons
+    repeats <- if optional
+                then return OptionallyAtEnd
+                else repeatspecifier
+    return $ Type mb_condition cons repeats
+
+repeatspecifier = between (char '[') (char ']') (fmap NumberOfTimes expr <|> return RepeatsUntilEnd)
+              <|> return Once
+              <?> "repeat specifier"
+
+optionality = do { string "(optional)"; spaces; return True }
+          <|> return False
+          <?> "optionality clause"
+
+condition = do { string "If"; spaces; e <- expr; optional (char ','); spaces; return e }
+        <?> "condition"
+
+tycon = do { tc <- many1 alphaNum; mb_args <- optionMaybe arguments; return $ TyCon tc (fromMaybe [] mb_args) }
+    <?> "type constructor"
+
+fieldname = do { x <- letter; xs <- many alphaNum; return (x:xs) }
+
+arguments = between (char '(') (char ')') (sepBy expr (char ',' >> spaces))
+        <?> "arguments"
+
+parameters = between (char '(') (char ')') (sepBy fieldname (char ',' >> spaces))
+         <?> "parameters"
+
+tycons = between (char '<') (char '>') $ sepBy tycon (char ',' >> spaces)
+
+expr = buildExpressionParser table (do { e <- factor; spaces; return e })
+   <?> "expression"
+
+table = [[op "*" (BinOpE Mult) AssocLeft],
+         [op "+" (BinOpE Plus) AssocLeft],
+         [op "=" (BinOpE Equals) AssocLeft],
+         [op "and" (BinOpE And) AssocLeft],
+         [op "or" (BinOpE Or) AssocLeft]]
+        where op s f assoc = Infix (do{ string s; spaces; return f}) assoc
+
+factor = between (char '(') (char ')') expr
+     <|> field
+     <|> literal
+     <?> "array length expression factor"
+
+field = fmap FieldE fieldname
+
+literal = fmap (LitE . read) $ many1 digit
+
+headerline = do { name <- many1 alphaNum; mb_params <- optionMaybe parameters; return (name, fromMaybe [] mb_params) }
 
 
 simplify :: [Field] -> [Field]
@@ -240,17 +267,21 @@ identifyExclusions (f:fs)
 
 
 recordToDecls :: Record -> (Maybe SpecialInfo, [Decl])
-recordToDecls (Record { record_name, record_fields })
-  | (Field "Header" (Type Nothing ["RECORDHEADER"] Once) comment Nothing):record_fields <- record_fields
+recordToDecls (Record { record_name, record_params, record_fields })
+  | (Field "Header" (Type Nothing [TyCon "RECORDHEADER" []] Once) comment Nothing):record_fields <- record_fields
   , let tag_type = read $ drop (length "Tag type = ") comment
   , (datacon, getter) <- process record_fields
   = (Just (Tag, PLit (Int tag_type), record_name, datacon), [getter])
   
-  | (Field field_name (Type Nothing ["ACTIONRECORDHEADER"] Once) comment Nothing):record_fields <- record_fields
+  | (Field field_name (Type Nothing [TyCon "ACTIONRECORDHEADER" []] Once) comment Nothing):record_fields <- record_fields
   , field_name == record_name
   , [(action_code, _)] <- readHex $ drop (length "ActionCode = 0x") comment
   , (datacon, getter) <- process record_fields
   = (Just (Action, PLit (Int action_code), record_name, datacon), [getter])
+  
+  | record_name `elem` ["STYLECHANGERECORD", "STRAIGHTEDGERECORD", "CURVEDEDGERECORD"]
+  , (datacon, getter) <- process record_fields
+  = (Just (ShapeRecord, error "ShapeRecord pattern", record_name, datacon), [getter])
   
   | (datacon, getter) <- process record_fields
   = (Nothing, [DataDecl noSrcLoc DataType [] (Ident record_name) [] [datacon] [], getter])
@@ -258,7 +289,7 @@ recordToDecls (Record { record_name, record_fields })
     process record_fields = (datacon, getter)
       where
         datacon = QualConDecl noSrcLoc [] [] (RecDecl (Ident record_name) recfields)
-        getter = PatBind noSrcLoc (PVar (Ident $ "get" ++ record_name)) Nothing (UnGuardedRhs getexpr) (BDecls [])
+        getter = FunBind [Match noSrcLoc (Ident $ "get" ++ record_name) (map (PVar . Ident . defuser) record_params) Nothing (UnGuardedRhs getexpr) (BDecls [])]
         
         defuser = defuseFieldName record_name
         (field_getters, field_mb_types) = unzip $ map (fieldToSyntax defuser) record_fields
@@ -277,7 +308,7 @@ fieldToSyntax' :: (FieldName -> String) -> Field -> (Exp, LHE.Type)
 fieldToSyntax' defuser (Field { field_name, field_type=typ }) = (genexp, ty)
   where
     maybeHas condexpr = App (App (var "maybeHas") (fieldExprToSyntax defuser condexpr)) 
-    maybeTy = TyApp (TyCon (qname "Maybe"))
+    maybeTy = TyApp (LHE.TyCon (qname "Maybe"))
     
     (genexp, ty) = case typ of
         CompositeType condexpr fields -> (maybeHas condexpr genexp, maybeTy ty)
@@ -296,11 +327,13 @@ fieldToSyntax' defuser (Field { field_name, field_type=typ }) = (genexp, ty)
                 Just condexpr -> (maybeHas condexpr genexp, maybeTy ty)
     
             (genexp, ty) = case (tycons, repeats) of
-              (["UB"], NumberOfTimes (LitE 1))
+              ([TyCon "UB" []], NumberOfTimes (LitE 1))
                 -> (var "getFlag", LHE.TyCon (qname "Bool"))
-              ([tycon], NumberOfTimes lenexpr)
+              ([TyCon tycon []], NumberOfTimes lenexpr)
                 | tycon `elem` ["UB", "SB", "FB"]
-                -> (App (var $ "get" ++ tycon) (fieldExprToSyntax defuser lenexpr), TyCon (qname tycon))
+                -> (App (var $ "get" ++ tycon) (fieldExprToSyntax defuser lenexpr), LHE.TyCon (qname tycon))
+              ([TyCon "UB" []], RepeatsUntilEnd)
+                -> (var "byteAlign", TyTuple Boxed [])
               (tycons, Once)
                 -> (onegenexp, onety)
               (tycons, NumberOfTimes lenexpr)
@@ -308,8 +341,8 @@ fieldToSyntax' defuser (Field { field_name, field_type=typ }) = (genexp, ty)
               (tycons, OptionallyAtEnd)
                 -> (App (App (var "maybeHasM") (App (App (var "fmap") (var "not")) (var "isEmpty"))) onegenexp, maybeTy onety)
               (tycons, RepeatsUntilEnd)
-                | ["BYTE"] <- tycons
-                -> (var "getRemainingLazyByteString", TyCon (qname "ByteString"))
+                | [TyCon "BYTE" []] <- tycons
+                -> (var "getRemainingLazyByteString", LHE.TyCon (qname "ByteString"))
                 | otherwise
                 -> (App (var "getToEnd") onegenexp, TyList onety)
 
@@ -318,18 +351,22 @@ fieldToSyntax' defuser (Field { field_name, field_type=typ }) = (genexp, ty)
               _       -> (apps (var $ "liftM" ++ show ntycons) (var ("(" ++ replicate (ntycons - 1) ',' ++ ")") : map getOne tycons), TyTuple Boxed (map tyOne tycons))
             
             ntycons = length tycons
-            getOne tycon = var $ "get" ++ tycon
-            tyOne tycon = TyCon (qname tycon)
+            getOne (TyCon tycon args) = apps (var $ "get" ++ tycon) (map (fieldExprToSyntax defuser) args)
+            tyOne (TyCon tycon _)     = LHE.TyCon (qname tycon)
 
 fieldExprToSyntax _       (LitE i) = Lit (Int $ fromIntegral i)
 fieldExprToSyntax defuser (FieldE x) = var (defuser x)
 fieldExprToSyntax defuser (UnOpE op e) = App eop (fieldExprToSyntax defuser e)
   where eop = case op of Not -> var "not"
 fieldExprToSyntax defuser (BinOpE op e1 e2) = InfixApp (fieldExprToSyntax defuser e1) (QVarOp $ UnQual $ Symbol $ eop) (fieldExprToSyntax defuser e2)
-  where eop = case op of Plus -> "+"; Mult -> "*"; Equals -> "=="
+  where eop = case op of Plus -> "+"; Mult -> "*"; Equals -> "=="; And -> "&&"; Or -> "||"
 
 simplifyFieldExpr True (BinOpE Equals e1 (LitE 1)) = simplifyFieldExpr True e1
 simplifyFieldExpr True (BinOpE Equals e1 (LitE 0)) = UnOpE Not (simplifyFieldExpr True e1)
+simplifyFieldExpr True (BinOpE op e1 e2) = BinOpE op (simplifyFieldExpr e1ty e1) (simplifyFieldExpr e2ty e2)
+  where (e1ty, e2ty) | op `elem` [And, Or] = (True, True)
+                     | otherwise           = (False, False)
+simplifyFieldExpr True (UnOpE Not e) = UnOpE Not (simplifyFieldExpr True e)
 simplifyFieldExpr _    e = e
 
 var = Var . UnQual . Ident
