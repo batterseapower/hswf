@@ -1923,7 +1923,7 @@ Shapes                SHAPEWITHSTYLE(4) Shape information
 
 
 Chapter 7: Gradients
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~
 
 p145: GRADIENT
 \begin{record}
@@ -1957,6 +1957,89 @@ getGRADRECORD shapeVer = do
     return $ GRADRECORD {..}
 
 \end{code}
+
+
+Chapter 8: Bitmaps
+~~~~~~~~~~~~~~~~~~
+
+p148: DefineBits
+\begin{record}
+DefineBits
+Field       Type         Comment
+Header      RECORDHEADER Tag type = 6
+CharacterID UI16         ID for this character
+JPEGData    BYTE[]       JPEG compressed image
+\end{record}
+
+p148: JPEGTables
+\begin{record}
+JPEGTables
+Field    Type         Comment
+Header   RECORDHEADER Tag type = 8
+JPEGData BYTE[]       JPEG encoding table
+\end{record}
+
+p149: DefineBitsJPEG2
+\begin{record}
+DefineBitsJPEG2
+Field       Type         Comment
+Header      RECORDHEADER Tag type = 21
+CharacterID UI16         ID for this character
+ImageData   BYTE[]       Compressed image data in either JPEG, PNG, or GIF89a format
+\end{record}
+
+p149: DefineBitsJPEG3
+\begin{record}
+DefineBitsJPEG3
+Field           Type                 Comment
+Header          RECORDHEADER         Tag type = 35
+CharacterID     UI16                 ID for this character.
+AlphaDataOffset UI32                 Count of bytes in ImageData.
+ImageData       UI8[AlphaDataOffset] Compressed image data in either JPEG, PNG, or GIF89a format
+BitmapAlphaData BYTE[]               ZLIB compressed array of alpha data. Only supported when tag contains JPEG data. One byte per pixel. Total size after decompression must equal (width * height) of JPEG image.
+\end{record}
+
+p150: DefineBitsLossless
+\begin{record}
+DefineBitsLossless
+Field                Type                     Comment
+Header               RECORDHEADER             Tag type = 20
+CharacterID          UI16                     ID for this character
+BitmapFormat         UI8                      Format of compressed data 3 = 8-bit colormapped image 4 = 15-bit RGB image 5 = 24-bit RGB image
+BitmapWidth          UI16                     Width of bitmap image
+BitmapHeight         UI16                     Height of bitmap image
+BitmapColorTableSize If BitmapFormat = 3, UI8 This value is one less than the actual number of colors in the color table, allowing for up to 256 colors.
+ZlibBitmapData       BYTE[]                   ZLIB compressed bitmap data. If BitmapFormat = 3, COLORMAPDATA If BitmapFormat = 4 or 5, BITMAPDATA
+\end{record}
+
+p153: DefineBitsLossless2
+\begin{record}
+DefineBitsLossless2
+Field                Type                     Comment
+Header               RECORDHEADER             Tag type = 36
+CharacterID          UI16                     ID for this character
+BitmapFormat         UI8                      Format of compressed data 3 = 8-bit colormapped image 5 = 32-bit ARGB        image
+BitmapWidth          UI16                     Width of bitmap image
+BitmapHeight         UI16                     Height of bitmap image
+BitmapColorTableSize If BitmapFormat = 3, UI8 This value is one less than the actual number of colors in the color table, allowing for up to 256 colors.
+ZlibBitmapData       BYTE[]                   ZLIB compressed bitmap data. If BitmapFormat = 3, ALPHACOLORMAPDATA If BitmapFormat = 4 or 5, ALPHABITMAPDATA
+\end{record}
+
+p154: DefineBitsJPEG4
+\begin{record}
+DefineBitsJPEG4
+Field           Type                 Comment
+Header          RECORDHEADER         Tag type = 90
+CharacterID     UI16                 ID for this character.
+AlphaDataOffset UI32                 Count of bytes in ImageData.
+DeblockParam    UI16                 Parameter to be fed into the deblocking filter. The parameter describes a relative strength of the deblocking filter from 0- 100% expressed in a normalized 8.8 fixed point format.
+ImageData       UI8[AlphaDataOffset] Compressed image data in either JPEG, PNG, or GIF89a format.
+BitmapAlphaData BYTE[]               ZLIB compressed array of alpha data. Only supported when tag contains JPEG data. One byte per pixel. Total size after decompression must equal (width * height) of JPEG image.
+\end{record}
+
+
+Chapter 9: Shape Morphing
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
 \begin{code}
 

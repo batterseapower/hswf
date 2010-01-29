@@ -488,6 +488,30 @@ data Tag = UnknownTag ByteString
                defineShape4_usesNonScalingStrokes :: Bool,
                defineShape4_usesScalingStrokes :: Bool,
                defineShape4_shapes :: SHAPEWITHSTYLE}
+         |  DefineBits{defineBits_characterID :: UI16,
+             defineBits_jPEGData :: ByteString}
+         |  JPEGTables{jPEGTables_jPEGData :: ByteString}
+         |  DefineBitsJPEG2{defineBitsJPEG2_characterID :: UI16,
+                  defineBitsJPEG2_imageData :: ByteString}
+         |  DefineBitsJPEG3{defineBitsJPEG3_characterID :: UI16,
+                  defineBitsJPEG3_imageData :: [UI8],
+                  defineBitsJPEG3_bitmapAlphaData :: ByteString}
+         |  DefineBitsLossless{defineBitsLossless_characterID :: UI16,
+                     defineBitsLossless_bitmapFormat :: UI8,
+                     defineBitsLossless_bitmapWidth :: UI16,
+                     defineBitsLossless_bitmapHeight :: UI16,
+                     defineBitsLossless_bitmapColorTableSize :: Maybe UI8,
+                     defineBitsLossless_zlibBitmapData :: ByteString}
+         |  DefineBitsLossless2{defineBitsLossless2_characterID :: UI16,
+                      defineBitsLossless2_bitmapFormat :: UI8,
+                      defineBitsLossless2_bitmapWidth :: UI16,
+                      defineBitsLossless2_bitmapHeight :: UI16,
+                      defineBitsLossless2_bitmapColorTableSize :: Maybe UI8,
+                      defineBitsLossless2_zlibBitmapData :: ByteString}
+         |  DefineBitsJPEG4{defineBitsJPEG4_characterID :: UI16,
+                  defineBitsJPEG4_deblockParam :: UI16,
+                  defineBitsJPEG4_imageData :: [UI8],
+                  defineBitsJPEG4_bitmapAlphaData :: ByteString}
 
 getRECORD = do
     rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
@@ -535,6 +559,13 @@ generatedTagGetters tagType
         22 -> Just getDefineShape2
         32 -> Just getDefineShape3
         83 -> Just getDefineShape4
+        6 -> Just getDefineBits
+        8 -> Just getJPEGTables
+        21 -> Just getDefineBitsJPEG2
+        35 -> Just getDefineBitsJPEG3
+        20 -> Just getDefineBitsLossless
+        36 -> Just getDefineBitsLossless2
+        90 -> Just getDefineBitsJPEG4
         _ -> Nothing
 
 \end{code}
@@ -2425,7 +2456,7 @@ getDefineShape4
 
 
 Chapter 7: Gradients
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~
 
 p145: GRADIENT
 \begin{code}
@@ -2474,6 +2505,95 @@ getGRADRECORD shapeVer = do
     return $ GRADRECORD {..}
 
 \end{code}
+
+
+Chapter 8: Bitmaps
+~~~~~~~~~~~~~~~~~~
+
+p148: DefineBits
+\begin{code}
+getDefineBits
+  = do defineBits_characterID <- getUI16
+       defineBits_jPEGData <- getRemainingLazyByteString
+       return (DefineBits{..})
+
+\end{code}
+
+p148: JPEGTables
+\begin{code}
+getJPEGTables
+  = do jPEGTables_jPEGData <- getRemainingLazyByteString
+       return (JPEGTables{..})
+
+\end{code}
+
+p149: DefineBitsJPEG2
+\begin{code}
+getDefineBitsJPEG2
+  = do defineBitsJPEG2_characterID <- getUI16
+       defineBitsJPEG2_imageData <- getRemainingLazyByteString
+       return (DefineBitsJPEG2{..})
+
+\end{code}
+
+p149: DefineBitsJPEG3
+\begin{code}
+getDefineBitsJPEG3
+  = do defineBitsJPEG3_characterID <- getUI16
+       defineBitsJPEG3_alphaDataOffset <- getUI32
+       defineBitsJPEG3_imageData <- sequence
+                                      (genericReplicate defineBitsJPEG3_alphaDataOffset getUI8)
+       defineBitsJPEG3_bitmapAlphaData <- getRemainingLazyByteString
+       return (DefineBitsJPEG3{..})
+
+\end{code}
+
+p150: DefineBitsLossless
+\begin{code}
+getDefineBitsLossless
+  = do defineBitsLossless_characterID <- getUI16
+       defineBitsLossless_bitmapFormat <- getUI8
+       defineBitsLossless_bitmapWidth <- getUI16
+       defineBitsLossless_bitmapHeight <- getUI16
+       defineBitsLossless_bitmapColorTableSize <- maybeHas
+                                                    (defineBitsLossless_bitmapFormat == 3)
+                                                    getUI8
+       defineBitsLossless_zlibBitmapData <- getRemainingLazyByteString
+       return (DefineBitsLossless{..})
+
+\end{code}
+
+p153: DefineBitsLossless2
+\begin{code}
+getDefineBitsLossless2
+  = do defineBitsLossless2_characterID <- getUI16
+       defineBitsLossless2_bitmapFormat <- getUI8
+       defineBitsLossless2_bitmapWidth <- getUI16
+       defineBitsLossless2_bitmapHeight <- getUI16
+       defineBitsLossless2_bitmapColorTableSize <- maybeHas
+                                                     (defineBitsLossless2_bitmapFormat == 3)
+                                                     getUI8
+       defineBitsLossless2_zlibBitmapData <- getRemainingLazyByteString
+       return (DefineBitsLossless2{..})
+
+\end{code}
+
+p154: DefineBitsJPEG4
+\begin{code}
+getDefineBitsJPEG4
+  = do defineBitsJPEG4_characterID <- getUI16
+       defineBitsJPEG4_alphaDataOffset <- getUI32
+       defineBitsJPEG4_deblockParam <- getUI16
+       defineBitsJPEG4_imageData <- sequence
+                                      (genericReplicate defineBitsJPEG4_alphaDataOffset getUI8)
+       defineBitsJPEG4_bitmapAlphaData <- getRemainingLazyByteString
+       return (DefineBitsJPEG4{..})
+
+\end{code}
+
+
+Chapter 9: Shape Morphing
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
 \begin{code}
 
