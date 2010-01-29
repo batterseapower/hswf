@@ -118,6 +118,7 @@ storableCast w = unsafePerformIO $ with w $ peek . castPtr
 -- Page 14: encoded integers
 
 newtype EncodedU32 = EncodedU32 UI32
+                   deriving (Eq, Ord, Enum, Show, Num, Real, Integral)
 
 getEncodedU32 :: SwfGet EncodedU32
 getEncodedU32 = fmap EncodedU32 $ do
@@ -461,23 +462,14 @@ data Tag = UnknownTag ByteString
                 importAssets2_count :: UI16, importAssets2_tag1 :: UI16,
                 importAssets2_name1 :: STRING, importAssets2_tagN :: UI16,
                 importAssets2_nameN :: STRING}
-         |  SymbolClass{symbolClass_numSymbols :: UI16,
-              symbolClass_tag1 :: UI16, symbolClass_name1 :: STRING,
-              symbolClass_tagN :: UI16, symbolClass_nameN :: STRING}
+         |  SymbolClass{symbolClass_tagsNames :: [(UI16, STRING)]}
          |  Metadata{metadata_metadata :: STRING}
          |  DefineScalingGrid{defineScalingGrid_characterId :: UI16,
                     defineScalingGrid_splitter :: RECT}
-         |  DefineSceneAndFrameLabelData{defineSceneAndFrameLabelData_sceneCount
-                               :: EncodedU32,
-                               defineSceneAndFrameLabelData_offset1 :: EncodedU32,
-                               defineSceneAndFrameLabelData_name1 :: STRING,
-                               defineSceneAndFrameLabelData_offsetN :: EncodedU32,
-                               defineSceneAndFrameLabelData_nameN :: STRING,
-                               defineSceneAndFrameLabelData_frameLabelCount :: EncodedU32,
-                               defineSceneAndFrameLabelData_frameNum1 :: EncodedU32,
-                               defineSceneAndFrameLabelData_frameLabel1 :: STRING,
-                               defineSceneAndFrameLabelData_frameNumN :: EncodedU32,
-                               defineSceneAndFrameLabelData_frameLabelN :: STRING}
+         |  DefineSceneAndFrameLabelData{defineSceneAndFrameLabelData_offsetNames
+                               :: [(EncodedU32, STRING)],
+                               defineSceneAndFrameLabelData_frameNumLabels ::
+                               [(EncodedU32, STRING)]}
 
 getRECORD = do
     rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
@@ -1052,10 +1044,9 @@ p62: SymbolClass
 \begin{code}
 getSymbolClass
   = do symbolClass_numSymbols <- getUI16
-       symbolClass_tag1 <- getUI16
-       symbolClass_name1 <- getSTRING
-       symbolClass_tagN <- getUI16
-       symbolClass_nameN <- getSTRING
+       symbolClass_tagsNames <- sequence
+                                  (genericReplicate symbolClass_numSymbols
+                                     (liftM2 (,) getUI16 getSTRING))
        return (SymbolClass{..})
 
 \end{code}
@@ -1081,15 +1072,15 @@ p66: DefineSceneAndFrameLabelData
 \begin{code}
 getDefineSceneAndFrameLabelData
   = do defineSceneAndFrameLabelData_sceneCount <- getEncodedU32
-       defineSceneAndFrameLabelData_offset1 <- getEncodedU32
-       defineSceneAndFrameLabelData_name1 <- getSTRING
-       defineSceneAndFrameLabelData_offsetN <- getEncodedU32
-       defineSceneAndFrameLabelData_nameN <- getSTRING
+       defineSceneAndFrameLabelData_offsetNames <- sequence
+                                                     (genericReplicate
+                                                        defineSceneAndFrameLabelData_sceneCount
+                                                        (liftM2 (,) getEncodedU32 getSTRING))
        defineSceneAndFrameLabelData_frameLabelCount <- getEncodedU32
-       defineSceneAndFrameLabelData_frameNum1 <- getEncodedU32
-       defineSceneAndFrameLabelData_frameLabel1 <- getSTRING
-       defineSceneAndFrameLabelData_frameNumN <- getEncodedU32
-       defineSceneAndFrameLabelData_frameLabelN <- getSTRING
+       defineSceneAndFrameLabelData_frameNumLabels <- sequence
+                                                        (genericReplicate
+                                                           defineSceneAndFrameLabelData_frameLabelCount
+                                                           (liftM2 (,) getEncodedU32 getSTRING))
        return (DefineSceneAndFrameLabelData{..})
 
 \end{code}
@@ -1140,6 +1131,55 @@ data Action = UnknownAction (Maybe ByteString)
                      actionWaitForFrame_skipCount :: UI8}
          |  ActionSetTarget{actionSetTarget_targetName :: STRING}
          |  ActionGoToLabel{actionGoToLabel_label :: STRING}
+         |  ActionPop{}
+         |  ActionAdd{}
+         |  ActionSubtract{}
+         |  ActionMultiply{}
+         |  ActionDivide{}
+         |  ActionEquals{}
+         |  ActionLess{}
+         |  ActionAnd{}
+         |  ActionOr{}
+         |  ActionNot{}
+         |  ActionStringEquals{}
+         |  ActionStringLength{}
+         |  ActionStringAdd{}
+         |  ActionStringExtract{}
+         |  ActionStringLess{}
+         |  ActionMBStringLength{}
+         |  ActionMBStringExtract{}
+         |  ActionToInteger{}
+         |  ActionCharToAscii{}
+         |  ActionAsciiToChar{}
+         |  ActionMBCharToAscii{}
+         |  ActionMBAsciiToChar{}
+         |  ActionJump{actionJump_branchOffset :: SI16}
+         |  ActionIf{actionIf_branchOffset :: SI16}
+         |  ActionCall{}
+         |  ActionGetVariable{}
+         |  ActionSetVariable{}
+         |  ActionGetURL2{actionGetURL2_sendVarsMethod :: UB,
+                actionGetURL2_loadTargetFlag :: Bool,
+                actionGetURL2_loadVariablesFlag :: Bool}
+         |  ActionGotoFrame2{actionGotoFrame2_playFlag :: Bool,
+                   actionGotoFrame2_sceneBias :: Maybe UI16}
+         |  ActionSetTarget2{}
+         |  ActionGetProperty{}
+         |  ActionSetProperty{}
+         |  ActionCloneSprite{}
+         |  ActionRemoveSprite{}
+         |  ActionStartDrag{}
+         |  ActionEndDrag{}
+         |  ActionWaitForFrame2{actionWaitForFrame2_skipCount :: UI8}
+         |  ActionTrace{}
+         |  ActionGetTime{}
+         |  ActionRandomNumber{}
+         |  ActionCallFunction{}
+         |  ActionCallMethod{}
+         |  ActionConstantPool{actionConstantPool_constantPool :: [STRING]}
+         |  ActionDefineFunction{actionDefineFunction_functionName :: STRING,
+                       actionDefineFunction_params :: [STRING],
+                       actionDefineFunction_codeSize :: UI16}
 
 getACTIONRECORD = do
     aCTIONRECORD_actionRecordHeader@(ACTIONRECORDHEADER {..}) <- getACTIONRECORDHEADER
@@ -1175,6 +1215,50 @@ generatedActionGetters actionCode
         138 -> Just getActionWaitForFrame
         139 -> Just getActionSetTarget
         140 -> Just getActionGoToLabel
+        23 -> Just getActionPop
+        10 -> Just getActionAdd
+        11 -> Just getActionSubtract
+        12 -> Just getActionMultiply
+        13 -> Just getActionDivide
+        14 -> Just getActionEquals
+        15 -> Just getActionLess
+        16 -> Just getActionAnd
+        17 -> Just getActionOr
+        18 -> Just getActionNot
+        19 -> Just getActionStringEquals
+        20 -> Just getActionStringLength
+        33 -> Just getActionStringAdd
+        21 -> Just getActionStringExtract
+        41 -> Just getActionStringLess
+        49 -> Just getActionMBStringLength
+        53 -> Just getActionMBStringExtract
+        24 -> Just getActionToInteger
+        50 -> Just getActionCharToAscii
+        51 -> Just getActionAsciiToChar
+        54 -> Just getActionMBCharToAscii
+        55 -> Just getActionMBAsciiToChar
+        153 -> Just getActionJump
+        157 -> Just getActionIf
+        158 -> Just getActionCall
+        28 -> Just getActionGetVariable
+        29 -> Just getActionSetVariable
+        154 -> Just getActionGetURL2
+        159 -> Just getActionGotoFrame2
+        32 -> Just getActionSetTarget2
+        34 -> Just getActionGetProperty
+        35 -> Just getActionSetProperty
+        36 -> Just getActionCloneSprite
+        37 -> Just getActionRemoveSprite
+        39 -> Just getActionStartDrag
+        40 -> Just getActionEndDrag
+        141 -> Just getActionWaitForFrame2
+        38 -> Just getActionTrace
+        52 -> Just getActionGetTime
+        48 -> Just getActionRandomNumber
+        61 -> Just getActionCallFunction
+        82 -> Just getActionCallMethod
+        136 -> Just getActionConstantPool
+        155 -> Just getActionDefineFunction
         _ -> Nothing
 
 \end{code}
@@ -1283,6 +1367,307 @@ getActionPush = do
         9 -> fmap ActionPushConstant16 getUI16
 
 \end{code}
+
+p75: ActionPop
+\begin{code}
+getActionPop = do return (ActionPop{..})
+
+\end{code}
+
+p76: ActionAdd
+\begin{code}
+getActionAdd = do return (ActionAdd{..})
+
+\end{code}
+
+p76: ActionSubtract
+\begin{code}
+getActionSubtract = do return (ActionSubtract{..})
+
+\end{code}
+
+p76: ActionMultiply
+\begin{code}
+getActionMultiply = do return (ActionMultiply{..})
+
+\end{code}
+
+p77: ActionDivide
+\begin{code}
+getActionDivide = do return (ActionDivide{..})
+
+\end{code}
+
+p77: ActionEquals
+\begin{code}
+getActionEquals = do return (ActionEquals{..})
+
+\end{code}
+
+p78: ActionLess
+\begin{code}
+getActionLess = do return (ActionLess{..})
+
+\end{code}
+
+p78: ActionAnd
+\begin{code}
+getActionAnd = do return (ActionAnd{..})
+
+\end{code}
+
+p79: ActionOr
+\begin{code}
+getActionOr = do return (ActionOr{..})
+
+\end{code}
+
+p79: ActionNot
+\begin{code}
+getActionNot = do return (ActionNot{..})
+
+\end{code}
+
+p80: ActionStringEquals
+\begin{code}
+getActionStringEquals = do return (ActionStringEquals{..})
+
+\end{code}
+
+p80: ActionStringLength
+\begin{code}
+getActionStringLength = do return (ActionStringLength{..})
+
+\end{code}
+
+p80: ActionStringAdd
+\begin{code}
+getActionStringAdd = do return (ActionStringAdd{..})
+
+\end{code}
+
+p81: ActionStringExtract
+\begin{code}
+getActionStringExtract = do return (ActionStringExtract{..})
+
+\end{code}
+
+p81: ActionStringLess
+\begin{code}
+getActionStringLess = do return (ActionStringLess{..})
+
+\end{code}
+
+p81: ActionMBStringLength
+\begin{code}
+getActionMBStringLength = do return (ActionMBStringLength{..})
+
+\end{code}
+
+p82: ActionMBStringExtract
+\begin{code}
+getActionMBStringExtract = do return (ActionMBStringExtract{..})
+
+\end{code}
+
+p82: ActionToInteger
+\begin{code}
+getActionToInteger = do return (ActionToInteger{..})
+
+\end{code}
+
+p83: ActionCharToAscii
+\begin{code}
+getActionCharToAscii = do return (ActionCharToAscii{..})
+
+\end{code}
+
+p83: ActionAsciiToChar
+\begin{code}
+getActionAsciiToChar = do return (ActionAsciiToChar{..})
+
+\end{code}
+
+p83: ActionMBCharToAscii
+\begin{code}
+getActionMBCharToAscii = do return (ActionMBCharToAscii{..})
+
+\end{code}
+
+p84: ActionMBAsciiToChar
+\begin{code}
+getActionMBAsciiToChar = do return (ActionMBAsciiToChar{..})
+
+\end{code}
+
+p84: ActionJump
+\begin{code}
+getActionJump
+  = do actionJump_branchOffset <- getSI16
+       return (ActionJump{..})
+
+\end{code}
+
+p84: ActionIf
+\begin{code}
+getActionIf
+  = do actionIf_branchOffset <- getSI16
+       return (ActionIf{..})
+
+\end{code}
+
+p85: ActionCall
+\begin{code}
+getActionCall = do return (ActionCall{..})
+
+\end{code}
+
+p86: ActionGetVariable
+\begin{code}
+getActionGetVariable = do return (ActionGetVariable{..})
+
+\end{code}
+
+p86: ActionSetVariable
+\begin{code}
+getActionSetVariable = do return (ActionSetVariable{..})
+
+\end{code}
+
+p87: ActionGetURL2
+\begin{code}
+getActionGetURL2
+  = do actionGetURL2_sendVarsMethod <- getUB 2
+       _actionGetURL2_reserved <- getUB 4
+       actionGetURL2_loadTargetFlag <- getFlag
+       actionGetURL2_loadVariablesFlag <- getFlag
+       return (ActionGetURL2{..})
+
+\end{code}
+
+p88: ActionGotoFrame2
+\begin{code}
+getActionGotoFrame2
+  = do _actionGotoFrame2_reserved <- getUB 6
+       actionGotoFrame2_sceneBiasFlag <- getFlag
+       actionGotoFrame2_playFlag <- getFlag
+       actionGotoFrame2_sceneBias <- maybeHas
+                                       actionGotoFrame2_sceneBiasFlag
+                                       getUI16
+       return (ActionGotoFrame2{..})
+
+\end{code}
+
+p89: ActionSetTarget2
+\begin{code}
+getActionSetTarget2 = do return (ActionSetTarget2{..})
+
+\end{code}
+
+p89: ActionGetProperty
+\begin{code}
+getActionGetProperty = do return (ActionGetProperty{..})
+
+\end{code}
+
+p90: ActionSetProperty
+\begin{code}
+getActionSetProperty = do return (ActionSetProperty{..})
+
+\end{code}
+
+p90: ActionCloneSprite
+\begin{code}
+getActionCloneSprite = do return (ActionCloneSprite{..})
+
+\end{code}
+
+p91: ActionRemoveSprite
+\begin{code}
+getActionRemoveSprite = do return (ActionRemoveSprite{..})
+
+\end{code}
+
+p91: ActionStartDrag
+\begin{code}
+getActionStartDrag = do return (ActionStartDrag{..})
+
+\end{code}
+
+p92: ActionEndDrag
+\begin{code}
+getActionEndDrag = do return (ActionEndDrag{..})
+
+\end{code}
+
+p92: ActionWaitForFrame2
+\begin{code}
+getActionWaitForFrame2
+  = do actionWaitForFrame2_skipCount <- getUI8
+       return (ActionWaitForFrame2{..})
+
+\end{code}
+
+p92: ActionTrace
+\begin{code}
+getActionTrace = do return (ActionTrace{..})
+
+\end{code}
+
+p93: ActionGetTime
+\begin{code}
+getActionGetTime = do return (ActionGetTime{..})
+
+\end{code}
+
+p93: ActionRandomNumber
+\begin{code}
+getActionRandomNumber = do return (ActionRandomNumber{..})
+
+\end{code}
+
+p95: ActionCallFunction
+\begin{code}
+getActionCallFunction = do return (ActionCallFunction{..})
+
+\end{code}
+
+p95: ActionCallMethod
+\begin{code}
+getActionCallMethod = do return (ActionCallMethod{..})
+
+\end{code}
+
+p96: ActionConstantPool
+\begin{code}
+getActionConstantPool
+  = do actionConstantPool_count <- getUI16
+       actionConstantPool_constantPool <- sequence
+                                            (genericReplicate actionConstantPool_count getSTRING)
+       return (ActionConstantPool{..})
+
+\end{code}
+
+p97: ActionDefineFunction
+\begin{code}
+getActionDefineFunction
+  = do actionDefineFunction_functionName <- getSTRING
+       actionDefineFunction_numParams <- getUI16
+       actionDefineFunction_params <- sequence
+                                        (genericReplicate actionDefineFunction_numParams getSTRING)
+       actionDefineFunction_codeSize <- getUI16
+       return (ActionDefineFunction{..})
+
+\end{code}
+
+
+
+
+
+
+
+
+
 \begin{code}
 
 main :: IO ()

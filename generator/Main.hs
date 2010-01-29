@@ -78,12 +78,12 @@ data Field = Field {
     field_excluded :: Maybe WhyExcluded
   } deriving (Show)
 
-data WhyExcluded = IsReserved | IsPresenceFlag FieldName
+data WhyExcluded = IsReserved | IsPresenceFlag FieldName | IsLength FieldName
                  deriving (Show)
 
 type TyCon = String
 
-data Type = Type { type_optional :: Bool, type_cond :: Maybe FieldExpr, type_tycon :: TyCon, type_arraylen :: Maybe FieldExpr }
+data Type = Type { type_optional :: Bool, type_cond :: Maybe FieldExpr, type_tycons :: [TyCon], type_arraylen :: Maybe FieldExpr }
           | CompositeType { type_composite_cond :: FieldExpr, type_fields :: [Field] } -- Inserted by analysis
           deriving (Show)
 
@@ -139,9 +139,9 @@ parseType s = parse typ "<memory>" s
     typ = do
         optional <- optionality
         mb_condition <- optionMaybe condition
-        nm <- tycon
+        cons <- fmap return tycon <|> tycons
         mb_lexpr <- optionMaybe (between (char '[') (char ']') expr)
-        return $ Type optional mb_condition nm mb_lexpr
+        return $ Type optional mb_condition cons mb_lexpr
     
     optionality = do { string "(optional)"; spaces; return True }
               <|> return False
@@ -152,6 +152,8 @@ parseType s = parse typ "<memory>" s
     
     tycon = many1 alphaNum
         <?> "type constructor"
+    
+    tycons = between (char '<') (char '>') $ sepBy tycon (char ',' >> spaces)
     
     expr = buildExpressionParser table (do { e <- factor; spaces; return e })
        <?> "expression"
@@ -212,6 +214,11 @@ identifyExclusions (f:fs)
                                  , cond_field_name == field_name f]
   = f { field_excluded = Just (IsPresenceFlag $ field_name controls_field) } : identifyExclusions fs
   
+  | [controls_field] <- [other_f | other_f <- fs
+                                 , Type { type_arraylen=Just (FieldE len_field_name) } <- [field_type other_f]
+                                 , len_field_name == field_name f]
+  = f { field_excluded = Just (IsLength $ field_name controls_field) } : identifyExclusions fs
+  
   | otherwise
   = f : identifyExclusions fs
   where the_type_cond (Type { type_cond }) = type_cond
@@ -220,12 +227,12 @@ identifyExclusions (f:fs)
 
 recordToDecls :: Record -> (Maybe SpecialInfo, [Decl])
 recordToDecls (Record { record_name, record_fields })
-  | (Field "Header" (Type False Nothing "RECORDHEADER" Nothing) comment Nothing):record_fields <- record_fields
+  | (Field "Header" (Type False Nothing ["RECORDHEADER"] Nothing) comment Nothing):record_fields <- record_fields
   , let tag_type = read $ drop (length "Tag type = ") comment
   , (datacon, getter) <- process record_fields
   = (Just (Tag, PLit (Int tag_type), record_name, datacon), [getter])
   
-  | (Field field_name (Type False Nothing "ACTIONRECORDHEADER" Nothing) comment Nothing):record_fields <- record_fields
+  | (Field field_name (Type False Nothing ["ACTIONRECORDHEADER"] Nothing) comment Nothing):record_fields <- record_fields
   , field_name == record_name
   , [(action_code, _)] <- readHex $ drop (length "ActionCode = 0x") comment
   , (datacon, getter) <- process record_fields
@@ -268,7 +275,7 @@ fieldToSyntax' defuser (Field { field_name, field_type=typ }) = (genexp, ty)
             gettertys = map (fieldToSyntax defuser) fields
             (getters, mb_tys) = unzip gettertys
           
-        Type optional mb_condexpr tycon mb_lenexpr -> (genexp'', ty'')
+        Type optional mb_condexpr tycons mb_lenexpr -> (genexp'', ty'')
           where
             (genexp'', ty'') = case optional of
                 False -> (genexp', ty')
@@ -278,15 +285,21 @@ fieldToSyntax' defuser (Field { field_name, field_type=typ }) = (genexp, ty)
                 Nothing       -> (genexp, ty)
                 Just condexpr -> (maybeHas condexpr genexp, maybeTy ty)
     
-            (genexp, ty) = case (tycon, mb_lenexpr) of
-              ("UB", Just (LitE 1))
+            (genexp, ty) = case (tycons, mb_lenexpr) of
+              (["UB"], Just (LitE 1))
                 -> (var "getFlag", LHE.TyCon (qname "Bool"))
-              (tycon, Just lenexpr)
+              ([tycon], Just lenexpr)
                 | tycon `elem` ["UB", "SB", "FB"]
                 -> (App (var $ "get" ++ tycon) (fieldExprToSyntax defuser lenexpr), TyCon (qname tycon))
-                | otherwise
-                -> (App (var "sequence") (App (App (var "genericReplicate") (fieldExprToSyntax defuser lenexpr)) (var $ "get" ++ tycon)), TyList (TyCon (qname tycon)))
-              (tycon, Nothing)
+              (tycons, Just lenexpr)
+                -> (App (var "sequence") (App (App (var "genericReplicate") (fieldExprToSyntax defuser lenexpr)) oneGetExpr), TyList oneTy)
+                where ntycons = length tycons
+                      (oneGetExpr, oneTy) = case tycons of
+                          [tycon] -> (getOne tycon, tyOne tycon)
+                          _       -> (apps (var $ "liftM" ++ show ntycons) (var ("(" ++ replicate (ntycons - 1) ',' ++ ")") : map getOne tycons), TyTuple Boxed (map tyOne tycons))
+                      getOne tycon = var $ "get" ++ tycon
+                      tyOne tycon = TyCon (qname tycon)
+              ([tycon], Nothing)
                 -> (var $ "get" ++ tycon, TyCon (qname tycon))
 
 fieldExprToSyntax _       (LitE i) = Lit (Int $ fromIntegral i)
@@ -303,6 +316,7 @@ simplifyFieldExpr _    e = e
 var = Var . UnQual . Ident
 qname = UnQual . Ident
 noSrcLoc = SrcLoc "<unknown>" 0 0
+apps = foldl App
 
 defuseFieldName record_name field_name = toVarName record_name ++ '_':toVarName field_name
   where toVarName (c:s) = toLower c : s

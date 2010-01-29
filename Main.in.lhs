@@ -118,6 +118,7 @@ storableCast w = unsafePerformIO $ with w $ peek . castPtr
 -- Page 14: encoded integers
 
 newtype EncodedU32 = EncodedU32 UI32
+                   deriving (Eq, Ord, Enum, Show, Num, Real, Integral)
 
 getEncodedU32 :: SwfGet EncodedU32
 getEncodedU32 = fmap EncodedU32 $ do
@@ -802,13 +803,10 @@ NameN    STRING       Identifier for last imported character
 p62: SymbolClass
 \begin{record}
 SymbolClass
-Field      Type         Comment
-Header     RECORDHEADER Tag type = 76
-NumSymbols UI16         Number of symbols that will be associated by this tag.
-Tag1       UI16         The 16-bit character tag ID for the symbol to associate
-Name1      STRING       The fully-qualified name of the ActionScript 3.0 class with which to associate this symbol. The class must have already been declared by a DoABC tag.
-TagN       UI16         Tag ID for symbol N
-NameN      STRING       Fully-qualified class name for symbol N
+Field      Type                      Comment
+Header     RECORDHEADER              Tag type = 76
+NumSymbols UI16                      Number of symbols that will be associated by this tag.
+TagsNames  <UI16,STRING>[NumSymbols] The 16-bit character tag ID for the symbol to associate, and the fully-qualified name of the ActionScript 3.0 class with which to associate. The class must have already been declared by a DoABC tag.
 \end{record}
 
 p64: Metadata
@@ -831,18 +829,12 @@ Splitter    RECT         Center region of 9-slice grid
 p66: DefineSceneAndFrameLabelData
 \begin{record}
 DefineSceneAndFrameLabelData
-Field           Type         Comment
-Header          RECORDHEADER Tag type = 86
-SceneCount      EncodedU32   Number of scenes
-Offset1         EncodedU32   Frame offset for scene 1
-Name1           STRING       Name of scene 1
-OffsetN         EncodedU32   Frame offset for scene N
-NameN           STRING       Name of scene N
-FrameLabelCount EncodedU32   Number of frame labels
-FrameNum1       EncodedU32   Frame number of frame label #1 (zero-based, global to symbol)
-FrameLabel1     STRING       Frame label string of frame label #1
-FrameNumN       EncodedU32   Frame number of frame label #N (zero-based, global to symbol)
-FrameLabelN     STRING       Frame label string of frame label #N
+Field           Type                                 Comment
+Header          RECORDHEADER                         Tag type = 86
+SceneCount      EncodedU32                           Number of scenes
+OffsetNames     <EncodedU32,STRING>[SceneCount]      Frame offset and names for scenes
+FrameLabelCount EncodedU32                           Number of frame labels
+FrameNumLabels  <EncodedU32,STRING>[FrameLabelCount] Frame number (zero-based, global to symbol) and string for frame labels
 \end{record}
 
 
@@ -1012,6 +1004,340 @@ getActionPush = do
         9 -> fmap ActionPushConstant16 getUI16
 
 \end{code}
+
+p75: ActionPop
+\begin{record}
+ActionPop
+Field     Type               Comment
+ActionPop ACTIONRECORDHEADER ActionCode = 0x17
+\end{record}
+
+p76: ActionAdd
+\begin{record}
+ActionAdd
+Field     Type               Comment
+ActionAdd ACTIONRECORDHEADER ActionCode = 0x0A
+\end{record}
+
+p76: ActionSubtract
+\begin{record}
+ActionSubtract
+Field          Type               Comment
+ActionSubtract ACTIONRECORDHEADER ActionCode = 0x0B
+\end{record}
+
+p76: ActionMultiply
+\begin{record}
+ActionMultiply
+Field          Type               Comment
+ActionMultiply ACTIONRECORDHEADER ActionCode = 0x0C
+\end{record}
+
+p77: ActionDivide
+\begin{record}
+ActionDivide
+Field        Type               Comment
+ActionDivide ACTIONRECORDHEADER ActionCode = 0x0D
+\end{record}
+
+p77: ActionEquals
+\begin{record}
+ActionEquals
+Field        Type               Comment
+ActionEquals ACTIONRECORDHEADER ActionCode = 0x0E
+\end{record}
+
+p78: ActionLess
+\begin{record}
+ActionLess
+Field      Type               Comment
+ActionLess ACTIONRECORDHEADER ActionCode = 0x0F
+\end{record}
+
+p78: ActionAnd
+\begin{record}
+ActionAnd
+Field     Type               Comment
+ActionAnd ACTIONRECORDHEADER ActionCode = 0x10
+\end{record}
+
+p79: ActionOr
+\begin{record}
+ActionOr
+Field    Type               Comment
+ActionOr ACTIONRECORDHEADER ActionCode = 0x11
+\end{record}
+
+p79: ActionNot
+\begin{record}
+ActionNot
+Field     Type               Comment
+ActionNot ACTIONRECORDHEADER ActionCode = 0x12
+\end{record}
+
+p80: ActionStringEquals
+\begin{record}
+ActionStringEquals
+Field              Type               Comment
+ActionStringEquals ACTIONRECORDHEADER ActionCode = 0x13
+\end{record}
+
+p80: ActionStringLength
+\begin{record}
+ActionStringLength
+Field              Type               Comment
+ActionStringLength ACTIONRECORDHEADER ActionCode = 0x14
+\end{record}
+
+p80: ActionStringAdd
+\begin{record}
+ActionStringAdd
+Field           Type               Comment
+ActionStringAdd ACTIONRECORDHEADER ActionCode = 0x21
+\end{record}
+
+p81: ActionStringExtract
+\begin{record}
+ActionStringExtract
+Field               Type               Comment
+ActionStringExtract ACTIONRECORDHEADER ActionCode = 0x15
+\end{record}
+
+p81: ActionStringLess
+\begin{record}
+ActionStringLess
+Field            Type               Comment
+ActionStringLess ACTIONRECORDHEADER ActionCode = 0x29
+\end{record}
+
+p81: ActionMBStringLength
+\begin{record}
+ActionMBStringLength
+Field                Type               Comment
+ActionMBStringLength ACTIONRECORDHEADER ActionCode = 0x31
+\end{record}
+
+p82: ActionMBStringExtract
+\begin{record}
+ActionMBStringExtract
+Field                 Type               Comment
+ActionMBStringExtract ACTIONRECORDHEADER ActionCode = 0x35
+\end{record}
+
+p82: ActionToInteger
+\begin{record}
+ActionToInteger
+Field           Type               Comment
+ActionToInteger ACTIONRECORDHEADER ActionCode = 0x18
+\end{record}
+
+p83: ActionCharToAscii
+\begin{record}
+ActionCharToAscii
+Field             Type               Comment
+ActionCharToAscii ACTIONRECORDHEADER ActionCode = 0x32
+\end{record}
+
+p83: ActionAsciiToChar
+\begin{record}
+ActionAsciiToChar
+Field             Type               Comment
+ActionAsciiToChar ACTIONRECORDHEADER ActionCode = 0x33
+\end{record}
+
+p83: ActionMBCharToAscii
+\begin{record}
+ActionMBCharToAscii
+Field               Type               Comment
+ActionMBCharToAscii ACTIONRECORDHEADER ActionCode = 0x36
+\end{record}
+
+p84: ActionMBAsciiToChar
+\begin{record}
+ActionMBAsciiToChar
+Field               Type               Comment
+ActionMBAsciiToChar ACTIONRECORDHEADER ActionCode = 0x37
+\end{record}
+
+p84: ActionJump
+\begin{record}
+ActionJump
+Field        Type               Comment
+ActionJump   ACTIONRECORDHEADER ActionCode = 0x99
+BranchOffset SI16               Offset
+\end{record}
+
+p84: ActionIf
+\begin{record}
+ActionIf
+Field        Type               Comment
+ActionIf     ACTIONRECORDHEADER ActionCode = 0x9D
+BranchOffset SI16               Offset
+\end{record}
+
+p85: ActionCall
+\begin{record}
+ActionCall
+Field      Type               Comment
+ActionCall ACTIONRECORDHEADER ActionCode = 0x9E
+\end{record}
+
+p86: ActionGetVariable
+\begin{record}
+ActionGetVariable
+Field             Type               Comment
+ActionGetVariable ACTIONRECORDHEADER ActionCode = 0x1C
+\end{record}
+
+p86: ActionSetVariable
+\begin{record}
+ActionSetVariable
+Field             Type               Comment
+ActionSetVariable ACTIONRECORDHEADER ActionCode = 0x1D
+\end{record}
+
+p87: ActionGetURL2
+\begin{record}
+ActionGetURL2
+Field             Type               Comment
+ActionGetURL2     ACTIONRECORDHEADER ActionCode = 0x9A; Length is always 1
+SendVarsMethod    UB[2]              0 = None, 1 = GET, 2 = POST 
+Reserved          UB[4]              Always 0
+LoadTargetFlag    UB[1]              0 = Target is a browser window 1 = Target is a path to a sprite
+LoadVariablesFlag UB[1]              0 = No variables to load 1 = Load variables
+\end{record}
+
+p88: ActionGotoFrame2
+\begin{record}
+ActionGotoFrame2
+Field            Type                       Comment
+ActionGotoFrame2 ACTIONRECORDHEADER         ActionCode = 0x9F
+Reserved         UB[6]                      Always 0
+SceneBiasFlag    UB[1]                      Scene bias flag
+PlayFlag         UB[1]                      0 = Go to frame and stop 1 = Go to frame and play
+SceneBias        If SceneBiasFlag = 1, UI16 Number to be added to frame determined by stack argument
+\end{record}
+
+p89: ActionSetTarget2
+\begin{record}
+ActionSetTarget2
+Field            Type               Comment
+ActionSetTarget2 ACTIONRECORDHEADER ActionCode = 0x20
+\end{record}
+
+p89: ActionGetProperty
+\begin{record}
+ActionGetProperty
+Field             Type               Comment
+ActionGetProperty ACTIONRECORDHEADER ActionCode = 0x22
+\end{record}
+
+p90: ActionSetProperty
+\begin{record}
+ActionSetProperty
+Field             Type               Comment
+ActionSetProperty ACTIONRECORDHEADER ActionCode = 0x23
+\end{record}
+
+p90: ActionCloneSprite
+\begin{record}
+ActionCloneSprite
+Field             Type               Comment
+ActionCloneSprite ACTIONRECORDHEADER ActionCode = 0x24
+\end{record}
+
+p91: ActionRemoveSprite
+\begin{record}
+ActionRemoveSprite
+Field              Type               Comment
+ActionRemoveSprite ACTIONRECORDHEADER ActionCode = 0x25
+\end{record}
+
+p91: ActionStartDrag
+\begin{record}
+ActionStartDrag
+Field           Type               Comment
+ActionStartDrag ACTIONRECORDHEADER ActionCode = 0x27
+\end{record}
+
+p92: ActionEndDrag
+\begin{record}
+ActionEndDrag
+Field         Type               Comment
+ActionEndDrag ACTIONRECORDHEADER ActionCode = 0x28
+\end{record}
+
+p92: ActionWaitForFrame2
+\begin{record}
+ActionWaitForFrame2
+Field               Type               Comment
+ActionWaitForFrame2 ACTIONRECORDHEADER ActionCode = 0x8D; Length is always 1
+SkipCount           UI8                The number of actions to skip
+\end{record}
+
+p92: ActionTrace
+\begin{record}
+ActionTrace
+Field       Type               Comment
+ActionTrace ACTIONRECORDHEADER ActionCode = 0x26
+\end{record}
+
+p93: ActionGetTime
+\begin{record}
+ActionGetTime
+Field         Type               Comment
+ActionGetTime ACTIONRECORDHEADER ActionCode = 0x34
+\end{record}
+
+p93: ActionRandomNumber
+\begin{record}
+ActionRandomNumber
+Field              Type               Comment
+ActionRandomNumber ACTIONRECORDHEADER ActionCode = 0x30
+\end{record}
+
+p95: ActionCallFunction
+\begin{record}
+ActionCallFunction
+Field              Type               Comment
+ActionCallFunction ACTIONRECORDHEADER ActionCode = 0x3D
+\end{record}
+
+p95: ActionCallMethod
+\begin{record}
+ActionCallMethod
+Field            Type               Comment
+ActionCallMethod ACTIONRECORDHEADER ActionCode = 0x52
+\end{record}
+
+p96: ActionConstantPool
+\begin{record}
+ActionConstantPool
+Field              Type               Comment
+ActionConstantPool ACTIONRECORDHEADER ActionCode = 0x88
+Count              UI16               Number of constants to follow
+ConstantPool       STRING[Count]      String constants
+\end{record}
+
+p97: ActionDefineFunction
+\begin{record}
+ActionDefineFunction
+Field                Type               Comment
+ActionDefineFunction ACTIONRECORDHEADER ActionCode = 0x9B
+FunctionName         STRING             Function name, empty if anonymous
+NumParams            UI16               # of parameters
+Params               STRING[NumParams]  Paramaters
+CodeSize             UI16               # of bytes of code that follow
+\end{record}
+
+
+
+
+
+
+
+
+
 \begin{code}
 
 main :: IO ()
