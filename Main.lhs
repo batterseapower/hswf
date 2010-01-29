@@ -421,6 +421,7 @@ data Tag = UnknownTag ByteString
          | PlaceObject3 { placeObject3_placeFlagMove :: Bool, placeObject3_placeFlagHasImage :: Bool, placeObject3_placeFlagHasClassName :: Bool, placeObject3_depth :: UI16, placeObject3_className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, placeObject3_ratio :: Maybe UI16, placeObject3_name :: Maybe STRING, placeObject3_clipDepth :: Maybe UI16, placeObject3_surfaceFilterList :: Maybe FILTERLIST, placeObject3_blendMode :: Maybe BlendMode, placeObject3_bitmapCache :: Maybe UI8, placeObject3_clipActions :: Maybe CLIPACTIONS }
          | DoAction { doAction_actions :: [ACTIONRECORD] }
          | DoInitAction { doInitAction_spriteID :: UI16, doInitAction_actions :: [ACTIONRECORD] }
+         | DefineFont { defineFont_fontID :: UI16, defineFont_glyphShapeTable :: [SHAPE] }
          |  PlaceObject{placeObject_characterId :: UI16,
               placeObject_depth :: UI16, placeObject_matrix :: MATRIX,
               placeObject_colorTransform :: Maybe CXFORM}
@@ -531,11 +532,20 @@ data Tag = UnknownTag ByteString
                     defineMorphShape2_morphLineStyles :: MORPHLINESTYLEARRAY,
                     defineMorphShape2_startEdges :: SHAPE,
                     defineMorphShape2_endEdges :: SHAPE}
+         |  DefineFontInfo{defineFontInfo_fontID :: UI16,
+                 defineFontInfo_fontName :: [UI8],
+                 defineFontInfo_fontFlagsSmallText :: Bool,
+                 defineFontInfo_fontFlagsShiftJIS :: Bool,
+                 defineFontInfo_fontFlagsANSI :: Bool,
+                 defineFontInfo_fontFlagsItalic :: Bool,
+                 defineFontInfo_fontFlagsBold :: Bool,
+                 defineFontInfo_codeTable :: Maybe [UI16]}
 
 getRECORD = do
     rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
 
     let mb_getter = case rECORDHEADER_tagType of
+          10 -> Just getDefineFont
           12 -> Just getDoAction
           59 -> Just getDoInitAction
           70 -> Just getPlaceObject3
@@ -587,6 +597,7 @@ generatedTagGetters tagType
         90 -> Just getDefineBitsJPEG4
         46 -> Just getDefineMorphShape
         84 -> Just getDefineMorphShape2
+        13 -> Just getDefineFontInfo
         _ -> Nothing
 
 \end{code}
@@ -2772,6 +2783,48 @@ getMORPHLINESTYLE2
 
 Chapter 10: Fonts and Text
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+p176: DefineFont
+\begin{code}
+
+getDefineFont = do
+    defineFont_fontID <- getUI16
+    
+    offset0 <- getUI16
+    let nGlyphs = offset0 `div` 2
+    _offsets <- fmap (offset0:) $ genericReplicateM (nGlyphs - 1) getUI16
+    
+    defineFont_glyphShapeTable <- genericReplicateM nGlyphs (getSHAPE 1)
+    return $ DefineFont {..}
+
+\end{code}
+
+p177: DefineFontInfo
+\begin{code}
+getDefineFontInfo
+  = do defineFontInfo_fontID <- getUI16
+       defineFontInfo_fontNameLen <- getUI8
+       defineFontInfo_fontName <- genericReplicateM
+                                    defineFontInfo_fontNameLen
+                                    getUI8
+       _defineFontInfo_fontFlagsReserved <- getUB 2
+       defineFontInfo_fontFlagsSmallText <- getFlag
+       defineFontInfo_fontFlagsShiftJIS <- getFlag
+       defineFontInfo_fontFlagsANSI <- getFlag
+       defineFontInfo_fontFlagsItalic <- getFlag
+       defineFontInfo_fontFlagsBold <- getFlag
+       defineFontInfo_fontFlagsWideCodes <- getFlag
+       defineFontInfo_codeTable <- maybeHas
+                                     defineFontInfo_fontFlagsWideCodes
+                                     (getToEnd getUI16)
+       return (DefineFontInfo{..})
+
+\end{code}
+
+
+\begin{code}
+
+\end{code}
 
 \begin{code}
 

@@ -89,8 +89,9 @@ data WhyExcluded = IsReserved | IsPresenceFlag FieldName | IsLength FieldName
 data TyCon = TyCon String [FieldExpr]
            deriving (Show)
 
-data Type = Type { type_cond :: Maybe FieldExpr, type_tycons :: [TyCon], type_repeats :: Repeats }
-          | CompositeType { type_composite_cond :: FieldExpr, type_fields :: [Field] } -- Inserted by analysis
+data Type = Type { type_tycons :: [TyCon], type_repeats :: Repeats }
+          | IfThenType { type_cond :: FieldExpr, type_then :: Type }
+          | CompositeType { type_fields :: [Field] } -- Inserted by analysis
           deriving (Show)
 
 data Repeats = Once
@@ -111,6 +112,9 @@ data FieldUnOp = Not
 data FieldBinOp = Plus | Mult | Equals | Or | And
                 deriving (Eq, Show)
 
+type_cond_maybe :: Type -> Maybe FieldExpr
+type_cond_maybe (IfThenType { type_cond }) = Just type_cond
+type_cond_maybe _                          = Nothing
 
 parseFile :: String -> [Chunk]
 parseFile contents = goNo [] (lines contents)
@@ -155,14 +159,15 @@ parseExactly ma s = case parse ma "<memory>" s of Left errs -> error (show errs)
 parseType :: String -> Either ParseError Type
 parseType s = parse typ "<memory>" s
 
-typ = do
+typ = try conditional
+  <|> basetyp
+  <?> "type"
+
+basetyp = do
     optional <- optionality
-    mb_condition <- optionMaybe condition
     cons <- fmap return tycon <|> tycons
-    repeats <- if optional
-                then return OptionallyAtEnd
-                else repeatspecifier
-    return $ Type mb_condition cons repeats
+    repeats <- if optional then return OptionallyAtEnd else repeatspecifier
+    return $ Type cons repeats
 
 repeatspecifier = between (char '[') (char ']') (fmap NumberOfTimes expr <|> return RepeatsUntilEnd)
               <|> return Once
@@ -172,8 +177,8 @@ optionality = do { string "(optional)"; spaces; return True }
           <|> return False
           <?> "optionality clause"
 
-condition = do { string "If"; spaces; e <- expr; optional (char ','); spaces; return e }
-        <?> "condition"
+conditional = do { string "If"; spaces; e <- expr; optional (char ','); spaces; t <- typ; return $ IfThenType e t }
+          <?> "conditional"
 
 tycon = do { tc <- many1 alphaNum; mb_args <- optionMaybe arguments; return $ TyCon tc (fromMaybe [] mb_args) }
     <?> "type constructor"
@@ -213,21 +218,27 @@ headerline = do { name <- many1 alphaNum; mb_params <- optionMaybe parameters; r
 simplify :: [Field] -> [Field]
 simplify = map simplifyOne
   where simplifyOne f = f { field_type = fmapFieldExpr (simplifyFieldExpr True) (field_type f) }
-        fmapFieldExpr f ty@(Type { type_cond }) = ty { type_cond = fmap f type_cond }
-        fmapFieldExpr f ty@(CompositeType { type_composite_cond }) = ty { type_composite_cond = f type_composite_cond }
+        fmapFieldExpr f ty@(IfThenType { type_cond, type_then }) = ty { type_cond = f type_cond, type_then = fmapFieldExpr f type_then }
+        fmapFieldExpr _ ty = ty
 
 identifyComposites :: [Field] -> [Field]
 identifyComposites [] = []
 identifyComposites (f:fs)
-  | Just cond <- type_cond (field_type f)
-  , (fs1, fs2) <- span ((Just cond ==) . type_cond . field_type) fs
+  | IfThenType cond typ <- field_type f
+  , f <- f { field_type = typ }
+  , (fs1, fs2) <- spanMaybe (\f' -> case field_type f' of IfThenType cond' typ' | cond' == cond -> Just (f' { field_type = typ' }); _ -> Nothing) fs
   , not (null fs1)
-  , Just n <- compositeName (map field_name (f:fs1))
-  , let zapCond f = f { field_type = (field_type f) { type_cond = Nothing} }
-        typ = CompositeType cond $ map zapCond (f:fs1)
-  = Field n typ "" Nothing : identifyComposites fs2
+  , Just name <- compositeName (map field_name $ f:fs1)
+  , let composite_typ = IfThenType cond $ CompositeType $ f : fs1
+  = Field name composite_typ "" Nothing : identifyComposites fs2
   | otherwise
   = f : identifyComposites fs
+
+spanMaybe :: (a -> Maybe b) -> [a] -> ([b], [a])
+spanMaybe f = go
+  where go []     = ([], [])
+        go (x:xs) | Just y <- f x = first (y:) $ go xs
+                  | otherwise     = ([], x:xs)
 
 compositeName :: [String] -> Maybe String
 compositeName names = commonPrefix (map (dropWhile (== 'N')) names) `fallback` commonSuffix names
@@ -251,7 +262,7 @@ identifyExclusions (f:fs)
   -- TODO: only do these two if no other fields mention this one?
   
   | [controls_field] <- [other_f | other_f <- fs
-                                 , Just (FieldE cond_field_name) <- [the_type_cond (field_type other_f)]
+                                 , Just (FieldE cond_field_name) <- [type_cond_maybe (field_type other_f)]
                                  , cond_field_name == field_name f]
   = f { field_excluded = Just (IsPresenceFlag $ field_name controls_field) } : identifyExclusions fs
   
@@ -262,18 +273,16 @@ identifyExclusions (f:fs)
   
   | otherwise
   = f : identifyExclusions fs
-  where the_type_cond (Type { type_cond }) = type_cond
-        the_type_cond (CompositeType { type_composite_cond }) = Just type_composite_cond
 
 
 recordToDecls :: Record -> (Maybe SpecialInfo, [Decl])
 recordToDecls (Record { record_name, record_params, record_fields })
-  | (Field "Header" (Type Nothing [TyCon "RECORDHEADER" []] Once) comment Nothing):record_fields <- record_fields
+  | (Field "Header" (Type [TyCon "RECORDHEADER" []] Once) comment Nothing):record_fields <- record_fields
   , let tag_type = read $ drop (length "Tag type = ") comment
   , (datacon, getter) <- process record_fields
   = (Just (Tag, PLit (Int tag_type), record_name, datacon), [getter])
   
-  | (Field field_name (Type Nothing [TyCon "ACTIONRECORDHEADER" []] Once) comment Nothing):record_fields <- record_fields
+  | (Field field_name (Type [TyCon "ACTIONRECORDHEADER" []] Once) comment Nothing):record_fields <- record_fields
   , field_name == record_name
   , [(action_code, _)] <- readHex $ drop (length "ActionCode = 0x") comment
   , (datacon, getter) <- process record_fields
@@ -301,58 +310,57 @@ fieldToSyntax :: (FieldName -> String) -> Field -> (Stmt, Maybe LHE.Type)
 fieldToSyntax defuser field = (Generator noSrcLoc bind_to genexp, if should_exclude then Nothing else Just ty)
   where
     should_exclude = isJust (field_excluded field)
-    (genexp, ty) = fieldToSyntax' defuser field
+    (genexp, ty) = typeToSyntax defuser (field_type field)
     bind_to = PVar $ Ident $ (case field_excluded field of Just IsReserved -> ('_':); _ -> id) $ defuser (field_name field)
 
-fieldToSyntax' :: (FieldName -> String) -> Field -> (Exp, LHE.Type)
-fieldToSyntax' defuser (Field { field_name, field_type=typ }) = (genexp, ty)
+typeToSyntax :: (FieldName -> String) -> Type -> (Exp, LHE.Type)
+typeToSyntax defuser typ = case typ of
+    CompositeType fields -> (genexp, ty)
+      where
+        genexp = Do $ getters ++ [Qualifier $ App (var "return") (Tuple components)]
+        ty = TyTuple Boxed (catMaybes mb_tys)
+        
+        components = [Var (UnQual bound_to) | (Generator _ (PVar bound_to) _, Just _) <- gettertys]
+        gettertys = map (fieldToSyntax defuser) fields
+        (getters, mb_tys) = unzip gettertys
+
+    IfThenType condexpr typ -> (maybeHas condexpr genexp, maybeTy ty)
+      where (genexp, ty) = typeToSyntax defuser typ
+    
+    Type [TyCon "UB" []] (NumberOfTimes (LitE 1))
+      -> (var "getFlag", LHE.TyCon (qname "Bool"))
+    
+    Type [TyCon tycon []] (NumberOfTimes lenexpr)
+      | tycon `elem` ["UB", "SB", "FB"]
+      -> (App (var $ "get" ++ tycon) (fieldExprToSyntax defuser lenexpr), LHE.TyCon (qname tycon))
+    
+    Type [TyCon "UB" []] RepeatsUntilEnd
+      -> (var "byteAlign", TyTuple Boxed [])
+    
+    Type [TyCon "BYTE" []] RepeatsUntilEnd
+      -> (var "getRemainingLazyByteString", LHE.TyCon (qname "ByteString"))
+    
+    Type tycons repeats -> case repeats of
+        Once
+          -> (onegenexp, onety)
+        NumberOfTimes lenexpr
+          -> (App (App (var "genericReplicateM") (fieldExprToSyntax defuser lenexpr)) onegenexp, TyList onety)
+        OptionallyAtEnd
+          -> (App (App (var "maybeHasM") (App (App (var "fmap") (var "not")) (var "isEmpty"))) onegenexp, maybeTy onety)
+        RepeatsUntilEnd
+          -> (App (var "getToEnd") onegenexp, TyList onety)
+      where
+        (onegenexp, onety) = case tycons of
+          [tycon] -> (getOne tycon, tyOne tycon)
+          _       -> (apps (var $ "liftM" ++ show ntycons) (var ("(" ++ replicate (ntycons - 1) ',' ++ ")") : map getOne tycons), TyTuple Boxed (map tyOne tycons))
+        
+        ntycons = length tycons
+        getOne (TyCon tycon args) = apps (var $ "get" ++ tycon) (map (fieldExprToSyntax defuser) args)
+        tyOne (TyCon tycon _)     = LHE.TyCon (qname tycon)
+
   where
     maybeHas condexpr = App (App (var "maybeHas") (fieldExprToSyntax defuser condexpr)) 
     maybeTy = TyApp (LHE.TyCon (qname "Maybe"))
-    
-    (genexp, ty) = case typ of
-        CompositeType condexpr fields -> (maybeHas condexpr genexp, maybeTy ty)
-          where
-            genexp = Do $ getters ++ [Qualifier $ App (var "return") (Tuple components)]
-            ty = TyTuple Boxed (catMaybes mb_tys)
-            
-            components = [Var (UnQual bound_to) | (Generator _ (PVar bound_to) _, Just _) <- gettertys]
-            gettertys = map (fieldToSyntax defuser) fields
-            (getters, mb_tys) = unzip gettertys
-          
-        Type mb_condexpr tycons repeats -> (genexp', ty')
-          where
-            (genexp', ty') = case mb_condexpr of
-                Nothing       -> (genexp, ty)
-                Just condexpr -> (maybeHas condexpr genexp, maybeTy ty)
-    
-            (genexp, ty) = case (tycons, repeats) of
-              ([TyCon "UB" []], NumberOfTimes (LitE 1))
-                -> (var "getFlag", LHE.TyCon (qname "Bool"))
-              ([TyCon tycon []], NumberOfTimes lenexpr)
-                | tycon `elem` ["UB", "SB", "FB"]
-                -> (App (var $ "get" ++ tycon) (fieldExprToSyntax defuser lenexpr), LHE.TyCon (qname tycon))
-              ([TyCon "UB" []], RepeatsUntilEnd)
-                -> (var "byteAlign", TyTuple Boxed [])
-              (tycons, Once)
-                -> (onegenexp, onety)
-              (tycons, NumberOfTimes lenexpr)
-                -> (App (App (var "genericReplicateM") (fieldExprToSyntax defuser lenexpr)) onegenexp, TyList onety)
-              (tycons, OptionallyAtEnd)
-                -> (App (App (var "maybeHasM") (App (App (var "fmap") (var "not")) (var "isEmpty"))) onegenexp, maybeTy onety)
-              (tycons, RepeatsUntilEnd)
-                | [TyCon "BYTE" []] <- tycons
-                -> (var "getRemainingLazyByteString", LHE.TyCon (qname "ByteString"))
-                | otherwise
-                -> (App (var "getToEnd") onegenexp, TyList onety)
-
-            (onegenexp, onety) = case tycons of
-              [tycon] -> (getOne tycon, tyOne tycon)
-              _       -> (apps (var $ "liftM" ++ show ntycons) (var ("(" ++ replicate (ntycons - 1) ',' ++ ")") : map getOne tycons), TyTuple Boxed (map tyOne tycons))
-            
-            ntycons = length tycons
-            getOne (TyCon tycon args) = apps (var $ "get" ++ tycon) (map (fieldExprToSyntax defuser) args)
-            tyOne (TyCon tycon _)     = LHE.TyCon (qname tycon)
 
 fieldExprToSyntax _       (LitE i) = Lit (Int $ fromIntegral i)
 fieldExprToSyntax defuser (FieldE x) = var (defuser x)

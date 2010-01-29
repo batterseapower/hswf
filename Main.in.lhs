@@ -355,12 +355,14 @@ data Tag = UnknownTag ByteString
          | PlaceObject3 { placeObject3_placeFlagMove :: Bool, placeObject3_placeFlagHasImage :: Bool, placeObject3_placeFlagHasClassName :: Bool, placeObject3_depth :: UI16, placeObject3_className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, placeObject3_ratio :: Maybe UI16, placeObject3_name :: Maybe STRING, placeObject3_clipDepth :: Maybe UI16, placeObject3_surfaceFilterList :: Maybe FILTERLIST, placeObject3_blendMode :: Maybe BlendMode, placeObject3_bitmapCache :: Maybe UI8, placeObject3_clipActions :: Maybe CLIPACTIONS }
          | DoAction { doAction_actions :: [ACTIONRECORD] }
          | DoInitAction { doInitAction_spriteID :: UI16, doInitAction_actions :: [ACTIONRECORD] }
+         | DefineFont { defineFont_fontID :: UI16, defineFont_glyphShapeTable :: [SHAPE] }
 \genconstructors{tag}
 
 getRECORD = do
     rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
 
     let mb_getter = case rECORDHEADER_tagType of
+          10 -> Just getDefineFont
           12 -> Just getDoAction
           59 -> Just getDoInitAction
           70 -> Just getPlaceObject3
@@ -2162,6 +2164,44 @@ FillType         If HasFillFlag = 1, MORPHFILLSTYLE Fill style.
 
 Chapter 10: Fonts and Text
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+p176: DefineFont
+\begin{code}
+
+getDefineFont = do
+    defineFont_fontID <- getUI16
+    
+    offset0 <- getUI16
+    let nGlyphs = offset0 `div` 2
+    _offsets <- fmap (offset0:) $ genericReplicateM (nGlyphs - 1) getUI16
+    
+    defineFont_glyphShapeTable <- genericReplicateM nGlyphs (getSHAPE 1)
+    return $ DefineFont {..}
+
+\end{code}
+
+p177: DefineFontInfo
+\begin{record}
+DefineFontInfo
+Field              Type                                           Comment
+Header             RECORDHEADER                                   Tag type = 13
+FontID             UI16                                           Font ID this information is for.
+FontNameLen        UI8                                            Length of font name.
+FontName           UI8[FontNameLen]                               Name of the font (see following).
+FontFlagsReserved  UB[2]                                          Reserved bit fields.
+FontFlagsSmallText UB[1]                                          SWF 7 file format or later: Font is small. Character glyphs are aligned on pixel boundaries for dynamic and input text.
+FontFlagsShiftJIS  UB[1]                                          ShiftJIS character codes.
+FontFlagsANSI      UB[1]                                          ANSI character codes.
+FontFlagsItalic    UB[1]                                          Font is italic.
+FontFlagsBold      UB[1]                                          Font is bold.
+FontFlagsWideCodes UB[1]                                          If 1, CodeTable is UI16 array; otherwise, CodeTable is UI8 array.
+CodeTable          If FontFlagsWideCodes, UI16[] Otherwise, UI8[] Glyph to code table, sorted in ascending order.
+\end{record}
+
+
+\begin{code}
+
+\end{code}
 
 \begin{code}
 
