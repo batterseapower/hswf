@@ -351,10 +351,10 @@ Chapter 3: The Display List
 
 data RECORD = RECORD { rECORD_recordHeader :: RECORDHEADER, rECORD_recordTag :: Tag }
 
-data Tag = PlaceObject3 { placeObject3_placeFlagMove :: Bool, placeObject3_placeFlagHasImage :: Bool, placeObject3_placeFlagHasClassName :: Bool, placeObject3_depth :: UI16, placeObject3_className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, placeObject3_ratio :: Maybe UI16, placeObject3_name :: Maybe STRING, placeObject3_clipDepth :: Maybe UI16, placeObject3_surfaceFilterList :: Maybe FILTERLIST, placeObject3_blendMode :: Maybe BlendMode, placeObject3_bitmapCache :: Maybe UI8, placeObject3_clipActions :: Maybe CLIPACTIONS }
+data Tag = UnknownTag ByteString
+         | PlaceObject3 { placeObject3_placeFlagMove :: Bool, placeObject3_placeFlagHasImage :: Bool, placeObject3_placeFlagHasClassName :: Bool, placeObject3_depth :: UI16, placeObject3_className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, placeObject3_ratio :: Maybe UI16, placeObject3_name :: Maybe STRING, placeObject3_clipDepth :: Maybe UI16, placeObject3_surfaceFilterList :: Maybe FILTERLIST, placeObject3_blendMode :: Maybe BlendMode, placeObject3_bitmapCache :: Maybe UI8, placeObject3_clipActions :: Maybe CLIPACTIONS }
          | DoAction { doAction_actions :: [ACTIONRECORD] }
 \genconstructors{tag}
-         | UnknownTag ByteString
 
 getRECORD = do
     rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
@@ -867,31 +867,41 @@ getDoAction = do
 p68: ACTIONRECORD
 \begin{code}
 
-data ACTIONRECORDHEADER = ACTIONRECORDHEADER { actionCode :: UI8, actionLength :: Maybe UI16 }
+data ACTIONRECORDHEADER = ACTIONRECORDHEADER { aCTIONRECORDHEADER_actionCode :: UI8, aCTIONRECORDHEADER_actionLength :: Maybe UI16 }
 
 getACTIONRECORDHEADER = do
-    actionCode <- getUI8
-    actionLength <- maybeHas ((actionCode .&. 0x80) /= 0) getUI16
+    aCTIONRECORDHEADER_actionCode <- getUI8
+    aCTIONRECORDHEADER_actionLength <- maybeHas ((aCTIONRECORDHEADER_actionCode .&. 0x80) /= 0) getUI16
     return $ ACTIONRECORDHEADER {..}
 
-data ACTIONRECORD = ACTIONRECORD { actionRecordHeader :: ACTIONRECORDHEADER, actionRecordAction :: Action }
+data ACTIONRECORD = ACTIONRECORD { aCTIONRECORD_actionRecordHeader :: ACTIONRECORDHEADER, aCTIONRECORD_actionRecordAction :: Action }
 
-data Action = ActionGotoFrame { frame :: UI16 }
-            | UnknownAction (Maybe ByteString)
+data Action = UnknownAction (Maybe ByteString)
+            | ActionGotoFrame { frame :: UI16 }
+\genconstructors{action}
 
 getACTIONRECORD = do
-    actionRecordHeader@(ACTIONRECORDHEADER {..}) <- getACTIONRECORDHEADER
+    aCTIONRECORD_actionRecordHeader@(ACTIONRECORDHEADER {..}) <- getACTIONRECORDHEADER
     
-    actionRecordAction <- case actionLength of
+    aCTIONRECORD_actionRecordAction <- case aCTIONRECORDHEADER_actionLength of
        -- No payload: tags < 0x80
-      Nothing -> case actionCode of
+      Nothing -> case aCTIONRECORDHEADER_actionCode of
         _ -> return $ UnknownAction Nothing
        -- Payload: tags >= 0x81
-      Just actionLength -> nestSwfGet (fromIntegral actionLength) $ case actionCode of
-        0x81 -> fmap ActionGotoFrame getUI16
-        _    -> fmap (UnknownAction . Just) getRemainingLazyByteString
+      Just aCTIONRECORDHEADER_actionLength -> nestSwfGet (fromIntegral aCTIONRECORDHEADER_actionLength) $ case mb_getter of
+        Just getter -> getter
+        Nothing     -> fmap (UnknownAction . Just) getRemainingLazyByteString
+        where mb_getter = case aCTIONRECORDHEADER_actionCode of
+                            0x81 -> Just $ fmap ActionGotoFrame getUI16
+                            _    -> generatedActionGetters aCTIONRECORDHEADER_actionCode
     
     return $ ACTIONRECORD {..}
+
+\end{code}
+
+\gengetters{action}
+
+\begin{code}
 
 main :: IO ()
 main = do

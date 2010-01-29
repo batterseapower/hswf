@@ -15,6 +15,8 @@ import System.IO
 import Text.ParserCombinators.Parsec hiding (oneOf)
 import Text.ParserCombinators.Parsec.Expr
 
+import Numeric
+
 import Language.Haskell.Exts.Syntax hiding (Type, Assoc(..))
 import qualified Language.Haskell.Exts.Syntax as LHE
 import qualified Language.Haskell.Exts.Pretty as LHEP
@@ -28,27 +30,36 @@ main = do
     --mapM_ (hPutStrLn stderr . show) [r | RecordChunk r <- chunks]
     --mapM_ (hPutStrLn stderr . LHEP.prettyPrint) $ concat [recordToDecls r | RecordChunk r <- chunks]
     
-    let (mb_taginfos, lss) = unzip $ map (unParseChunk $ catMaybes mb_taginfos) chunks
+    let (mb_specialinfos, lss) = unzip $ map (unParseChunk $ catMaybes mb_specialinfos) chunks
     putStrLn $ unlines $ concat lss
 
 
+unParseChunk :: [SpecialInfo] -> Chunk -> (Maybe SpecialInfo, [String])
 unParseChunk _ (NonRecordChunk ls) = (Nothing, ls)
-unParseChunk _ (RecordChunk r) = (mb_taginfo, codeBlock decls)
-  where (mb_taginfo, decls) = recordToDecls $ r { record_fields = identifyExclusions $ identifyComposites $ simplify $ record_fields r }
-unParseChunk taginfos GenTagGettersChunk = (Nothing, codeBlock [decl])
-  where decl = FunBind [Match noSrcLoc (Ident "generatedTagGetters") [PVar (Ident "tagType")] Nothing (UnGuardedRhs dispatcher) (BDecls [])]
-        dispatcher = Case (var "tagType") (alts ++ [default_alt])
-        alts = [Alt noSrcLoc (PLit (Int tagType)) (UnGuardedAlt (App (Con $ qname "Just") (var $ "get" ++ recordName))) (BDecls []) | (tagType, recordName, _) <- taginfos]
+unParseChunk _ (RecordChunk r) = (mb_specialinfo, codeBlock decls)
+  where (mb_specialinfo, decls) = recordToDecls $ r { record_fields = identifyExclusions $ identifyComposites $ simplify $ record_fields r }
+unParseChunk specialinfos (GenGettersChunk gen) = (Nothing, codeBlock [decl])
+  where (varName, getterName) = case gen of Tag    -> ("tagType",    "generatedTagGetters")
+                                            Action -> ("actionCode", "generatedActionGetters")
+    
+        decl = FunBind [Match noSrcLoc (Ident getterName) [PVar (Ident varName)] Nothing (UnGuardedRhs dispatcher) (BDecls [])]
+        dispatcher = Case (var varName) (alts ++ [default_alt])
+        alts = [Alt noSrcLoc pat (UnGuardedAlt (App (Con $ qname "Just") (var $ "get" ++ recordName))) (BDecls []) | (gen', pat, recordName, _) <- specialinfos, gen' == gen]
         default_alt = Alt noSrcLoc PWildCard (UnGuardedAlt (Con $ qname "Nothing")) (BDecls [])
-unParseChunk taginfos GenTagConstructorsChunk = (Nothing, ["         |" ++ LHEP.prettyPrint datacon | (_, _, datacon) <- taginfos])
+unParseChunk specialinfos (GenConstructorsChunk gen) = (Nothing, ["         |" ++ LHEP.prettyPrint datacon | (gen', _, _, datacon) <- specialinfos, gen' == gen])
 
 codeBlock ls = "\\begin{code}" : map LHEP.prettyPrint ls ++ ["", "\\end{code}"]
 
 
+data Generatable = Tag | Action
+                 deriving (Eq, Show)
+
+type SpecialInfo = (Generatable, Pat, RecordName, QualConDecl)
+
 data Chunk = NonRecordChunk [String]
            | RecordChunk Record
-           | GenTagGettersChunk
-           | GenTagConstructorsChunk
+           | GenGettersChunk Generatable
+           | GenConstructorsChunk Generatable
            deriving (Show)
 
 type RecordName = String
@@ -88,8 +99,6 @@ data FieldUnOp = Not
 data FieldBinOp = Plus | Mult | Equals
                 deriving (Eq, Show)
 
-type TagType = Integer
-
 
 parseFile :: String -> [Chunk]
 parseFile contents = goNo [] (lines contents)
@@ -99,8 +108,10 @@ parseFile contents = goNo [] (lines contents)
       | Just chunk <- lookup l commands = NonRecordChunk acc : chunk : goNo [] ls
       | l == "\\begin{record}"          = NonRecordChunk acc : goYes [] ls
       | otherwise                       = goNo (acc ++ [l]) ls
-      where commands = [("\\gengetters{tag}",      GenTagGettersChunk),
-                        ("\\genconstructors{tag}", GenTagConstructorsChunk)]
+      where commands = [("\\gengetters{tag}",         GenGettersChunk Tag),
+                        ("\\genconstructors{tag}",    GenConstructorsChunk Tag),
+                        ("\\gengetters{action}",      GenGettersChunk Action),
+                        ("\\genconstructors{action}", GenConstructorsChunk Action)]
     
     goYes acc [] = error "Unclosed record!"
     goYes acc (l:ls)
@@ -207,12 +218,18 @@ identifyExclusions (f:fs)
         the_type_cond (CompositeType { type_composite_cond }) = Just type_composite_cond
 
 
-recordToDecls :: Record -> (Maybe (TagType, RecordName, QualConDecl), [Decl])
+recordToDecls :: Record -> (Maybe SpecialInfo, [Decl])
 recordToDecls (Record { record_name, record_fields })
   | (Field "Header" (Type False Nothing "RECORDHEADER" Nothing) comment Nothing):record_fields <- record_fields
   , let tag_type = read $ drop (length "Tag type = ") comment
   , (datacon, getter) <- process record_fields
-  = (Just (tag_type, record_name, datacon), [getter])
+  = (Just (Tag, PLit (Int tag_type), record_name, datacon), [getter])
+  
+  | (Field field_name (Type False Nothing "ACTIONRECORDHEADER" Nothing) comment Nothing):record_fields <- record_fields
+  , field_name == record_name
+  , [(action_code, _)] <- readHex $ drop (length "ActionCode = ") comment
+  , (datacon, getter) <- process record_fields
+  = (Just (Action, PLit (Int action_code), record_name, datacon), [getter])
   
   | (datacon, getter) <- process record_fields
   = (Nothing, [DataDecl noSrcLoc DataType [] (Ident record_name) [] [datacon] [], getter])
