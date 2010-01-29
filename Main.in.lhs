@@ -403,6 +403,7 @@ data Tag = PlaceObject { placeObject_characterId :: UI16, depth :: UI16, placeOb
          | RemoveObject { characterId :: UI16, depth :: UI16 }
          | RemoveObject2 { depth :: UI16 }
          | ShowFrame
+\genconstructors{tag}
          | UnknownTag ByteString
 
 getRECORD = do
@@ -415,7 +416,7 @@ getRECORD = do
           26 -> Just getPlaceObject2
           28 -> Just getRemoveObject2
           70 -> Just getPlaceObject3
-          _  -> Nothing
+          _  -> generatedTagGetters tagType
 
     recordTag <- nestSwfGet (fromIntegral tagLength) $ case mb_getter of
       Nothing     -> fmap UnknownTag getRemainingLazyByteString
@@ -424,6 +425,8 @@ getRECORD = do
     return $ RECORD {..}
 
 \end{code}
+
+\gengetters{tag}
 
 p34: PlaceObject
 \begin{code}
@@ -726,6 +729,17 @@ p52: ShowFrame
 getShowFrame = return ShowFrame
 
 \end{code}
+
+Chapter 1: Basic Data Types
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+p53: SetBackgroundColor
+\begin{record}
+SetBackgroundColor
+Field           Type         Comment
+Header          RECORDHEADER Tag type = 9
+BackgroundColor RGB          Color of the display background
+\end{record}
 
 p68: ACTIONRECORD
 \begin{code}

@@ -19,12 +19,13 @@ import Foreign.Ptr
 import System.Environment
 import System.IO.Unsafe
 
+\end{code}
 
--- Chapter 1: Basic Data Types
--- ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Chapter 1: Basic Data Types
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-
--- p11: Coordinates and twips
+p11: Coordinates and twips
+\begin{code}
 
 type Twips = Integer
 type LogicalPixels = Integer
@@ -35,8 +36,10 @@ twipsToLogicalPixels = (`div` 20)
 
 data Point = Point { x :: Twips, y :: Twips }
 
+\end{code}
 
--- p12: Integer types and byte order
+p12: Integer types and byte order
+\begin{code}
 
 type SI8 = Int8
 type SI16 = Int16
@@ -73,8 +76,10 @@ getUI32 = fmap fromIntegral getWord32
 --type U132[n]
 --type U164[n]
 
+\end{code}
 
--- p12: Fixed-point numbers
+p12: Fixed-point numbers
+\begin{code}
 
 data FIXED = FIXED SI16 UI16
 data FIXED8 = FIXED8 SI8 UI8
@@ -185,8 +190,10 @@ getBitCount = fmap fromIntegral . getUB
 getFlag :: SwfGet Bool
 getFlag = fmap (/= 0) (getSB 1)
 
+\end{code}
 
--- p17: String values
+p17: String values
+\begin{code}
 
 -- SWF <= 5: ANSI or shift-JIS encoding. No way to tell.
 -- SWF >  5: UTF-8
@@ -195,8 +202,10 @@ type STRING = ByteString
 getSTRING :: SwfGet STRING
 getSTRING = getLazyByteStringNul
 
+\end{code}
 
--- p18: Language code
+p18: Language code
+\begin{code}
 
 data LANGCODE = None | Latin | Japanese | Korean | SimplifiedChinese | TraditionalChinese | Unrecognized UI8
 
@@ -212,15 +221,19 @@ getLANGCODE = do
       5 -> TraditionalChinese
       _ -> Unrecognized n
 
+\end{code}
 
--- p18: RGB color record
+p18: RGB color record
+\begin{code}
 
 data RGB = RGB { red :: UI8, green :: UI8, blue :: UI8 }
 
 getRGB = liftM3 RGB getUI8 getUI8 getUI8
 
+\end{code}
 
--- p19: RGBA color record/ARGB color record
+p19: RGBA color record/ARGB color record
+\begin{code}
 
 data RGBA = RGBA { rgb :: RGB, alpha :: UI8 }
 type ARGB = RGBA
@@ -229,8 +242,10 @@ getRGBA = liftM2 RGBA getRGB getUI8
 
 getARGB = liftM2 (flip RGBA) getUI8 getRGB
 
+\end{code}
 
--- p20: Rectangle record
+p20: Rectangle record
+\begin{code}
 
 data RECT = RECT { xMin :: SI32, xMax :: SI32, yMin :: SI32, yMax :: SI32 }
 
@@ -242,8 +257,10 @@ getRECT = do
     yMax <- getSB nbits
     return $ RECT {..}
 
+\end{code}
 
--- p20: MATRIX record
+p20: MATRIX record
+\begin{code}
 
 data MATRIX = MATRIX { scale :: Maybe (FIXED, FIXED), rotateSkew :: Maybe (FIXED, FIXED), translate :: (SI32, SI32) }
 
@@ -273,8 +290,10 @@ transformByMATRIX (x, y) m = (x *  (fst scale') + y * snd rotateSkew' + fromInte
   where scale' = maybe (0, 0) (fIXEDToFractional *** fIXEDToFractional) $ scale m
         rotateSkew' = maybe (0, 0) (fIXEDToFractional *** fIXEDToFractional) $ rotateSkew m
 
+\end{code}
 
--- p22: Color transform record
+p22: Color transform record
+\begin{code}
 
 data CXFORM = CXFORM { multTerms :: Maybe (SI32, SI32, SI32), addTerms :: Maybe (SI32, SI32, SI32) }
 
@@ -298,7 +317,10 @@ transformByCXFORM rgb c = (component fst3, component snd3, component thd3)
          component sel = clamp ((fromIntegral (sel rgb) * fromIntegral (sel multTerms') / (256.0 :: Rational)) + fromIntegral (sel addTerms'))
 
 
--- p23: Color transform with alpha record
+\end{code}
+
+p23: Color transform with alpha record
+\begin{code}
 
 data CXFORMWITHALPHA = CXFORMWITHALPHA { multTermsWithAlpha :: Maybe (SI32, SI32, SI32, SI32), addTermsWithAlpha :: Maybe (SI32, SI32, SI32, SI32) }
 
@@ -320,12 +342,13 @@ transformByCXFORMWITHALPHA rgba c = (component fst4, component snd4, component t
          component :: Integral a => (forall b. (b, b, b, b) -> b) -> a
          component sel = clamp ((fromIntegral (sel rgba) * fromIntegral (sel multTerms') / (256.0 :: Rational)) + fromIntegral (sel addTerms'))
 
+\end{code}
 
--- Chapter 2: SWF Structure Summary
--- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Chapter 2: SWF Structure Summary
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-
--- p25: The SWF header
+p25: The SWF header
+\begin{code}
 
 data SwfFileHeader = SwfFileHeader { compressed :: Bool, version :: UI8, fileLength :: UI32 {- after decompression -}, frameSize :: RECT {- Twips -}, frameRate :: FIXED8, frameCount :: UI16 }
 
@@ -351,8 +374,10 @@ getSwfFileHeader = do
         rest <- getRemainingLazyByteString
         return (SwfFileHeader {..}, rest)
 
+\end{code}
 
--- p27: Tag format
+p27: Tag format
+\begin{code}
 
 data RECORDHEADER = RECORDHEADER { tagType :: UI16, tagLength :: SI32 }
 
@@ -364,25 +389,34 @@ getRECORDHEADER = do
     tagLength <- if tagLength == 0x3F then getSI32 else return (fromIntegral tagLength)
     return $ RECORDHEADER tagCode tagLength
 
+\end{code}
 
--- Chapter 3: The Display List
--- ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Chapter 3: The Display List
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+\begin{code}
 
 data RECORD = RECORD { recordHeader :: RECORDHEADER, recordTag :: Tag }
 
 data Tag = PlaceObject { placeObject_characterId :: UI16, depth :: UI16, placeObject_matrix :: MATRIX, placeObject_colorTransform :: Maybe CXFORM }
          | PlaceObject2 { placeFlagMove :: Bool, depth :: UI16, placeObject2_characterId :: Maybe UI16, placeObject2_matrix :: Maybe MATRIX, placeObject2_colorTransform :: Maybe CXFORMWITHALPHA, ratio :: Maybe UI16, name :: Maybe STRING, clipDepth :: Maybe UI16, clipActions :: Maybe CLIPACTIONS }
          | PlaceObject3 { placeFlagMove :: Bool, placeFlagHasImage :: Bool, placeFlagHasClassName :: Bool, depth :: UI16, className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, ratio :: Maybe UI16, name :: Maybe STRING, clipDepth :: Maybe UI16, surfaceFilterList :: Maybe FILTERLIST, blendMode :: Maybe BlendMode, bitmapCache :: Maybe UI8, clipActions :: Maybe CLIPACTIONS }
+         | RemoveObject { characterId :: UI16, depth :: UI16 }
+         | RemoveObject2 { depth :: UI16 }
+         | ShowFrame
+         |  SetBackgroundColor{setBackgroundColor_backgroundColor :: RGB}
          | UnknownTag ByteString
 
 getRECORD = do
     recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
 
     let mb_getter = case tagType of
+          1  -> Just getShowFrame
           4  -> Just getPlaceObject
+          5  -> Just getRemoveObject
           26 -> Just getPlaceObject2
+          28 -> Just getRemoveObject2
           70 -> Just getPlaceObject3
-          _  -> Nothing
+          _  -> generatedTagGetters tagType
 
     recordTag <- nestSwfGet (fromIntegral tagLength) $ case mb_getter of
       Nothing     -> fmap UnknownTag getRemainingLazyByteString
@@ -390,8 +424,18 @@ getRECORD = do
 
     return $ RECORD {..}
 
+\end{code}
 
--- p34: PlaceObject
+\begin{code}
+generatedTagGetters tagType
+  = case tagType of
+        9 -> Just getSetBackgroundColor
+        _ -> Nothing
+
+\end{code}
+
+p34: PlaceObject
+\begin{code}
 
 getPlaceObject = do
     placeObject_characterId <- getUI16
@@ -401,7 +445,10 @@ getPlaceObject = do
     return $ PlaceObject {..}
 
 
--- p35: PlaceObject2
+\end{code}
+
+p35: PlaceObject2
+\begin{code}
 
 getPlaceObject2 = do
     [placeFlagHasClipActions, placeFlagHasClipDepth, placeFlagHasName,
@@ -445,8 +492,10 @@ getCLIPACTIONRECORD = do
         return (keyCode, actions)
     return $ CLIPACTIONRECORD {..}
 
+\end{code}
 
--- p38: PlaceObject3
+p38: PlaceObject3
+\begin{code}
 
 getPlaceObject3 = do
     [placeFlagHasClipActions, placeFlagHasClipDepth, placeFlagHasName,
@@ -724,9 +773,8 @@ getGRADIENTBEVELFILTER
 
 \end{code}
 
+p50: CLIPEVENTFLAGS
 \begin{code}
-
--- p50: CLIPEVENTFLAGS
 
 data CLIPEVENTFLAG = ClipEventKeyUp | ClipEventKeyDown | ClipEventMouseUp | ClipEventMouseDown | ClipEventMouseMove
                    | ClipEventUnload | ClipEventEnterFrame | ClipEventLoad | ClipEventDragOver | ClipEventRollOut
@@ -751,9 +799,42 @@ getCLIPEVENTFLAGS = do
         cefs <- foldM f cefs [ClipEventConstruct, ClipEventKeyPress, ClipEventDragOut]
         _reserved <- getFlag
         return cefs
+\end{code}
 
+p52: RemoveObject
+\begin{code}
 
--- p68: ACTIONRECORD
+getRemoveObject = liftM2 RemoveObject getUI16 getUI16
+
+\end{code}
+
+p52: RemoveObject2
+\begin{code}
+
+getRemoveObject2 = liftM RemoveObject2 getUI16
+
+\end{code}
+
+p52: ShowFrame
+\begin{code}
+
+getShowFrame = return ShowFrame
+
+\end{code}
+
+Chapter 1: Basic Data Types
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+p53: SetBackgroundColor
+\begin{code}
+getSetBackgroundColor
+  = do setBackgroundColor_backgroundColor <- getRGB
+       return (SetBackgroundColor{..})
+
+\end{code}
+
+p68: ACTIONRECORD
+\begin{code}
 
 data ACTIONRECORDHEADER = ACTIONRECORDHEADER { actionCode :: UI8, actionLength :: Maybe UI16 }
 
