@@ -1691,6 +1691,273 @@ Name      STRING        The name assigned to the bytecode.
 ABCData   BYTE[]        A block of .abc bytecode to be parsed by the ActionScript 3.0 virtual machine, up to the end of the tag.
 \end{record}
 
+
+Chapter 6: Shapes
+~~~~~~~~~~~~~~~~~
+
+p127: Fill styles
+\begin{code}
+
+data FILLSTYLEARRAY = FILLSTYLEARRAY { fILLSTYLEARRAY_fillStyleCount :: UI16, fILLSTYLEARRAY_fillStyles :: [FILLSTYLE] }
+
+getFILLSTYLEARRAY shapeVer = do
+    fillStyleCount <- getUI8
+    fILLSTYLEARRAY_fillStyleCount <- case fillStyleCount of
+        0xFF -> getUI16
+        _    -> return $ fromIntegral fillStyleCount
+    fILLSTYLEARRAY_fillStyles <- sequence $ genericReplicate fILLSTYLEARRAY_fillStyleCount (getFILLSTYLE shapeVer)
+    return $ FILLSTYLEARRAY {..}
+
+data FILLSTYLE = SolidFill { fILLSTYLE_color :: Either RGB RGBA }
+               | LinearGradientFill { fILLSTYLE_gradientMatrix :: MATRIX, fILLSTYLE_gradient :: GRADIENT }
+               | RadialGradientFill { fILLSTYLE_gradientMatrix :: MATRIX, fILLSTYLE_gradient :: GRADIENT }
+               | FocalRadialGradientFill { fILLSTYLE_gradientMatrix :: MATRIX, fILLSTYLE_focalGradient :: FOCALGRADIENT }
+               | RepeatingBitmapFill { fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
+               | ClippedBitmapFill { fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
+               | NonSmoothedRepeatingBitmapFill { fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
+               | NonSmoothedClippedBitmapFill { fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
+
+getFILLSTYLE shapeVer = do
+    fillStyleType <- getUI8
+    case fillStyleType of
+        0x00 -> fmap SolidFill $ if shapeVer <= 2 then fmap Left getRGB else fmap Right getRGBA
+        0x10 -> liftM2 LinearGradientFill getMATRIX (getGRADIENT shapeVer)
+        0x12 -> liftM2 RadialGradientFill getMATRIX (getGRADIENT shapeVer)
+        0x13 -> liftM2 FocalRadialGradientFill getMATRIX (getFOCALGRADIENT shapeVer)
+        0x40 -> liftM2 RepeatingBitmapFill getUI16 getMATRIX
+        0x41 -> liftM2 ClippedBitmapFill getUI16 getMATRIX
+        0x42 -> liftM2 NonSmoothedRepeatingBitmapFill getUI16 getMATRIX
+        0x43 -> liftM2 NonSmoothedClippedBitmapFill getUI16 getMATRIX
+
+\end{code}
+
+p130: Line styles
+\begin{code}
+
+data LINESTYLEARRAY = LINESTYLEARRAY { lINESTYLEARRAY_lineStyleCount :: UI16, lINESTYLEARRAY_lineStyles :: Either [LINESTYLE] [LINESTYLE2] }
+
+getLINESTYLEARRAY shapeVer = do
+    lineStyleCount <- getUI8
+    lINESTYLEARRAY_lineStyleCount <- case lineStyleCount of
+        0xFF -> getUI16
+        _    -> return $ fromIntegral lineStyleCount
+    lINESTYLEARRAY_lineStyles <- if shapeVer <= 3
+                                 then fmap Left  $ sequence $ genericReplicate lINESTYLEARRAY_lineStyleCount (getLINESTYLE shapeVer)
+                                 else fmap Right $ sequence $ genericReplicate lINESTYLEARRAY_lineStyleCount getLINESTYLE2
+    return $ LINESTYLEARRAY {..}
+
+
+data LINESTYLE = LINESTYLE { lINESTYLE_width :: UI16, lINESTYLE_color :: Either RGB RGBA }
+
+getLINESTYLE shapeVer = do
+    lINESTYLE_width <- getUI16
+    lINESTYLE_color <- if shapeVer <= 2 then fmap Left getRGB else fmap Right getRGBA
+    return $ LINESTYLE {..}
+
+\end{code}
+
+\begin{record}
+LINESTYLE2
+Field            Type                             Comment
+Width            UI16                             Width of line in twips.
+StartCapStyle    UB[2]                            Start cap style: 0 = Round cap 1 = No cap 2 = Square cap
+JoinStyle        UB[2]                            Join style: 0 = Round join 1 = Bevel join 2 = Miter join
+HasFillFlag      UB[1]                            If 1, fill is defined in FillType. If 0, uses Color field.
+NoHScaleFlag     UB[1]                            If 1, stroke thickness will not scale if the object is scaled horizontally.
+NoVScaleFlag     UB[1]                            If 1, stroke thickness will not scale if the object is scaled vertically.
+PixelHintingFlag UB[1]                            If 1, all anchors will be aligned to full pixels.
+Reserved         UB[5]                            Must be 0.
+NoClose          UB[1]                            If 1, stroke will not be closed if the stroke’s last point matches its first point. Flash Player will apply caps instead of a join.
+EndCapStyle      UB[2]                            End cap style: 0 = Round cap 1 = No cap 2 = Square cap
+MiterLimitFactor If JoinStyle = 2, UI16           Miter limit factor is an 8.8 fixed-point value.
+Color            If HasFillFlag = 0, RGBA         Color value including alpha channel.
+FillType         If HasFillFlag = 1, FILLSTYLE(4) Fill style for this stroke.
+\end{record}
+
+p133: Shape Structures
+\begin{record}
+SHAPE(ShapeVer)
+Field        Type                                             Comment
+NumFillBits  UB[4]                                            Number of fill index bits.
+NumLineBits  UB[4]                                            Number of line index bits.
+ShapeRecords SHAPERECORDS(ShapeVer, NumFillBits, NumLineBits) Shape records (see following).
+\end{record}
+
+\begin{record}
+SHAPEWITHSTYLE(ShapeVer)
+Field        Type                                             Comment
+FillStyles   FILLSTYLEARRAY(ShapeVer)                         Array of fill styles.
+LineStyles   LINESTYLEARRAY(ShapeVer)                         Array of line styles.
+NumFillBits  UB[4]                                            Number of fill index bits.
+NumLineBits  UB[4]                                            Number of line index bits.
+ShapeRecords SHAPERECORDS(ShapeVer, NumFillBits, NumLineBits) Shape records (see following).
+\end{record}
+
+\begin{code}
+
+type SHAPERECORDS = [SHAPERECORD]
+
+getSHAPERECORDS shapeVer fillBits lineBits = go
+  where
+    go = do
+      edgeRecord <- getFlag
+      if edgeRecord
+       then do
+          straightEdge <- getFlag
+          if straightEdge
+           then getSTRAIGHTEDGERECORD >>= \x -> fmap (x:) go
+           else getCURVEDEDGERECORD >>= \x -> fmap (x:) go
+       else do
+          eos <- lookAhead (getUB 5)
+          if eos == 0
+           then byteAlign >> return []
+           else getSTYLECHANGERECORD shapeVer fillBits lineBits >>= \x -> fmap (x:) go
+
+data SHAPERECORD
+\genconstructors{shaperecord}
+
+\end{code}
+
+\begin{record}
+STYLECHANGERECORD(ShapeVer, FillBits, LineBits)
+Field           Type                                        Comment
+StateNewStyles  UB[1]                                       New styles flag. Used by DefineShape2 and DefineShape3 only.
+StateLineStyle  UB[1]                                       Line style change flag.
+StateFillStyle1 UB[1]                                       Fill style 1 change flag.
+StateFillStyle0 UB[1]                                       Fill style 0 change flag.
+StateMoveTo     UB[1]                                       Move to flag.
+MoveBits        If StateMoveTo, UB[5]                       Move bit count.
+MoveDeltaX      If StateMoveTo, SB[MoveBits]                Delta X value.
+MoveDeltaY      If StateMoveTo, SB[MoveBits]                Delta Y value.
+FillStyle0      If StateFillStyle0, UB[FillBits]            Fill 0 Style.
+FillStyle1      If StateFillStyle1, UB[FillBits]            Fill 1 Style.
+LineStyle       If StateLineStyle, UB[LineBits]             Line Style.
+FillStyles      If StateNewStyles, FILLSTYLEARRAY(ShapeVer) Array of new fill styles.
+LineStyles      If StateNewStyles, LINESTYLEARRAY(ShapeVer) Array of new line styles.
+NumFillBits     If StateNewStyles, UB[4]                    Number of fill index bits for new styles.
+NumLineBits     If StateNewStyles, UB[4]                    Number of line index bits for new styles.
+Reserved        UB[]                                        Padding to byte boundary
+\end{record}
+
+\begin{record}
+STRAIGHTEDGERECORD
+Field           Type                  Comment
+NumBits         UB[4]                 Number of bits per value (2 less than the actual number).
+StraightEdge    StraightEdge(NumBits) Position information
+Reserved        UB[]                  Padding to byte boundary
+\end{record}
+
+\begin{code}
+
+data StraightEdge = GeneralLine { straightEdge_deltaX :: SB, straightEdge_deltaY :: SB }
+                  | VerticalLine { straightEdge_deltaY :: SB }
+                  | HorizontalLine { straightEdge_deltaX :: SB }
+
+getStraightEdge numBits = do
+    generalLine <- getFlag
+    if generalLine
+     then liftM2 GeneralLine (getSB (numBits + 2)) (getSB (numBits + 2))
+     else do
+      vert <- getFlag
+      liftM (if vert then VerticalLine else HorizontalLine) (getSB (numBits + 2))
+
+\end{code}
+
+\begin{record}
+CURVEDEDGERECORD
+Field         Type          Comment
+TypeFlag      UB[1]         This is an edge record. Always 1.
+StraightFlag  UB[1]         Curved edge. Always 0.
+NumBits       UB[4]         Number of bits per value (2 less than the actual number).
+ControlDeltaX SB[NumBits+2] X control point change.
+ControlDeltaY SB[NumBits+2] Y control point change.
+AnchorDeltaX  SB[NumBits+2] X anchor point change.
+AnchorDeltaY  SB[NumBits+2] Y anchor point change.
+Reserved      UB[]          Padding to byte boundary
+\end{record}
+
+p140: DefineShape
+\begin{record}
+DefineShape
+Field       Type              Comment
+Header      RECORDHEADER      Tag type = 2
+ShapeId     UI16              ID for this character.
+ShapeBounds RECT              Bounds of the shape.
+Shapes      SHAPEWITHSTYLE(1) Shape information.
+\end{record}
+
+p141: DefineShape2
+\begin{record}
+DefineShape2
+Field       Type              Comment
+Header      RECORDHEADER      Tag type = 22
+ShapeId     UI16              ID for this character.
+ShapeBounds RECT              Bounds of the shape.
+Shapes      SHAPEWITHSTYLE(2) Shape information.
+\end{record}
+
+p141: DefineShape3
+\begin{record}
+DefineShape3
+Field       Type              Comment
+Header      RECORDHEADER      Tag type = 32
+ShapeId     UI16              ID for this character.
+ShapeBounds RECT              Bounds of the shape.
+Shapes      SHAPEWITHSTYLE(3) Shape information.
+\end{record}
+
+p142: DefineShape4
+\begin{record}
+DefineShape4
+Field                 Type              Comment
+Header                RECORDHEADER      Tag type = 83
+ShapeId               UI16              ID for this character.
+ShapeBounds           RECT              Bounds of the shape.
+EdgeBounds            RECT              Bounds of the shape, excluding strokes.
+Reserved              UB[5]             Must be 0.
+UsesFillWindingRule   UB[1]             If 1, use fill winding rule. Minimum file format version is SWF 10
+UsesNonScalingStrokes UB[1]             If 1, the shape contains at least one non-scaling stroke.
+UsesScalingStrokes    UB[1]             If 1, the shape contains at least one scaling stroke.
+Shapes                SHAPEWITHSTYLE(4) Shape information
+\end{record}
+
+
+Chapter 7: Gradients
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+p145: GRADIENT
+\begin{record}
+GRADIENT(ShapeVer)
+Field             Type                               Comment
+SpreadMode        UB[2]                              0 = Pad mode 1 = Reflect mode 2 = Repeat mode 3 = Reserved
+InterpolationMode UB[2]                              0 = Normal RGB mode interpolation 1 = Linear RGB mode interpolation 2 and 3 = Reserved
+NumGradients      UB[4]                              1 to 15
+GradientRecords   GRADRECORD(ShapeVer)[NumGradients] Gradient records (see following)
+\end{record}
+
+p146: FOCALGRADIENT
+\begin{record}
+FOCALGRADIENT(ShapeVer)
+Field             Type                               Comment
+SpreadMode        UB[2]                              0 = Pad mode 1 = Reflect mode 2 = Repeat mode 3 = Reserved
+InterpolationMode UB[2]                              0 = Normal RGB mode interpolation 1 = Linear RGB mode interpolation 2 and 3 = Reserved
+NumGradients      UB[4]                              1 to 15
+GradientRecords   GRADRECORD(ShapeVer)[NumGradients] Gradient records (see following)
+FocalPoint        FIXED8                             Focal point location
+\end{record}
+
+p146: GRADRECORD
+\begin{code}
+
+data GRADRECORD = GRADRECORD { gRADRECORD_ratio :: UI8, gRADRECORD_color :: Either RGB RGBA }
+
+getGRADRECORD shapeVer = do
+    gRADRECORD_ratio <- getUI8
+    gRADRECORD_color <- if shapeVer <= 2 then fmap Left getRGB else fmap Right getRGBA
+    return $ GRADRECORD {..}
+
+\end{code}
+
 \begin{code}
 
 main :: IO ()

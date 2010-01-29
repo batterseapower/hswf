@@ -92,6 +92,9 @@ getToEnd mx = condM isEmpty (return []) $ do
                   x <- mx
                   fmap (x:) $ getToEnd mx
 
+byteAlign :: SwfGet ()
+byteAlign = SwfGet $ \_ _bytes _nbits -> return (0, 0, ())
+
 
 modify :: (SwfGetEnv -> SwfGetEnv) -> SwfGet a -> SwfGet a
 modify f act = SwfGet $ \env byte nbits -> unSwfGet act (f env) byte nbits

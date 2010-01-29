@@ -473,6 +473,21 @@ data Tag = UnknownTag ByteString
                                [(EncodedU32, STRING)]}
          |  DoABC{doABC_flags :: UI32, doABC_name :: STRING,
         doABC_aBCData :: ByteString}
+         |  DefineShape{defineShape_shapeId :: UI16,
+              defineShape_shapeBounds :: RECT,
+              defineShape_shapes :: SHAPEWITHSTYLE}
+         |  DefineShape2{defineShape2_shapeId :: UI16,
+               defineShape2_shapeBounds :: RECT,
+               defineShape2_shapes :: SHAPEWITHSTYLE}
+         |  DefineShape3{defineShape3_shapeId :: UI16,
+               defineShape3_shapeBounds :: RECT,
+               defineShape3_shapes :: SHAPEWITHSTYLE}
+         |  DefineShape4{defineShape4_shapeId :: UI16,
+               defineShape4_shapeBounds :: RECT, defineShape4_edgeBounds :: RECT,
+               defineShape4_usesFillWindingRule :: Bool,
+               defineShape4_usesNonScalingStrokes :: Bool,
+               defineShape4_usesScalingStrokes :: Bool,
+               defineShape4_shapes :: SHAPEWITHSTYLE}
 
 getRECORD = do
     rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
@@ -516,6 +531,10 @@ generatedTagGetters tagType
         78 -> Just getDefineScalingGrid
         86 -> Just getDefineSceneAndFrameLabelData
         82 -> Just getDoABC
+        2 -> Just getDefineShape
+        22 -> Just getDefineShape2
+        32 -> Just getDefineShape3
+        83 -> Just getDefineShape4
         _ -> Nothing
 
 \end{code}
@@ -2095,6 +2114,364 @@ getDoABC
        doABC_name <- getSTRING
        doABC_aBCData <- getRemainingLazyByteString
        return (DoABC{..})
+
+\end{code}
+
+
+Chapter 6: Shapes
+~~~~~~~~~~~~~~~~~
+
+p127: Fill styles
+\begin{code}
+
+data FILLSTYLEARRAY = FILLSTYLEARRAY { fILLSTYLEARRAY_fillStyleCount :: UI16, fILLSTYLEARRAY_fillStyles :: [FILLSTYLE] }
+
+getFILLSTYLEARRAY shapeVer = do
+    fillStyleCount <- getUI8
+    fILLSTYLEARRAY_fillStyleCount <- case fillStyleCount of
+        0xFF -> getUI16
+        _    -> return $ fromIntegral fillStyleCount
+    fILLSTYLEARRAY_fillStyles <- sequence $ genericReplicate fILLSTYLEARRAY_fillStyleCount (getFILLSTYLE shapeVer)
+    return $ FILLSTYLEARRAY {..}
+
+data FILLSTYLE = SolidFill { fILLSTYLE_color :: Either RGB RGBA }
+               | LinearGradientFill { fILLSTYLE_gradientMatrix :: MATRIX, fILLSTYLE_gradient :: GRADIENT }
+               | RadialGradientFill { fILLSTYLE_gradientMatrix :: MATRIX, fILLSTYLE_gradient :: GRADIENT }
+               | FocalRadialGradientFill { fILLSTYLE_gradientMatrix :: MATRIX, fILLSTYLE_focalGradient :: FOCALGRADIENT }
+               | RepeatingBitmapFill { fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
+               | ClippedBitmapFill { fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
+               | NonSmoothedRepeatingBitmapFill { fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
+               | NonSmoothedClippedBitmapFill { fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
+
+getFILLSTYLE shapeVer = do
+    fillStyleType <- getUI8
+    case fillStyleType of
+        0x00 -> fmap SolidFill $ if shapeVer <= 2 then fmap Left getRGB else fmap Right getRGBA
+        0x10 -> liftM2 LinearGradientFill getMATRIX (getGRADIENT shapeVer)
+        0x12 -> liftM2 RadialGradientFill getMATRIX (getGRADIENT shapeVer)
+        0x13 -> liftM2 FocalRadialGradientFill getMATRIX (getFOCALGRADIENT shapeVer)
+        0x40 -> liftM2 RepeatingBitmapFill getUI16 getMATRIX
+        0x41 -> liftM2 ClippedBitmapFill getUI16 getMATRIX
+        0x42 -> liftM2 NonSmoothedRepeatingBitmapFill getUI16 getMATRIX
+        0x43 -> liftM2 NonSmoothedClippedBitmapFill getUI16 getMATRIX
+
+\end{code}
+
+p130: Line styles
+\begin{code}
+
+data LINESTYLEARRAY = LINESTYLEARRAY { lINESTYLEARRAY_lineStyleCount :: UI16, lINESTYLEARRAY_lineStyles :: Either [LINESTYLE] [LINESTYLE2] }
+
+getLINESTYLEARRAY shapeVer = do
+    lineStyleCount <- getUI8
+    lINESTYLEARRAY_lineStyleCount <- case lineStyleCount of
+        0xFF -> getUI16
+        _    -> return $ fromIntegral lineStyleCount
+    lINESTYLEARRAY_lineStyles <- if shapeVer <= 3
+                                 then fmap Left  $ sequence $ genericReplicate lINESTYLEARRAY_lineStyleCount (getLINESTYLE shapeVer)
+                                 else fmap Right $ sequence $ genericReplicate lINESTYLEARRAY_lineStyleCount getLINESTYLE2
+    return $ LINESTYLEARRAY {..}
+
+
+data LINESTYLE = LINESTYLE { lINESTYLE_width :: UI16, lINESTYLE_color :: Either RGB RGBA }
+
+getLINESTYLE shapeVer = do
+    lINESTYLE_width <- getUI16
+    lINESTYLE_color <- if shapeVer <= 2 then fmap Left getRGB else fmap Right getRGBA
+    return $ LINESTYLE {..}
+
+\end{code}
+
+\begin{code}
+ 
+data LINESTYLE2 = LINESTYLE2{lINESTYLE2_width :: UI16,
+                             lINESTYLE2_startCapStyle :: UB, lINESTYLE2_joinStyle :: UB,
+                             lINESTYLE2_noHScaleFlag :: Bool, lINESTYLE2_noVScaleFlag :: Bool,
+                             lINESTYLE2_pixelHintingFlag :: Bool, lINESTYLE2_noClose :: Bool,
+                             lINESTYLE2_endCapStyle :: UB,
+                             lINESTYLE2_miterLimitFactor :: Maybe UI16,
+                             lINESTYLE2_color :: Maybe RGBA,
+                             lINESTYLE2_fillType :: Maybe FILLSTYLE}
+getLINESTYLE2
+  = do lINESTYLE2_width <- getUI16
+       lINESTYLE2_startCapStyle <- getUB 2
+       lINESTYLE2_joinStyle <- getUB 2
+       lINESTYLE2_hasFillFlag <- getFlag
+       lINESTYLE2_noHScaleFlag <- getFlag
+       lINESTYLE2_noVScaleFlag <- getFlag
+       lINESTYLE2_pixelHintingFlag <- getFlag
+       _lINESTYLE2_reserved <- getUB 5
+       lINESTYLE2_noClose <- getFlag
+       lINESTYLE2_endCapStyle <- getUB 2
+       lINESTYLE2_miterLimitFactor <- maybeHas (lINESTYLE2_joinStyle == 2)
+                                        getUI16
+       lINESTYLE2_color <- maybeHas (not lINESTYLE2_hasFillFlag) getRGBA
+       lINESTYLE2_fillType <- maybeHas lINESTYLE2_hasFillFlag
+                                (getFILLSTYLE 4)
+       return (LINESTYLE2{..})
+
+\end{code}
+
+p133: Shape Structures
+\begin{code}
+ 
+data SHAPE = SHAPE{sHAPE_numFillBits :: UB,
+                   sHAPE_numLineBits :: UB, sHAPE_shapeRecords :: SHAPERECORDS}
+getSHAPE sHAPE_shapeVer
+  = do sHAPE_numFillBits <- getUB 4
+       sHAPE_numLineBits <- getUB 4
+       sHAPE_shapeRecords <- getSHAPERECORDS sHAPE_shapeVer
+                               sHAPE_numFillBits
+                               sHAPE_numLineBits
+       return (SHAPE{..})
+
+\end{code}
+
+\begin{code}
+ 
+data SHAPEWITHSTYLE = SHAPEWITHSTYLE{sHAPEWITHSTYLE_fillStyles ::
+                                     FILLSTYLEARRAY,
+                                     sHAPEWITHSTYLE_lineStyles :: LINESTYLEARRAY,
+                                     sHAPEWITHSTYLE_numFillBits :: UB,
+                                     sHAPEWITHSTYLE_numLineBits :: UB,
+                                     sHAPEWITHSTYLE_shapeRecords :: SHAPERECORDS}
+getSHAPEWITHSTYLE sHAPEWITHSTYLE_shapeVer
+  = do sHAPEWITHSTYLE_fillStyles <- getFILLSTYLEARRAY
+                                      sHAPEWITHSTYLE_shapeVer
+       sHAPEWITHSTYLE_lineStyles <- getLINESTYLEARRAY
+                                      sHAPEWITHSTYLE_shapeVer
+       sHAPEWITHSTYLE_numFillBits <- getUB 4
+       sHAPEWITHSTYLE_numLineBits <- getUB 4
+       sHAPEWITHSTYLE_shapeRecords <- getSHAPERECORDS
+                                        sHAPEWITHSTYLE_shapeVer
+                                        sHAPEWITHSTYLE_numFillBits
+                                        sHAPEWITHSTYLE_numLineBits
+       return (SHAPEWITHSTYLE{..})
+
+\end{code}
+
+\begin{code}
+
+type SHAPERECORDS = [SHAPERECORD]
+
+getSHAPERECORDS shapeVer fillBits lineBits = go
+  where
+    go = do
+      edgeRecord <- getFlag
+      if edgeRecord
+       then do
+          straightEdge <- getFlag
+          if straightEdge
+           then getSTRAIGHTEDGERECORD >>= \x -> fmap (x:) go
+           else getCURVEDEDGERECORD >>= \x -> fmap (x:) go
+       else do
+          eos <- lookAhead (getUB 5)
+          if eos == 0
+           then byteAlign >> return []
+           else getSTYLECHANGERECORD shapeVer fillBits lineBits >>= \x -> fmap (x:) go
+
+data SHAPERECORD
+         =  STYLECHANGERECORD{sTYLECHANGERECORD_stateNewStyles :: Bool,
+                    sTYLECHANGERECORD_move :: Maybe (UB, SB, SB),
+                    sTYLECHANGERECORD_fillStyle0 :: Maybe UB,
+                    sTYLECHANGERECORD_fillStyle1 :: Maybe UB,
+                    sTYLECHANGERECORD_lineStyle :: Maybe UB,
+                    sTYLECHANGERECORD_fillStyles :: Maybe FILLSTYLEARRAY,
+                    sTYLECHANGERECORD_lineStyles :: Maybe LINESTYLEARRAY,
+                    sTYLECHANGERECORD_um :: Maybe (UB, UB)}
+         |  STRAIGHTEDGERECORD{sTRAIGHTEDGERECORD_numBits :: UB,
+                     sTRAIGHTEDGERECORD_straightEdge :: StraightEdge}
+         |  CURVEDEDGERECORD{cURVEDEDGERECORD_typeFlag :: Bool,
+                   cURVEDEDGERECORD_straightFlag :: Bool,
+                   cURVEDEDGERECORD_numBits :: UB,
+                   cURVEDEDGERECORD_controlDeltaX :: SB,
+                   cURVEDEDGERECORD_controlDeltaY :: SB,
+                   cURVEDEDGERECORD_anchorDeltaX :: SB,
+                   cURVEDEDGERECORD_anchorDeltaY :: SB}
+
+\end{code}
+
+\begin{code}
+getSTYLECHANGERECORD sTYLECHANGERECORD_shapeVer
+  sTYLECHANGERECORD_fillBits sTYLECHANGERECORD_lineBits
+  = do sTYLECHANGERECORD_stateNewStyles <- getFlag
+       sTYLECHANGERECORD_stateLineStyle <- getFlag
+       sTYLECHANGERECORD_stateFillStyle1 <- getFlag
+       sTYLECHANGERECORD_stateFillStyle0 <- getFlag
+       sTYLECHANGERECORD_stateMoveTo <- getFlag
+       sTYLECHANGERECORD_move <- maybeHas sTYLECHANGERECORD_stateMoveTo
+                                   (do sTYLECHANGERECORD_moveBits <- getUB 5
+                                       sTYLECHANGERECORD_moveDeltaX <- getSB
+                                                                         sTYLECHANGERECORD_moveBits
+                                       sTYLECHANGERECORD_moveDeltaY <- getSB
+                                                                         sTYLECHANGERECORD_moveBits
+                                       return
+                                         (sTYLECHANGERECORD_moveBits, sTYLECHANGERECORD_moveDeltaX,
+                                          sTYLECHANGERECORD_moveDeltaY))
+       sTYLECHANGERECORD_fillStyle0 <- maybeHas
+                                         sTYLECHANGERECORD_stateFillStyle0
+                                         (getUB sTYLECHANGERECORD_fillBits)
+       sTYLECHANGERECORD_fillStyle1 <- maybeHas
+                                         sTYLECHANGERECORD_stateFillStyle1
+                                         (getUB sTYLECHANGERECORD_fillBits)
+       sTYLECHANGERECORD_lineStyle <- maybeHas
+                                        sTYLECHANGERECORD_stateLineStyle
+                                        (getUB sTYLECHANGERECORD_lineBits)
+       sTYLECHANGERECORD_fillStyles <- maybeHas
+                                         sTYLECHANGERECORD_stateNewStyles
+                                         (getFILLSTYLEARRAY sTYLECHANGERECORD_shapeVer)
+       sTYLECHANGERECORD_lineStyles <- maybeHas
+                                         sTYLECHANGERECORD_stateNewStyles
+                                         (getLINESTYLEARRAY sTYLECHANGERECORD_shapeVer)
+       sTYLECHANGERECORD_um <- maybeHas sTYLECHANGERECORD_stateNewStyles
+                                 (do sTYLECHANGERECORD_numFillBits <- getUB 4
+                                     sTYLECHANGERECORD_numLineBits <- getUB 4
+                                     return
+                                       (sTYLECHANGERECORD_numFillBits,
+                                        sTYLECHANGERECORD_numLineBits))
+       _sTYLECHANGERECORD_reserved <- byteAlign
+       return (STYLECHANGERECORD{..})
+
+\end{code}
+
+\begin{code}
+getSTRAIGHTEDGERECORD
+  = do sTRAIGHTEDGERECORD_numBits <- getUB 4
+       sTRAIGHTEDGERECORD_straightEdge <- getStraightEdge
+                                            sTRAIGHTEDGERECORD_numBits
+       _sTRAIGHTEDGERECORD_reserved <- byteAlign
+       return (STRAIGHTEDGERECORD{..})
+
+\end{code}
+
+\begin{code}
+
+data StraightEdge = GeneralLine { straightEdge_deltaX :: SB, straightEdge_deltaY :: SB }
+                  | VerticalLine { straightEdge_deltaY :: SB }
+                  | HorizontalLine { straightEdge_deltaX :: SB }
+
+getStraightEdge numBits = do
+    generalLine <- getFlag
+    if generalLine
+     then liftM2 GeneralLine (getSB (numBits + 2)) (getSB (numBits + 2))
+     else do
+      vert <- getFlag
+      liftM (if vert then VerticalLine else HorizontalLine) (getSB (numBits + 2))
+
+\end{code}
+
+\begin{code}
+getCURVEDEDGERECORD
+  = do cURVEDEDGERECORD_typeFlag <- getFlag
+       cURVEDEDGERECORD_straightFlag <- getFlag
+       cURVEDEDGERECORD_numBits <- getUB 4
+       cURVEDEDGERECORD_controlDeltaX <- getSB
+                                           (cURVEDEDGERECORD_numBits + 2)
+       cURVEDEDGERECORD_controlDeltaY <- getSB
+                                           (cURVEDEDGERECORD_numBits + 2)
+       cURVEDEDGERECORD_anchorDeltaX <- getSB
+                                          (cURVEDEDGERECORD_numBits + 2)
+       cURVEDEDGERECORD_anchorDeltaY <- getSB
+                                          (cURVEDEDGERECORD_numBits + 2)
+       _cURVEDEDGERECORD_reserved <- byteAlign
+       return (CURVEDEDGERECORD{..})
+
+\end{code}
+
+p140: DefineShape
+\begin{code}
+getDefineShape
+  = do defineShape_shapeId <- getUI16
+       defineShape_shapeBounds <- getRECT
+       defineShape_shapes <- getSHAPEWITHSTYLE 1
+       return (DefineShape{..})
+
+\end{code}
+
+p141: DefineShape2
+\begin{code}
+getDefineShape2
+  = do defineShape2_shapeId <- getUI16
+       defineShape2_shapeBounds <- getRECT
+       defineShape2_shapes <- getSHAPEWITHSTYLE 2
+       return (DefineShape2{..})
+
+\end{code}
+
+p141: DefineShape3
+\begin{code}
+getDefineShape3
+  = do defineShape3_shapeId <- getUI16
+       defineShape3_shapeBounds <- getRECT
+       defineShape3_shapes <- getSHAPEWITHSTYLE 3
+       return (DefineShape3{..})
+
+\end{code}
+
+p142: DefineShape4
+\begin{code}
+getDefineShape4
+  = do defineShape4_shapeId <- getUI16
+       defineShape4_shapeBounds <- getRECT
+       defineShape4_edgeBounds <- getRECT
+       _defineShape4_reserved <- getUB 5
+       defineShape4_usesFillWindingRule <- getFlag
+       defineShape4_usesNonScalingStrokes <- getFlag
+       defineShape4_usesScalingStrokes <- getFlag
+       defineShape4_shapes <- getSHAPEWITHSTYLE 4
+       return (DefineShape4{..})
+
+\end{code}
+
+
+Chapter 7: Gradients
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+p145: GRADIENT
+\begin{code}
+ 
+data GRADIENT = GRADIENT{gRADIENT_spreadMode :: UB,
+                         gRADIENT_interpolationMode :: UB,
+                         gRADIENT_gradientRecords :: [GRADRECORD]}
+getGRADIENT gRADIENT_shapeVer
+  = do gRADIENT_spreadMode <- getUB 2
+       gRADIENT_interpolationMode <- getUB 2
+       gRADIENT_numGradients <- getUB 4
+       gRADIENT_gradientRecords <- sequence
+                                     (genericReplicate gRADIENT_numGradients
+                                        (getGRADRECORD gRADIENT_shapeVer))
+       return (GRADIENT{..})
+
+\end{code}
+
+p146: FOCALGRADIENT
+\begin{code}
+ 
+data FOCALGRADIENT = FOCALGRADIENT{fOCALGRADIENT_spreadMode :: UB,
+                                   fOCALGRADIENT_interpolationMode :: UB,
+                                   fOCALGRADIENT_gradientRecords :: [GRADRECORD],
+                                   fOCALGRADIENT_focalPoint :: FIXED8}
+getFOCALGRADIENT fOCALGRADIENT_shapeVer
+  = do fOCALGRADIENT_spreadMode <- getUB 2
+       fOCALGRADIENT_interpolationMode <- getUB 2
+       fOCALGRADIENT_numGradients <- getUB 4
+       fOCALGRADIENT_gradientRecords <- sequence
+                                          (genericReplicate fOCALGRADIENT_numGradients
+                                             (getGRADRECORD fOCALGRADIENT_shapeVer))
+       fOCALGRADIENT_focalPoint <- getFIXED8
+       return (FOCALGRADIENT{..})
+
+\end{code}
+
+p146: GRADRECORD
+\begin{code}
+
+data GRADRECORD = GRADRECORD { gRADRECORD_ratio :: UI8, gRADRECORD_color :: Either RGB RGBA }
+
+getGRADRECORD shapeVer = do
+    gRADRECORD_ratio <- getUI8
+    gRADRECORD_color <- if shapeVer <= 2 then fmap Left getRGB else fmap Right getRGBA
+    return $ GRADRECORD {..}
 
 \end{code}
 
