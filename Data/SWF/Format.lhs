@@ -4,8 +4,6 @@ module Data.SWF.Format where
 import Data.SWF.Internal.Binary
 import Data.SWF.Internal.Utilities
 
-import Control.Arrow((&&&))
-
 import Data.Char
 import Data.Data
 import Data.Ratio
@@ -43,67 +41,96 @@ type SI32 = Int32
 getSI8 :: SwfGet SI8
 getSI8 = fmap fromIntegral getWord8
 
+putSI8 :: SI8 -> SwfPut
+putSI8 = putWord8 . fromIntegral
+
 getSI16 :: SwfGet SI16
 getSI16 = fmap fromIntegral getWord16
+
+putSI16 :: SI16 -> SwfPut
+putSI16 = putWord16 . fromIntegral
 
 getSI32 :: SwfGet SI32
 getSI32 = fmap fromIntegral getWord32
 
---type SI18[n]
---type SI16[n]
+putSI32 :: SI32 -> SwfPut
+putSI32 = putWord32 . fromIntegral
 
 type UI8 = Word8
 type UI16 = Word16
 type UI32 = Word32
 
 getUI8 :: SwfGet UI8
-getUI8 = fmap fromIntegral getWord8
+getUI8 = getWord8
+
+putUI8 :: UI8 -> SwfPut
+putUI8 = putWord8
 
 getUI16 :: SwfGet UI16
-getUI16 = fmap fromIntegral getWord16
+getUI16 = getWord16
+
+putUI16 :: UI16 -> SwfPut
+putUI16 = putWord16
 
 getUI32 :: SwfGet UI32
-getUI32 = fmap fromIntegral getWord32
+getUI32 = getWord32
 
---type UI8[n]
---type U116[n]
---type U124[n]
---type U132[n]
---type U164[n]
+putUI32 :: UI32 -> SwfPut
+putUI32 = putWord32
 
 \end{code}
 
 p12: Fixed-point numbers
 \begin{code}
-
-data FIXED = FIXED SI16 UI16
+ 
+data FIXED = FIXED{fIXED_decimal :: UI16, fIXED_integer :: SI16}
            deriving (Eq, Show, Typeable, Data)
+getFIXED
+  = do fIXED_decimal <- getUI16
+       fIXED_integer <- getSI16
+       return (FIXED{..})
 
-data FIXED8 = FIXED8 SI8 UI8
-            deriving (Eq, Show, Typeable, Data)
+\end{code}
 
-getFIXED :: SwfGet FIXED
-getFIXED = liftM2 (flip FIXED) getUI16 getSI16
+\begin{code}
 
-getFIXED8 :: SwfGet FIXED8
-getFIXED8 = liftM2 (flip FIXED8) getUI8 getSI8
-
-fIXEDToRational (FIXED whole decimal) = fromIntegral whole + (fromIntegral decimal % 65535)
-fIXED8ToRational (FIXED8 whole decimal) = fromIntegral whole + (fromIntegral decimal % 255)
+fIXEDToRational :: FIXED -> Rational
+fIXEDToRational fixed = fromIntegral (fIXED_integer fixed) + (fromIntegral (fIXED_decimal fixed) % 65535)
 
 fIXEDToFractional :: Fractional a => FIXED -> a
 fIXEDToFractional = fromRational . fIXEDToRational
 
+\end{code}
+
+\begin{code}
+ 
+data FIXED8 = FIXED8{fIXED8_decimal :: UI8, fIXED8_integer :: SI8}
+            deriving (Eq, Show, Typeable, Data)
+getFIXED8
+  = do fIXED8_decimal <- getUI8
+       fIXED8_integer <- getSI8
+       return (FIXED8{..})
+
+\end{code}
+
+\begin{code}
+
+fIXED8ToRational :: FIXED8 -> Rational
+fIXED8ToRational fixed8 = fromIntegral (fIXED8_integer fixed8) + (fromIntegral (fIXED8_decimal fixed8) % 255)
+
 fIXED8ToFractional :: Fractional a => FIXED8 -> a
 fIXED8ToFractional = fromRational . fIXED8ToRational
 
+\end{code}
 
--- Page 13: Floating-point numbers
+Page 13: Floating-point numbers
+\begin{code}
 
 newtype FLOAT16 = FLOAT16 Float
                 deriving (Eq, Show, Typeable, Data)
-type FLOAT = Float
-type DOUBLE = Double
+
+storableCast :: (Storable a, Storable b) => a -> b
+storableCast w = unsafePerformIO $ with w $ peek . castPtr
 
 getFLOAT16 :: SwfGet FLOAT16
 getFLOAT16 = do
@@ -114,23 +141,57 @@ getFLOAT16 = do
         promote = (realToFrac :: CFloat -> Float) . storableCast
     return $ FLOAT16 $ (if sign /= 0 then negate else id) $ (1 + (promote manti / 0x400)) * 2 ^^ expon
 
+putFLOAT16 :: FLOAT16 -> SwfPut
+putFLOAT16 (FLOAT16 x) = do
+    -- CFloat:  seeeeeeeemmmmmmmmmmmmmmmmmmmmmmm (1, 8, 23), bias = 127
+    -- FLOAT16: seeeeemmmmmmmmmm                 (1, 5, 10), bias = 16
+    let depromote = storableCast . (realToFrac :: Float -> CFloat)
+        w = depromote x
+        sign  = (w `shiftR` 16)                                       .&. 0x8000
+        expon = ((((w `shiftR` 23) .&. 0xFF) - 127 + 16) `shiftL` 10) .&. 0x7C00
+        manti = (w `shiftR` 16)                                       .&. 0x3FF
+    putWord16 $ sign .|. expon .|. manti
+
+\end{code}
+
+\begin{code}
+
+type FLOAT = Float
+
 getFLOAT :: SwfGet FLOAT
-getFLOAT = fmap word32ToDouble getWord32
+getFLOAT = fmap word32ToFloat getWord32
+
+putFLOAT :: FLOAT -> SwfPut
+putFLOAT = putWord32 . floatToWord32
+
+word32ToFloat :: Word32 -> Float
+word32ToFloat = (realToFrac :: CFloat -> Float) . storableCast
+
+floatToWord32 :: Float -> Word32
+floatToWord32 = storableCast . (realToFrac :: Float -> CFloat)
+
+\end{code}
+
+\begin{code}
+
+type DOUBLE = Double
 
 getDOUBLE :: SwfGet DOUBLE
 getDOUBLE = fmap word64ToDouble getWord64
 
-word32ToDouble :: Word32 -> Float
-word32ToDouble = (realToFrac :: CFloat -> Float) . storableCast
+putDOUBLE :: DOUBLE -> SwfPut
+putDOUBLE = putWord64 . doubleToWord64
 
 word64ToDouble :: Word64 -> Double
 word64ToDouble = (realToFrac :: CDouble -> Double) . storableCast
 
-storableCast :: (Storable a, Storable b) => a -> b
-storableCast w = unsafePerformIO $ with w $ peek . castPtr
+doubleToWord64 :: Double -> Word64
+doubleToWord64 = storableCast . (realToFrac :: Double -> CDouble)
 
+\end{code}
 
--- Page 14: encoded integers
+Page 14: encoded integers
+\begin{code}
 
 newtype EncodedU32 = EncodedU32 UI32
                    deriving (Eq, Ord, Enum, Show, Num, Real, Integral, Typeable, Data)
@@ -159,37 +220,87 @@ getEncodedU32 = fmap EncodedU32 $ do
                 i4 <- fmap fromIntegral getWord8
                 return $ (res .&. 0xFFFFFFF) .|. (i4 `shiftL` 28)
 
+putEncodedU32 :: EncodedU32 -> SwfPut
+putEncodedU32 (EncodedU32 x) = do
+    x <- put x
+    when (x /= 0) $ do
+      x <- put x
+      when (x /= 0) $ do
+        x <- put x
+        when (x /= 0) $ do
+          x <- put x
+          when (x /= 0) $ do
+            0 <- put x
+            return ()
+  where
+    put x = do
+      let x' = x `shiftR` 7
+      putWord8 (fromIntegral (x .&. 0x7F) .|. (if x' /= 0 then 0x80 else 0x00))
+      return x'
 
--- Page 15: bit values
+\end{code}
+
+Page 15: bit values
+\begin{code}
+
+type UB = UI32
+
+ -- 1110b = 14
+getUB :: Integral a => a -> SwfGet UB
+getUB = getBits
+
+putUB :: Integral a => a -> UB -> SwfPut
+putUB = putBits
+
+getFlag :: SwfGet Bool
+getFlag = fmap (/= 0) (getUB 1)
+
+putFlag :: Bool -> SwfPut
+putFlag x = putUB 1 (if x then 1 else 0)
+
+\end{code}
+
+\begin{code}
 
 type SB = SI32
-type UB = UI32
-type FB = FIXED
 
 signextend :: (Integral a, Integral b) => a -> Word32 -> b
 signextend nbits bits
-  = fromIntegral (bits .&. complement signbitmask) - if (bits .&. signbitmask) /= 0 then 2 ^ (nbits - 1) else 0
+  -- From http://graphics.stanford.edu/~seander/bithacks.html#VariableSignExtend
+  -- We want to copy the sign bit into all of bits higher than nbits in the Word32
+  -- before we convert that to the desired integral type.
+  = fromIntegral ((bits `xor` signbitmask) - signbitmask)
   where signbitmask = 1 `shiftL` (fromIntegral $ nbits - 1)
 
  -- 1110b = -2
  -- 0x30000 (19 bit) = 196608
 getSB :: Integral a => a -> SwfGet SB
 getSB nbits = fmap (signextend nbits) (getBits nbits)
-  
- -- 1110b = 14
-getUB :: Integral a => a -> SwfGet UB
-getUB = getBits
+
+signretract :: (Integral a, Integral b) => a -> b -> Word32
+signretract nbits num
+  -- From http://homepage.mac.com/randyhyde/webster.cs.ucr.edu/www.artofasm.com/Linux/HTML/DataRepresentation5.html
+  -- This will overflow if the bits above the new sign bit are actually different
+  -- from the sign bit. TODO: check for that condition.
+  = lowerbitsmask .&. (fromIntegral num)
+  where lowerbitsmask = (1 `shiftL` fromIntegral nbits) - 1
+
+putSB :: Integral a => a -> SB -> SwfPut
+putSB nbits = putBits nbits . signretract nbits
+
+\end{code}
+
+\begin{code}
+
+type FB = FIXED
 
  -- 0x30000 (19 bit) = 3.0
 getFB :: Integral a => a -> SwfGet FB
 getFB nbits = fmap parse (getBits nbits)
-  where parse bits = FIXED (signextend (nbits - 16) $ bits `shiftR` 16) (fromIntegral $ bits .&. 0xFFFF)
+  where parse bits = FIXED { fIXED_integer = signextend (nbits - 16) (bits `shiftR` 16), fIXED_decimal = fromIntegral (bits .&. 0xFFFF) }
 
-getBitCount :: Int -> SwfGet Int
-getBitCount = fmap fromIntegral . getUB
-
-getFlag :: SwfGet Bool
-getFlag = fmap (/= 0) (getSB 1)
+putFB :: Integral a => a -> FB -> SwfPut
+putFB nbits fixed = putBits nbits $ (signretract (nbits - 15) $ fIXED_integer fixed) `shiftL` 16 .|. (fromIntegral (fIXED_decimal fixed) .&. 0xFFFF)
 
 \end{code}
 
@@ -202,6 +313,9 @@ type STRING = ByteString
 
 getSTRING :: SwfGet STRING
 getSTRING = getLazyByteStringNul
+
+putSTRING :: STRING -> SwfPut
+putSTRING = putLazyByteStringNul
 
 \end{code}
 
@@ -222,6 +336,16 @@ getLANGCODE = do
       4 -> SimplifiedChineseLanguage
       5 -> TraditionalChineseLanguage
       _ -> UnrecognizedLanguage n
+
+putLANGCODE :: LANGCODE -> SwfPut
+putLANGCODE lc = case lc of
+    NoLanguage                 -> putUI8 0
+    LatinLanguage              -> putUI8 1
+    JapaneseLanguage           -> putUI8 2
+    KoreanLanguage             -> putUI8 3
+    SimplifiedChineseLanguage  -> putUI8 4
+    TraditionalChineseLanguage -> putUI8 5
+    UnrecognizedLanguage x     -> putUI8 x
 
 \end{code}
 
@@ -390,7 +514,7 @@ data Swf = Swf { compressed :: Bool, version :: UI8, fileLength :: UI32 {- after
          deriving (Eq, Show, Typeable, Data)
 
 getSwf :: ByteString -> Swf
-getSwf bs = runSwfGet emptySwfGetEnv bs $ do
+getSwf bs = runSwfGet emptySwfEnv bs $ do
     signature_1 <- fmap fromIntegral getWord8
     compressed <- case lookup signature_1 [(ord 'F', False), (ord 'C', True)] of
         Just c  -> return c

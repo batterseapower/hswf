@@ -16,5 +16,9 @@ main = do
     
     let swf = getSwf bs
     
+    {-
     print $ swf { tags = [] }
     forM_ (tags swf) $ \tag -> print (rECORD_recordHeader tag) >> print (rECORD_recordTag tag)
+    -}
+    
+    print swf

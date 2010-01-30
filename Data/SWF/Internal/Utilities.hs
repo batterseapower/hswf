@@ -1,12 +1,14 @@
 module Data.SWF.Internal.Utilities (
     module Data.SWF.Internal.Utilities,
     
+    module Control.Arrow,
     module Control.Monad,
     module Data.Maybe,
     module Data.List,
     module Debug.Trace
   ) where
 
+import Control.Arrow (first, second, (&&&), (***))
 import Control.Monad
 
 import Data.Maybe
