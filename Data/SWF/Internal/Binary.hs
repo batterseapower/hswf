@@ -37,11 +37,27 @@ instance Monad SwfGet where
     mx >>= fxmy = SwfGet $ \env byte nbits -> unSwfGet mx env byte nbits >>= \(byte, nbits, x) -> unSwfGet (fxmy x) env byte nbits
 
 runSwfGet :: SwfGetEnv -> ByteString -> SwfGet a -> a
-runSwfGet env bs mx = thd3 $ B.runGet (unSwfGet mx env 0 0) bs
+runSwfGet env bs mx = thd3 $ B.runGet (unSwfGet (checkConsumesAll mx) env 0 0) bs
+
+checkConsumesAll :: SwfGet a -> SwfGet a
+checkConsumesAll mx = SwfGet $ \env byte nbits -> do
+    (byte, nbits, x) <- unSwfGet mx env byte nbits
+    nbytes <- B.remaining
+    if nbytes /= 0
+     then error $ show nbytes ++ " trailing bytes - likely to be an error"
+     else -- Allow trailing bits, because the alternative is too ugly
+          {- if nbits /= 0
+           then error $ show nbits ++ " trailing bits - likely to be an error"
+           else -} return (byte, nbits, x)
 
 
 nest' :: B.Get ByteString -> SwfGet a -> SwfGet a
-nest' mrest mx = SwfGet $ \env _ _ -> mrest >>= \rest -> return (0, 0, thd3 (B.runGet (unSwfGet mx env 0 0) rest))
+nest' mrest mx = SwfGet $ \env _ nbits -> do
+  if nbits /= 0
+   then error "Nesting off a byte boundary - likely to be an error"
+   else do
+     rest <- mrest
+     return (0, 0, runSwfGet env rest mx)
 
 nestSwfGet :: Int64 -> SwfGet a -> SwfGet a
 nestSwfGet len = nest' (B.getLazyByteString len)
@@ -96,7 +112,11 @@ getToEnd mx = condM isEmpty (return []) $ do
                   fmap (x:) $ getToEnd mx
 
 byteAlign :: SwfGet ()
-byteAlign = SwfGet $ \_ _bytes _nbits -> return (0, 0, ())
+byteAlign = SwfGet $ \env bytes nbits -> do
+    (_, 0, remaining) <- unSwfGet (getBits nbits) env bytes nbits
+    if remaining /= 0
+     then error "Byte alignment discarded non-zero bits - probably an error"
+     else return (0, 0, ())
 
 
 modify :: (SwfGetEnv -> SwfGetEnv) -> SwfGet a -> SwfGet a

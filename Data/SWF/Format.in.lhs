@@ -1845,12 +1845,19 @@ getSHAPERECORDS shapeVer = go
        then do
           straightEdge <- getFlag
           if straightEdge
-           then getSTRAIGHTEDGERECORD >>= \x -> fmap (x:) $ go fillBits lineBits
-           else getCURVEDEDGERECORD >>= \x -> fmap (x:) $ go fillBits lineBits
+           then do
+             x <- getSTRAIGHTEDGERECORD
+             fmap (x:) $ go fillBits lineBits
+           else do
+             x <- getCURVEDEDGERECORD
+             fmap (x:) $ go fillBits lineBits
        else do
           look <- lookAhead (getUB 5)
           if look == 0
-           then getUB 5 >> byteAlign >> return [] -- NB: contrary to the spec, we only byte align at the *last* record
+           then do
+             -- NB: contrary to the spec, we only byte align at the *last* record
+             getUB 5 >> byteAlign
+             return []
            else do
              x <- getSTYLECHANGERECORD shapeVer fillBits lineBits
              let (fillBits', lineBits') = fromMaybe (fillBits, lineBits) $ fmap (thd4 &&& fth4) $ sTYLECHANGERECORD_new x

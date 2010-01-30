@@ -1,0 +1,3 @@
+:set -XTupleSections -XRecordWildCards -XDeriveDataTypeable -XGeneralizedNewtypeDeriving
+:set -itests;.
+:load tests/Tests.hs

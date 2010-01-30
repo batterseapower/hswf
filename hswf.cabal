@@ -18,14 +18,3 @@ Executable swf
                     DeriveDataTypeable, GeneralizedNewtypeDeriving
 
     Ghc-Options:    -fwarn-unused-binds -fwarn-unused-imports -fwarn-unused-matches -fwarn-overlapping-patterns -fwarn-unused-do-bind
-
-Executable swf-tests
-    Buildable:      False
-    Main-Is:        Tests.hs
-    Build-Depends:  base >= 4 && < 5, bytestring >= 0.9.1.5 && < 0.10,
-                    zlib >= 0.5.2.0 && < 0.6, binary >= 0.5.0.2 && < 0.6,
-                    QuickCheck >= 1.2.0.0 && < 1.3
-    Extensions:     PatternGuards, RecordWildCards, TupleSections, Rank2Types,
-                    DeriveDataTypeable, GeneralizedNewtypeDeriving
-
-    Ghc-Options:    -fwarn-unused-binds -fwarn-unused-imports -fwarn-unused-matches -fwarn-overlapping-patterns -fwarn-unused-do-bind
