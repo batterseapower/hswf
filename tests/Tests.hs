@@ -1,6 +1,7 @@
 import qualified Primitives
 import qualified VanillaRect
 import qualified DefineShapeAlignment
+import qualified Roundtripping
 
 import Numeric
 
@@ -16,6 +17,7 @@ main = do
     Primitives.main
     VanillaRect.main
     DefineShapeAlignment.main
+    Roundtripping.main
 
 
 -- Useful for constructing new tests:
