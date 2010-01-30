@@ -25,6 +25,7 @@ TODOS
   * In particular, the zlib compressed fields in the image chapter
   * Perhaps also those embedding sound and video formats
 3) Tests, tests, tests!
+4) Implement the code generators for writing back out
 
 
 Chapter 1: Basic Data Types
