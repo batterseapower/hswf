@@ -17,6 +17,7 @@ import qualified Data.Binary.Put as B
 
 import Data.Bits
 import Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as BS
 import Data.Int
 import Data.Word
 
@@ -145,6 +146,8 @@ instance Monad SwfPutM where
 runSwfPutM :: SwfEnv -> SwfPutM a -> (a, ByteString)
 runSwfPutM env mx = first thd3 $ B.runPutM (unSwfPutM (checkFlushesAll mx) env 0 8)
 
+runSwfPut :: SwfEnv -> SwfPut -> ByteString
+runSwfPut env = snd . runSwfPutM env
 
 checkFlushesAll :: SwfPutM a -> SwfPutM a 
 checkFlushesAll mx = SwfPutM $ \env byte nbits -> do
@@ -154,17 +157,23 @@ checkFlushesAll mx = SwfPutM $ \env byte nbits -> do
      else return (byte, nbits, x)
 
 
-nestSwfPutMBS :: (ByteString -> ByteString) -> SwfPutM a -> SwfPutM a
+nestSwfPutMBS :: (a -> ByteString -> B.PutM b) -> SwfPutM a -> SwfPutM b
 nestSwfPutMBS f mx = SwfPutM $ \env _ nbits ->
     if nbits /= 8
      then error $ show nbits ++ " desired bits when we reach a nested write - probably an error"
      else do
       let (x, bs) = runSwfPutM env mx
-      B.putLazyByteString (f bs)
-      return (0, 8, x)
+      y <- f x bs
+      return (0, 8, y)
+
+nestSwfPutM :: Integral b => SwfPutM a -> SwfPutM (a, (b, SwfPut))
+nestSwfPutM = nestSwfPutMBS (\x bs -> return (x, (fromIntegral $ BS.length bs, putLazyByteString bs)))
+
+nestSwfPut :: Integral b => SwfPut -> SwfPutM (b, SwfPut)
+nestSwfPut = fmap snd . nestSwfPutM
 
 compressRemainder :: Int -> SwfPutM a -> SwfPutM a
-compressRemainder size_hint = nestSwfPutMBS compress
+compressRemainder size_hint = nestSwfPutMBS (\x bs -> B.putLazyByteString (compress bs) >> return x)
  where compress = compressWith (defaultCompressParams { compressBufferSize = size_hint })
 
 

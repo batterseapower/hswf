@@ -126,9 +126,9 @@ parseFile contents = goNo [] (lines contents)
       | Just chunk <- lookup l commands = NonRecordChunk acc : chunk : goNo [] ls
       | l == "\\begin{record}"          = NonRecordChunk acc : goYes [] ls
       | otherwise                       = goNo (acc ++ [l]) ls
-      where commands = [("\\gengetters{tag}",              GenGettersChunk Tag),
+      where commands = [("\\genfunctions{tag}",            GenGettersChunk Tag),
                         ("\\genconstructors{tag}",         GenConstructorsChunk Tag),
-                        ("\\gengetters{action}",           GenGettersChunk Action),
+                        ("\\genfunctions{action}",         GenGettersChunk Action),
                         ("\\genconstructors{action}",      GenConstructorsChunk Action),
                         ("\\genconstructors{shaperecord}", GenConstructorsChunk ShapeRecord)]
     

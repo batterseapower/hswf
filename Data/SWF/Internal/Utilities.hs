@@ -37,6 +37,15 @@ condM mcond mt mf = do
     if cond then mt else mf
 
 
+consistentWith :: Bool -> Bool -> Bool
+consistentWith True  True  = True
+consistentWith False False = False
+consistentWith _     _     = inconsistent
+
+inconsistent :: a
+inconsistent = error "Inconsistent state!"
+
+
 maybeHasM :: Monad m => m Bool -> m b -> m (Maybe b)
 maybeHasM ma mb = ma >>= \a -> maybeHas a mb
 

@@ -26,6 +26,10 @@ TODOS
   * Perhaps also those embedding sound and video formats
 3) Tests, tests, tests!
 4) Implement the code generators for writing back out
+5) Reduce semantic junk - e.g. RECORDHEADER/ACTIONHEADER entries
+6) Fix swfVersion with Put
+7) Asserts to validate safety of throwing away info like Reserved
+8) Asserts to validate semantic junk is in agreement with each other
 
 
 Chapter 1: Basic Data Types
@@ -534,6 +538,20 @@ getSwf bs = runSwfGet emptySwfEnv bs $ do
         tags <- getToEnd getRECORD
         return Swf {..}
 
+putSwf :: Swf -> ByteString
+putSwf swf = runSwfPut emptySwfEnv $ do
+    putUI8 $ fromIntegral (if compressed swf then ord 'F' else ord 'C')
+    putUI8 $ fromIntegral (ord 'W')
+    putUI8 $ fromIntegral (ord 'S')
+    putUI8 $ version swf
+    putUI32 $ fileLength swf
+    
+    (if compressed swf then compressRemainder (fileLength swf) else id) $ do
+        putRECT $ frameSize swf
+        putFIXED8 $ frameRate swf
+        putUI16 $ frameCount swf
+        mapM_ putRECORD $ tags swf
+
 \end{code}
 
 p27: Tag format
@@ -550,6 +568,11 @@ getRECORDHEADER = do
     tagLength <- if tagLength == 0x3F then getSI32 else return (fromIntegral tagLength)
     return $ RECORDHEADER tagCode tagLength
 
+putRECORDHEADER :: RECORDHEADER -> SwfPut
+putRECORDHEADER (RECORDHEADER{..}) = do
+    putUI16 ((rECORDHEADER_tagType `shiftL` 6) .|. (fromIntegral $ rECORDHEADER_tagLength `max` 0x3F))
+    when (rECORDHEADER_tagLength >= 0x3F) $ putUI32 rECORDHEADER_tagLength
+
 \end{code}
 
 Chapter 3: The Display List
@@ -560,9 +583,6 @@ data RECORD = RECORD { rECORD_recordHeader :: RECORDHEADER, rECORD_recordTag :: 
             deriving (Eq, Show, Typeable, Data)
 
 data Tag = UnknownTag ByteString
-         | PlaceObject3 { placeObject3_placeFlagMove :: Bool, placeObject3_placeFlagHasImage :: Bool, placeObject3_placeFlagHasClassName :: Bool, placeObject3_depth :: UI16, placeObject3_className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, placeObject3_ratio :: Maybe UI16, placeObject3_name :: Maybe STRING, placeObject3_clipDepth :: Maybe UI16, placeObject3_surfaceFilterList :: Maybe FILTERLIST, placeObject3_blendMode :: Maybe BlendMode, placeObject3_bitmapCache :: Maybe UI8, placeObject3_clipActions :: Maybe CLIPACTIONS }
-         | DoAction { doAction_actions :: ACTIONRECORDS }
-         | DoInitAction { doInitAction_spriteID :: UI16, doInitAction_actions :: ACTIONRECORDS }
          | DefineFont { defineFont_fontID :: UI16, defineFont_glyphShapeTable :: [SHAPE] }
          |  PlaceObject{placeObject_characterId :: UI16,
               placeObject_depth :: UI16, placeObject_matrix :: MATRIX,
@@ -575,6 +595,20 @@ data Tag = UnknownTag ByteString
                placeObject2_name :: Maybe STRING,
                placeObject2_clipDepth :: Maybe UI16,
                placeObject2_clipActions :: Maybe CLIPACTIONS}
+         |  PlaceObject3{placeObject3_placeFlagMove :: Bool,
+               placeObject3_placeFlagHasImage :: Bool,
+               placeObject3_placeFlagHasClassName :: Bool,
+               placeObject3_depth :: UI16, placeObject3_className :: Maybe STRING,
+               placeObject3_characterId :: Maybe UI16,
+               placeObject3_matrix :: Maybe MATRIX,
+               placeObject3_colorTransform :: Maybe CXFORMWITHALPHA,
+               placeObject3_ratio :: Maybe UI16,
+               placeObject3_name :: Maybe STRING,
+               placeObject3_clipDepth :: Maybe UI16,
+               placeObject3_surfaceFilterList :: Maybe FILTERLIST,
+               placeObject3_blendMode :: Maybe BlendMode,
+               placeObject3_bitmapCache :: Maybe UI8,
+               placeObject3_clipActions :: Maybe CLIPACTIONS}
          |  RemoveObject{removeObject_characterId :: UI16,
                removeObject_depth :: UI16}
          |  RemoveObject2{removeObject2_depth :: UI16}
@@ -613,6 +647,9 @@ data Tag = UnknownTag ByteString
                                :: [(EncodedU32, STRING)],
                                defineSceneAndFrameLabelData_frameNumLabels ::
                                [(EncodedU32, STRING)]}
+         |  DoAction{doAction_actions :: ACTIONRECORDS}
+         |  DoInitAction{doInitAction_spriteID :: UI16,
+               doInitAction_actions :: ACTIONRECORDS}
          |  DoABC{doABC_flags :: UI32, doABC_name :: STRING,
         doABC_aBCData :: ByteString}
          |  DefineShape{defineShape_shapeId :: UI16,
@@ -829,9 +866,6 @@ getRECORD = do
 
     let mb_getter = case rECORDHEADER_tagType of
           10 -> Just getDefineFont
-          12 -> Just getDoAction
-          59 -> Just getDoInitAction
-          70 -> Just getPlaceObject3
           _  -> generatedTagGetters rECORDHEADER_tagType
 
     rECORD_recordTag <- nestSwfGet (fromIntegral rECORDHEADER_tagLength) $ case mb_getter of
@@ -840,6 +874,14 @@ getRECORD = do
 
     return $ RECORD {..}
 
+putRECORD (RECORD{..}) = do
+    putRECORDHEADER rECORD_recordHeader
+    
+    case rECORD_recordTag of
+        UnknownTag bs   -> putLazyByteString bs
+        DefineFont {}   -> putDefineFont rECORD_recordTag
+        _               -> generatedTagPutters rECORD_recordTag
+
 \end{code}
 
 \begin{code}
@@ -847,6 +889,7 @@ generatedTagGetters tagType
   = case tagType of
         4 -> Just getPlaceObject
         26 -> Just getPlaceObject2
+        70 -> Just getPlaceObject3
         5 -> Just getRemoveObject
         28 -> Just getRemoveObject2
         1 -> Just getShowFrame
@@ -866,6 +909,8 @@ generatedTagGetters tagType
         77 -> Just getMetadata
         78 -> Just getDefineScalingGrid
         86 -> Just getDefineSceneAndFrameLabelData
+        12 -> Just getDoAction
+        59 -> Just getDoInitAction
         82 -> Just getDoABC
         2 -> Just getDefineShape
         22 -> Just getDefineShape2
@@ -956,15 +1001,20 @@ getPlaceObject2
 \end{code}
 
 \begin{code}
-
-data CLIPACTIONS = CLIPACTIONS { cLIPACTIONS_allEventFlags :: CLIPEVENTFLAGS, cLIPACTIONS_clipActionRecords :: CLIPACTIONRECORDS }
+ 
+data CLIPACTIONS = CLIPACTIONS{cLIPACTIONS_allEventFlags ::
+                               CLIPEVENTFLAGS,
+                               cLIPACTIONS_clipActionRecords :: CLIPACTIONRECORDS}
                  deriving (Eq, Show, Typeable, Data)
+getCLIPACTIONS
+  = do _cLIPACTIONS_reserved <- getUI16
+       cLIPACTIONS_allEventFlags <- getCLIPEVENTFLAGS
+       cLIPACTIONS_clipActionRecords <- getCLIPACTIONRECORDS
+       return (CLIPACTIONS{..})
 
-getCLIPACTIONS = do
-    _reserved <- getUI16
-    cLIPACTIONS_allEventFlags <- getCLIPEVENTFLAGS
-    cLIPACTIONS_clipActionRecords <- getCLIPACTIONRECORDS
-    return $ CLIPACTIONS {..}
+\end{code}
+
+\begin{code}
 
 type CLIPACTIONRECORDS = [CLIPACTIONRECORD]
 
@@ -975,6 +1025,10 @@ getCLIPACTIONRECORDS = do
      else do
        x <- getCLIPACTIONRECORD
        fmap (x:) getCLIPACTIONRECORDS
+
+putCLIPACTIONRECORDS rs = do
+    mapM_ putCLIPACTIONRECORD rs
+    putCLIPEVENTFLAGS []
 
 data CLIPACTIONRECORD = CLIPACTIONRECORD { cLIPACTIONRECORD_eventFlags :: CLIPEVENTFLAGS, cLIPACTIONRECORD_keyCode :: Maybe UI8, cLIPACTIONRECORD_actions :: [ACTIONRECORD] }
                       deriving (Eq, Show, Typeable, Data)
@@ -992,31 +1046,72 @@ getCLIPACTIONRECORD = do
         action <- getACTIONRECORD
         fmap (action:) getACTIONRECORDS
 
+putCLIPACTIONRECORD (CLIPACTIONRECORD {..}) = do
+    putCLIPEVENTFLAGS cLIPACTIONRECORD_eventFlags
+    (len, putrest) <- nestSwfPut $ do
+        when ((ClipEventKeyPress `elem` cLIPACTIONRECORD_eventFlags) `consistentWith` isJust cLIPACTIONRECORD_keyCode) $ do
+            putUI8 (fromJust cLIPACTIONRECORD_keyCode)
+        putACTIONRECORDS cLIPACTIONRECORD_actions
+    putUI32 len
+    putrest
+
 \end{code}
 
 p38: PlaceObject3
 \begin{code}
+getPlaceObject3
+  = do placeObject3_placeFlagHasClipActions <- getFlag
+       placeObject3_placeFlagHasClipDepth <- getFlag
+       placeObject3_placeFlagHasName <- getFlag
+       placeObject3_placeFlagHasRatio <- getFlag
+       placeObject3_placeFlagHasColorTransform <- getFlag
+       placeObject3_placeFlagHasMatrix <- getFlag
+       placeObject3_placeFlagHasCharacter <- getFlag
+       placeObject3_placeFlagMove <- getFlag
+       _placeObject3_reserved <- getUB 3
+       placeObject3_placeFlagHasImage <- getFlag
+       placeObject3_placeFlagHasClassName <- getFlag
+       placeObject3_placeFlagHasCacheAsBitmap <- getFlag
+       placeObject3_placeFlagHasBlendMode <- getFlag
+       placeObject3_placeFlagHasFilterList <- getFlag
+       placeObject3_depth <- getUI16
+       placeObject3_className <- maybeHas
+                                   (placeObject3_placeFlagHasClassName ||
+                                      placeObject3_placeFlagHasImage &&
+                                        placeObject3_placeFlagHasCharacter)
+                                   getSTRING
+       placeObject3_characterId <- maybeHas
+                                     placeObject3_placeFlagHasCharacter
+                                     getUI16
+       placeObject3_matrix <- maybeHas placeObject3_placeFlagHasMatrix
+                                getMATRIX
+       placeObject3_colorTransform <- maybeHas
+                                        placeObject3_placeFlagHasColorTransform
+                                        getCXFORMWITHALPHA
+       placeObject3_ratio <- maybeHas placeObject3_placeFlagHasRatio
+                               getUI16
+       placeObject3_name <- maybeHas placeObject3_placeFlagHasName
+                              getSTRING
+       placeObject3_clipDepth <- maybeHas
+                                   placeObject3_placeFlagHasClipDepth
+                                   getUI16
+       placeObject3_surfaceFilterList <- maybeHas
+                                           placeObject3_placeFlagHasFilterList
+                                           getFILTERLIST
+       placeObject3_blendMode <- maybeHas
+                                   placeObject3_placeFlagHasBlendMode
+                                   getBlendMode
+       placeObject3_bitmapCache <- maybeHas
+                                     placeObject3_placeFlagHasCacheAsBitmap
+                                     getUI8
+       placeObject3_clipActions <- maybeHas
+                                     placeObject3_placeFlagHasClipActions
+                                     getCLIPACTIONS
+       return (PlaceObject3{..})
 
-getPlaceObject3 = do
-    [placeFlagHasClipActions, placeFlagHasClipDepth, placeFlagHasName,
-     placeFlagHasRatio, placeFlagHasColorTransform, placeFlagHasMatrix,
-     placeFlagHasCharacter, placeObject3_placeFlagMove] <- replicateM 8 getFlag
-    _reserved <- getUB 3
-    [placeObject3_placeFlagHasImage, placeObject3_placeFlagHasClassName, placeFlagHasCacheAsBitmap,
-     placeFlagHasBlendMode, placeFlagHasFilterList] <- replicateM 5 getFlag
-    placeObject3_depth <- getUI16
-    placeObject3_className <- maybeHas (placeObject3_placeFlagHasClassName || (placeObject3_placeFlagHasImage && placeFlagHasCharacter)) getSTRING
-    placeObject3_characterId <- maybeHas placeFlagHasCharacter getUI16
-    placeObject3_matrix <- maybeHas placeFlagHasMatrix getMATRIX
-    placeObject3_colorTransform <- maybeHas placeFlagHasColorTransform getCXFORMWITHALPHA
-    placeObject3_ratio <- maybeHas placeFlagHasRatio getUI16
-    placeObject3_name <- maybeHas placeFlagHasName getSTRING
-    placeObject3_clipDepth <- maybeHas placeFlagHasClipDepth getUI16
-    placeObject3_surfaceFilterList <- maybeHas placeFlagHasFilterList getFILTERLIST
-    placeObject3_blendMode <- maybeHas placeFlagHasBlendMode getBlendMode
-    placeObject3_bitmapCache <- maybeHas placeFlagHasCacheAsBitmap getUI8
-    placeObject3_clipActions <- maybeHas placeFlagHasClipActions getCLIPACTIONS
-    return $ PlaceObject3 {..}
+\end{code}
+
+\begin{code}
 
 data BlendMode = Normal0 | Normal1
                | Layer | Multiply | Screen
@@ -1028,19 +1123,36 @@ data BlendMode = Normal0 | Normal1
                | UnknownBlendMode UI8
                deriving (Eq, Show, Typeable, Data)
 
-getBlendMode = do
-    i <- getUI8
-    return $ case lookup i ([0..] `zip` [Normal0, Normal1, Layer, Multiply, Screen, Lighten,
-                                         Darken, Difference, Add, Subtract, Invert, Alpha,
-                                         Erase, Overlay, Hardlight]) of
-      Just bm -> bm
-      Nothing -> UnknownBlendMode i
+(getBlendMode, putBlendMode) = (put, get)
+  where
+    table = [0..] `zip` [Normal0, Normal1,
+                         Layer, Multiply, Screen,
+                         Lighten, Darken,
+                         Difference, Add, Subtract,
+                         Invert, Alpha,
+                         Erase, Overlay, 
+                         Hardlight]
+    
+    inverse_table = map (uncurry $ flip (,)) table
+    
+    get = do
+        i <- getUI8
+        return $ case lookup i table of
+          Just bm -> bm
+          Nothing -> UnknownBlendMode i
+
+    put (UnknownBlendMode x) = putUI8 x
+    put bm                   = putUI8 (fromJust $ lookup bm inverse_table)
 
 type FILTERLIST = [FILTER]
 
 getFILTERLIST = do
     numberOfFilters <- getUI8
     genericReplicateM numberOfFilters getFILTER
+
+putFILTERLIST filters = do
+    putUI8 (length filters)
+    mapM_ putFILTER filters
 
 data FILTER = DropShadowFilter DROPSHADOWFILTER
             | BlurFilter BLURFILTER
@@ -1063,6 +1175,16 @@ getFILTER = do
         5 -> fmap ConvolutionFilter getCONVOLUTIONFILTER
         6 -> fmap ColorMatrixFilter getCOLORMATRIXFILTER
         7 -> fmap GradientBevelFilter getGRADIENTBEVELFILTER
+
+putFILTER f = case f of
+    DropShadowFilter x    -> putUI8 0 >> putDROPSHADOWFILTER x
+    BlurFilter x          -> putUI8 1 >> putBLURFILTER x
+    GlowFilter x          -> putUI8 2 >> putGLOWFILTER x
+    BevelFilter x         -> putUI8 3 >> putBEVELFILTER x
+    GradientGlowFilter x  -> putUI8 4 >> putGRADIENTGLOWFILTER x
+    ConvolutionFilter x   -> putUI8 5 >> putCONVOLUTIONFILTER x
+    ColorMatrixFilter x   -> putUI8 6 >> putCOLORMATRIXFILTER x
+    GradientBevelFilter x -> putUI8 7 >> putGRADIENTBEVELFILTER x
 
 \end{code}
 
@@ -1295,23 +1417,39 @@ data CLIPEVENTFLAG = ClipEventKeyUp | ClipEventKeyDown
 
 type CLIPEVENTFLAGS = [CLIPEVENTFLAG]
 
-getCLIPEVENTFLAGS = do
-    let f cefs cef = getFlag >>= \b -> return $ if b then cef:cefs else cefs
-    cefs <- foldM f [] [ClipEventKeyUp, ClipEventKeyDown,
-                        ClipEventMouseUp, ClipEventMouseDown, ClipEventMouseMove,
-                        ClipEventUnload, ClipEventEnterFrame, ClipEventLoad,
-                        ClipEventDragOver, ClipEventRollOut, ClipEventRollOver,
-                        ClipEventReleaseOutside, ClipEventRelease, ClipEventPress,
-                        ClipEventInitialize, ClipEventData]
+(getCLIPEVENTFLAGS, putCLIPEVENTFLAGS) = (get, put)
+  where
+    initial_flags = [ClipEventKeyUp, ClipEventKeyDown,
+                     ClipEventMouseUp, ClipEventMouseDown, ClipEventMouseMove,
+                     ClipEventUnload, ClipEventEnterFrame, ClipEventLoad,
+                     ClipEventDragOver, ClipEventRollOut, ClipEventRollOver,
+                     ClipEventReleaseOutside, ClipEventRelease, ClipEventPress,
+                     ClipEventInitialize, ClipEventData]
     
-    version <- fmap swfVersion get
-    if (version <= 5)
-     then return cefs
-     else do
-        _reserved <- getUB 5
-        cefs <- foldM f cefs [ClipEventConstruct, ClipEventKeyPress, ClipEventDragOut]
-        _reserved <- getUB 8
-        return cefs
+    swf6_flags = [ClipEventConstruct, ClipEventKeyPress, ClipEventDragOut]
+    
+    get = do
+      let f cefs cef = getFlag >>= \b -> return $ if b then cef:cefs else cefs
+      cefs <- foldM f [] initial_flags
+  
+      version <- fmap swfVersion get
+      if (version <= 5)
+       then return cefs
+       else do
+          _reserved <- getUB 5
+          cefs <- foldM f cefs swf6_flags
+          _reserved <- getUB 8
+          return cefs
+
+    put flags = do
+      let f cef = putFlag (cef `elem` flags)
+      mapM_ f initial_flags
+      
+      version <- fmap swfVersion get
+      when (version > 5) $ do
+          putUB 5 0
+          mapM_ f swf6_flags
+          putUB 8 0
 
 \end{code}
 
@@ -1509,10 +1647,13 @@ Chapter 5: Actions
 
 p68: DoAction
 \begin{code}
+getDoAction
+  = do doAction_actions <- getACTIONRECORDS
+       return (DoAction{..})
 
-getDoAction = do
-    doAction_actions <- getACTIONRECORDS
-    return $ DoAction {..}
+\end{code}
+
+\begin{code}
 
 type ACTIONRECORDS = [ACTIONRECORD]
 
@@ -1523,6 +1664,10 @@ getACTIONRECORDS = do
      else do
         actionRecord <- getACTIONRECORD
         fmap (actionRecord:) getACTIONRECORDS
+
+putACTIONRECORDS rs = do
+    mapM_ putACTIONRECORD rs
+    putUI8 0
 
 \end{code}
 
@@ -1536,6 +1681,11 @@ getACTIONRECORDHEADER = do
     aCTIONRECORDHEADER_actionCode <- getUI8
     aCTIONRECORDHEADER_actionLength <- maybeHas ((aCTIONRECORDHEADER_actionCode .&. 0x80) /= 0) getUI16
     return $ ACTIONRECORDHEADER {..}
+
+putACTIONRECORDHEADER (ACTIONRECORDHEADER {..}) = do
+    putUI8 aCTIONRECORDHEADER_actionCode
+    when (((aCTIONRECORDHEADER_actionCode .&. 0x80) /= 0) `consistentWith` isJust aCTIONRECORDHEADER_actionLength) $ do
+        putUI16 (fromJust aCTIONRECORDHEADER_actionLength)
 
 data ACTIONRECORD = ACTIONRECORD { aCTIONRECORD_actionRecordHeader :: ACTIONRECORDHEADER, aCTIONRECORD_actionRecordAction :: Action }
                   deriving (Eq, Show, Typeable, Data)
@@ -1682,6 +1832,14 @@ getACTIONRECORD = do
         Nothing     -> fmap (UnknownAction . Just) getRemainingLazyByteString
     
     return $ ACTIONRECORD {..}
+
+putACTIONRECORD (ACTIONRECORD {..}) = do
+    putACTIONRECORDHEADER aCTIONRECORD_actionRecordHeader
+    
+    case aCTIONRECORD_actionRecordAction of
+        UnknownAction mb_bs -> maybe (return ()) putLazyByteString mb_bs
+        ActionPush {}       -> putActionPush aCTIONRECORD_actionRecordAction
+        _                   -> generatedActionPutters aCTIONRECORD_actionRecordAction
 
 \end{code}
 
@@ -1893,6 +2051,16 @@ getActionPush = do
         7 -> fmap ActionPushInteger getUI32
         8 -> fmap ActionPushConstant8 getUI8
         9 -> fmap ActionPushConstant16 getUI16
+
+putActionPush (ActionPush lit) = case lit of
+    ActionPushString x         -> putUI8 0 >> putSTRING x
+    ActionPushFloat x          -> putUI8 1 >> putFLOAT x
+    ActionPushRegisterNumber x -> putUI8 4 >> putUI8 x
+    ActionPushBoolean x        -> putUI8 5 >> putUI8 x
+    ActionPushDouble x         -> putUI8 6 >> putDOUBLE x
+    ActionPushInteger x        -> putUI8 7 >> putUI32 x
+    ActionPushConstant8 x      -> putUI8 8 >> putUI8 x
+    ActionPushConstant16 x     -> putUI8 9 >> putUI16 x
 
 \end{code}
 
@@ -2388,11 +2556,10 @@ getActionStoreRegister
 
 p112: DoInitAction
 \begin{code}
-
-getDoInitAction = do
-    doInitAction_spriteID <- getUI16
-    doInitAction_actions <- getACTIONRECORDS
-    return $ DoInitAction {..}
+getDoInitAction
+  = do doInitAction_spriteID <- getUI16
+       doInitAction_actions <- getACTIONRECORDS
+       return (DoInitAction{..})
 
 \end{code}
 
@@ -2532,6 +2699,12 @@ getFILLSTYLEARRAY shapeVer = do
     count <- if count == 0xFF then getUI16 else return (fromIntegral count)
     genericReplicateM count (getFILLSTYLE shapeVer)
 
+putFILLSTYLEARRAY shapeVer fs = do
+    let count = length fs
+    putUI8 (fromIntegral $ count `max` 0xFF)
+    when (count >= 0xFF) $ putUI16 (fromIntegral count)
+    mapM_ (putFILLSTYLE shapeVer) fs
+
 data LinearRadial = Linear | Radial
                   deriving (Eq, Show, Typeable, Data)
 
@@ -2556,6 +2729,27 @@ getFILLSTYLE shapeVer = do
         0x42 -> liftM2 (BitmapFill Repeating False) getUI16 getMATRIX
         0x43 -> liftM2 (BitmapFill Clipped   False) getUI16 getMATRIX
 
+putFILLSTYLE shapeVer fs = case fs of
+    SolidFill {..} -> do
+        putUI8 0x00
+        case fILLSTYLE_color of
+            Left rgb | shapeVer <= 2  -> putRGB rgb
+                     | otherwise      -> inconsistent
+            Right rgba | shapeVer > 2 -> putRGBA rgba
+                       | otherwise    -> inconsistent
+    GradientFill {..} -> do
+        putUI8 (case fILLSTYLE_linearRadial of Linear -> 0x10; Radial -> 0x12)
+        putMATRIX fILLSTYLE_gradientMatrix
+        putGRADIENT shapeVer fILLSTYLE_gradient
+    FocalRadialGradientFill {..} -> do
+        putUI8 0x13
+        putMATRIX fILLSTYLE_gradientMatrix
+        putFOCALGRADIENT fILLSTYLE_focalGradient
+    BitmapFill {..} -> do
+        putUI8 (case (fILLSTYLE_repeatingClipped, fILLSTYLE_smoothed) of (Repeating, True) -> 0x40; (Clipped, True) -> 0x41; (Repeating, False) -> 0x42; (Clipped, False) -> 0x43)
+        putUI16 fILLSTYLE_bitmapId
+        putMATRIX fILLSTYLE_bitmapMatrix
+
 \end{code}
 
 p130: Line styles
@@ -2570,6 +2764,16 @@ getLINESTYLEARRAY shapeVer = do
      then fmap Left  $ genericReplicateM count (getLINESTYLE shapeVer)
      else fmap Right $ genericReplicateM count getLINESTYLE2
 
+putLINESTYLEARRAY shapeVer ei_ls_ls2 = do
+    let count = either length length ei_ls_ls2
+    putUI8 (fromIntegral $ count `max` 0xFF)
+    when (count >= 0xFF) $ putUI16 (fromIntegral count)
+    case ei_ls_ls2 of
+        Left ls   | shapeVer <= 3 -> mapM_ (putLINESTYLE shapeVer) ls
+                  | otherwise     -> inconsistent
+        Right ls2 | shapeVer > 3  -> mapM_ putLINESTYLE2 ls2
+                  | otherwise     -> inconsistent
+    
 
 data LINESTYLE = LINESTYLE { lINESTYLE_width :: UI16, lINESTYLE_color :: Either RGB RGBA }
                deriving (Eq, Show, Typeable, Data)
@@ -2578,6 +2782,14 @@ getLINESTYLE shapeVer = do
     lINESTYLE_width <- getUI16
     lINESTYLE_color <- if shapeVer <= 2 then fmap Left getRGB else fmap Right getRGBA
     return $ LINESTYLE {..}
+
+putLINESTYLE shapeVer (LINESTYLE {..}) = do
+    putUI16 lINESTYLE_width
+    case lINESTYLE_color of
+        Left rgb   | shapeVer <= 2 -> putRGB rgb
+                   | otherwise     -> inconsistent
+        Right rgba | shapeVer > 2  -> putRGBA rgba
+                   | otherwise     -> inconsistent
 
 \end{code}
 
@@ -2682,6 +2894,16 @@ getSHAPERECORDS shapeVer = go
              let (fillBits', lineBits') = fromMaybe (fillBits, lineBits) $ fmap (thd4 &&& fth4) $ sTYLECHANGERECORD_new x
              fmap (x:) $ go fillBits' lineBits'
 
+putSHAPERECORDS shapeVer = go
+  where
+    go [] = putFlag False >> putUB 5
+    go (r:rs) = do
+      case r of
+        STRAIGHTEDGERECORD {} -> putFlag True >> putFlag True >> putSTRAIGHTEDGERECORD r
+        CURVEDEDGERECORD {}   -> putFlag True >> putFlag False >> putCURVEDEDGERECORD r
+        STYLECHANGERECORD {}  -> putFlag False >> putSTYLECHANGERECORD r
+      go rs
+
 data SHAPERECORD
          =  STYLECHANGERECORD{sTYLECHANGERECORD_move :: Maybe (UB, SB, SB),
                     sTYLECHANGERECORD_fillStyle0 :: Maybe UB,
@@ -2771,6 +2993,11 @@ getStraightEdge numBits = do
      else do
       vert <- getFlag
       liftM (if vert then VerticalLine else HorizontalLine) (getSB (numBits + 2))
+
+putStraightEdge numBits se = case se of
+    GeneralLine {..}    -> putFlag True >> putSB (numBits + 2) straightEdge_deltaX >> putSB (numBits + 2) straightEdge_deltaY
+    VerticalLine {..}   -> putFlag False >> putFlag True >> putSB (numBits + 2) straightEdge_deltaY
+    HorizontalLine {..} -> putFlag False >> putFlag False >> putSB (numBits + 2) straightEdge_deltaX
 
 \end{code}
 
@@ -2885,6 +3112,14 @@ getGRADRECORD shapeVer = do
     gRADRECORD_ratio <- getUI8
     gRADRECORD_color <- if shapeVer <= 2 then fmap Left getRGB else fmap Right getRGBA
     return $ GRADRECORD {..}
+
+putGRADRECORD shapeVer (GRADRECORD {..}) = do
+    putUI8 gRADRECORD_ratio
+    case gRADRECORD_color of
+        Left rgb   | shapeVer <= 2 -> putRGB rgb
+                   | otherwise     -> inconsistent
+        Right rgba | shapeVer > 2  -> putRGBA rgba
+                   | otherwise     -> inconsistent
 
 \end{code}
 
@@ -3024,6 +3259,12 @@ getMORPHFILLSTYLEARRAY = do
     count <- if count == 0xFF then getUI16 else return (fromIntegral count)
     genericReplicateM count getMORPHFILLSTYLE
 
+putMORPHFILLSTYLEARRAY mfs = do
+    let count = length mfs
+    putUI8 (fromIntegral $ count `max` 0xFF)
+    when (count >= 0xFF) $ putUI16 (fromIntegral count)
+    mapM_ putMORPHFILLSTYLE mfs
+
 data MORPHFILLSTYLE = SolidMorphFill { mORPHFILLSTYLE_startColor :: RGBA, mORPHFILLSTYLE_endColor :: RGBA }
                     | LinearGradientMorphFill { mORPHFILLSTYLE_linearRadial :: LinearRadial, mORPHFILLSTYLE_startGradientMatrix :: MATRIX, mORPHFILLSTYLE_endGradientMatrix :: MATRIX, mORPHFILLSTYLE_gradient :: MORPHGRADIENT }
                     | BitmapMorphFill { mORPHFILLSTYLE_repeatingClipped :: RepeatingClipped, mORPHFILLSTYLE_smoothed :: Bool, mORPHFILLSTYLE_bitmapId :: UI16, mORPHFILLSTYLE_startBitmapMatrix :: MATRIX, mORPHFILLSTYLE_endBitmapMatrix :: MATRIX }
@@ -3040,6 +3281,22 @@ getMORPHFILLSTYLE = do
       0x42 -> liftM3 (BitmapMorphFill Repeating False) getUI16 getMATRIX getMATRIX
       0x43 -> liftM3 (BitmapMorphFill Clipped   False) getUI16 getMATRIX getMATRIX
 
+putMORPHFILLSTYLE mfs = case mfs of
+    SolidMorphFill {..}          -> do
+        putUI8 0x00
+        putRGBA mORPHFILLSTYLE_startColor
+        putRGBA mORPHFILLSTYLE_endColor
+    LinearGradientMorphFill {..} -> do
+        putUI8 (case mORPHFILLSTYLE_linearRadial of Linear -> 0x10; Radial -> 0x12)
+        putMATRIX mORPHFILLSTYLE_startGradientMatrix
+        putMATRIX mORPHFILLSTYLE_endGradientMatrix
+        putMORPHGRADIENT mORPHFILLSTYLE_gradient
+    BitmapMorphFill {..} -> do
+        putUI8 (case (mORPHFILLSTYLE_repeatingClipped, mORPHFILLSTYLE_smoothed) of (Repeating, True) -> 0x40; (Clipped, True) -> 0x41; (Repeating, False) -> 0x42; (Clipped, False) -> 0x43)
+        putUI16 mORPHFILLSTYLE_bitmapId
+        putMATRIX mORPHFILLSTYLE_startBitmapMatrix
+        putMATRIX mORPHFILLSTYLE_endBitmapMatrix
+
 \end{code}
 
 p163: Morph gradient values
@@ -3050,6 +3307,10 @@ type MORPHGRADIENT = [MORPHGRADRECORD]
 getMORPHGRADIENT = do
     count <- getUI8
     genericReplicateM count getMORPHGRADRECORD
+
+putMORPHGRADIENT ms = do
+    putUI8 (genericLength ms)
+    mapM_ putMORPHGRADIENTRECORD ms
 
 \end{code}
 
@@ -3081,6 +3342,16 @@ getMORPHLINESTYLEARRAY morphVersion = do
     case morphVersion of
       1 -> fmap Left  $ genericReplicateM count getMORPHLINESTYLE
       2 -> fmap Right $ genericReplicateM count getMORPHLINESTYLE2
+
+putMORPHLINESTYLEARRAY morphVersion ei_mls_mls2 = do
+    let count = either genericLength genericLength ei_mls_mls2
+    putUI8 (fromIntegral $ count `max` 0xFF)
+    when (count >= 0xFF) $ putUI16 count
+    case ei_mls_mls2 of
+        Left mls | morphVersion == 1   -> mapM_ putMORPHLINESTYLE mls
+                 | otherwise           -> inconsistent
+        Right mls2 | morphVersion == 2 -> mapM_ putMORPHLINESTYLE2 mls2
+                   | otherwise         -> inconsistent
 
 \end{code}
 
@@ -3158,6 +3429,15 @@ getDefineFont = do
     
     defineFont_glyphShapeTable <- genericReplicateM nGlyphs (getSHAPE 1)
     return $ DefineFont {..}
+
+putDefineFont (DefineFont {..}) = do
+    putUI16 defineFont_fontID
+    
+    (lengths, shape_puts) <- fmap unzip $ mapM (nestSwfPut (putSHAPE 1)) defineFont_glyphShapeTable
+    
+    -- Compute the offsets from the data, so we don't need to redundantly store them in the data structure
+    foldM (\i len -> putUI16 i >> return (i + len)) 0 lengths
+    sequence_ shape_puts
 
 \end{code}
 
@@ -3406,6 +3686,10 @@ getTEXTRECORDS textVer glyphBits advanceBits = go
        else do
          x <- getTEXTRECORD textVer glyphBits advanceBits
          fmap (x:) go
+
+putTEXTRECORDS textVer glyphBits advanceBits rs = do
+    mapM_ (putTEXTRECORD textVer glyphBits advanceBits) rs
+    putUI8 0
 
 \end{code}
 
@@ -3698,6 +3982,10 @@ getBUTTONRECORDS buttonVer = go
           x <- getBUTTONRECORD buttonVer
           fmap (x:) go
 
+putBUTTONRECORDS buttonVer rs = do
+    mapM_ (putBUTTONRECORD buttonVer) rs
+    putUI8 0
+
 \end{code}
 
 \begin{code}
@@ -3808,6 +4096,18 @@ getBUTTONCONDACTIONS = condM isEmpty (return []) $ do
     if offset == 0
      then return []
      else fmap (x:) getBUTTONCONDACTIONS
+
+putBUTTONCONDACTIONS [] = return ()
+putBUTTONCONDACTIONS [r] = do
+    putUI16 0
+    putBUTTONCONDACTION r
+putBUTTONCONDACTIONS (r:rs) = do
+    (len, put) <- nestSwfPut (putBUTTONCONDACTION r)
+    
+    putUI16 (len + 2)
+    put
+    
+    putBUTTONCONDACTIONS rs
 
 \end{code}
 
