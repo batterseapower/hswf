@@ -74,10 +74,10 @@ p12: Fixed-point numbers
 \begin{code}
 
 data FIXED = FIXED SI16 UI16
-           deriving (Show, Typeable, Data)
+           deriving (Eq, Show, Typeable, Data)
 
 data FIXED8 = FIXED8 SI8 UI8
-            deriving (Show, Typeable, Data)
+            deriving (Eq, Show, Typeable, Data)
 
 getFIXED :: SwfGet FIXED
 getFIXED = liftM2 (flip FIXED) getUI16 getSI16
@@ -98,7 +98,7 @@ fIXED8ToFractional = fromRational . fIXED8ToRational
 -- Page 13: Floating-point numbers
 
 newtype FLOAT16 = FLOAT16 Float
-                deriving (Show, Typeable, Data)
+                deriving (Eq, Show, Typeable, Data)
 type FLOAT = Float
 type DOUBLE = Double
 
@@ -164,13 +164,14 @@ type UB = UI32
 type FB = FIXED
 
 signextend :: (Integral a, Integral b) => a -> Word32 -> b
-signextend nbits bits = fromIntegral $ bits .|. complement (2 ^ nbits - 1)
+signextend nbits bits
+  = fromIntegral (bits .&. complement signbitmask) - if (bits .&. signbitmask) /= 0 then 2 ^ (nbits - 1) else 0
+  where signbitmask = 1 `shiftL` (fromIntegral $ nbits - 1)
 
  -- 1110b = -2
  -- 0x30000 (19 bit) = 196608
 getSB :: Integral a => a -> SwfGet SB
 getSB nbits = fmap (signextend nbits) (getBits nbits)
-  where 
   
  -- 1110b = 14
 getUB :: Integral a => a -> SwfGet UB
@@ -205,7 +206,7 @@ p18: Language code
 \begin{code}
 
 data LANGCODE = None | Latin | Japanese | Korean | SimplifiedChinese | TraditionalChinese | Unrecognized UI8
-              deriving (Show, Typeable, Data)
+              deriving (Eq, Show, Typeable, Data)
 
 getLANGCODE :: SwfGet LANGCODE
 getLANGCODE = do
@@ -225,7 +226,7 @@ p18: RGB color record
 \begin{code}
  
 data RGB = RGB{rGB_red :: UI8, rGB_green :: UI8, rGB_blue :: UI8}
-         deriving (Show, Typeable, Data)
+         deriving (Eq, Show, Typeable, Data)
 getRGB
   = do rGB_red <- getUI8
        rGB_green <- getUI8
@@ -239,7 +240,7 @@ p19: RGBA color record/ARGB color record
  
 data RGBA = RGBA{rGBA_red :: UI8, rGBA_green :: UI8,
                  rGBA_blue :: UI8, rGBA_alpha :: UI8}
-          deriving (Show, Typeable, Data)
+          deriving (Eq, Show, Typeable, Data)
 getRGBA
   = do rGBA_red <- getUI8
        rGBA_green <- getUI8
@@ -253,7 +254,7 @@ getRGBA
  
 data ARGB = ARGB{aRGB_alpha :: UI8, aRGB_red :: UI8,
                  aRGB_green :: UI8, aRGB_blue :: UI8}
-          deriving (Show, Typeable, Data)
+          deriving (Eq, Show, Typeable, Data)
 getARGB
   = do aRGB_alpha <- getUI8
        aRGB_red <- getUI8
@@ -268,7 +269,7 @@ p20: Rectangle record
  
 data RECT = RECT{rECT_nbits :: UB, rECT_xmin :: SB,
                  rECT_xmax :: SB, rECT_ymin :: SB, rECT_ymax :: SB}
-          deriving (Show, Typeable, Data)
+          deriving (Eq, Show, Typeable, Data)
 getRECT
   = do rECT_nbits <- getUB 5
        rECT_xmin <- getSB rECT_nbits
@@ -286,7 +287,7 @@ p20: MATRIX record
 data MATRIX = MATRIX{mATRIX_scale :: Maybe (UB, FB, FB),
                      mATRIX_rotate :: Maybe (UB, FB, FB), mATRIX_nTranslateBits :: UB,
                      mATRIX_translateX :: SB, mATRIX_translateY :: SB}
-            deriving (Show, Typeable, Data)
+            deriving (Eq, Show, Typeable, Data)
 getMATRIX
   = do mATRIX_hasScale <- getFlag
        mATRIX_scale <- maybeHas mATRIX_hasScale
@@ -314,7 +315,7 @@ p22: Color transform record
 data CXFORM = CXFORM{cXFORM_nbits :: UB,
                      cXFORM_multTerm :: Maybe (SB, SB, SB),
                      cXFORM_addTerm :: Maybe (SB, SB, SB)}
-            deriving (Show, Typeable, Data)
+            deriving (Eq, Show, Typeable, Data)
 getCXFORM
   = do cXFORM_hasAddTerms <- getFlag
        cXFORM_hasMultTerms <- getFlag
@@ -342,7 +343,7 @@ p23: Color transform with alpha record
 data CXFORMWITHALPHA = CXFORMWITHALPHA{cXFORMWITHALPHA_nbits :: UB,
                                        cXFORMWITHALPHA_multTerm :: Maybe (SB, SB, SB, SB),
                                        cXFORMWITHALPHA_addTerm :: Maybe (SB, SB, SB, SB)}
-                     deriving (Show, Typeable, Data)
+                     deriving (Eq, Show, Typeable, Data)
 getCXFORMWITHALPHA
   = do cXFORMWITHALPHA_hasAddTerms <- getFlag
        cXFORMWITHALPHA_hasMultTerms <- getFlag
@@ -380,7 +381,7 @@ p25: The SWF header
 \begin{code}
 
 data Swf = Swf { compressed :: Bool, version :: UI8, fileLength :: UI32 {- after decompression -}, frameSize :: RECT {- Twips -}, frameRate :: FIXED8, frameCount :: UI16, tags :: [RECORD] }
-         deriving (Show, Typeable, Data)
+         deriving (Eq, Show, Typeable, Data)
 
 getSwf :: ByteString -> Swf
 getSwf bs = runSwfGet emptySwfGetEnv bs $ do
@@ -409,7 +410,7 @@ p27: Tag format
 \begin{code}
 
 data RECORDHEADER = RECORDHEADER { rECORDHEADER_tagType :: UI16, rECORDHEADER_tagLength :: SI32 }
-                  deriving (Show, Typeable, Data)
+                  deriving (Eq, Show, Typeable, Data)
 
 getRECORDHEADER :: SwfGet RECORDHEADER
 getRECORDHEADER = do
@@ -426,7 +427,7 @@ Chapter 3: The Display List
 \begin{code}
 
 data RECORD = RECORD { rECORD_recordHeader :: RECORDHEADER, rECORD_recordTag :: Tag }
-            deriving (Show, Typeable, Data)
+            deriving (Eq, Show, Typeable, Data)
 
 data Tag = UnknownTag ByteString
          | PlaceObject3 { placeObject3_placeFlagMove :: Bool, placeObject3_placeFlagHasImage :: Bool, placeObject3_placeFlagHasClassName :: Bool, placeObject3_depth :: UI16, placeObject3_className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, placeObject3_ratio :: Maybe UI16, placeObject3_name :: Maybe STRING, placeObject3_clipDepth :: Maybe UI16, placeObject3_surfaceFilterList :: Maybe FILTERLIST, placeObject3_blendMode :: Maybe BlendMode, placeObject3_bitmapCache :: Maybe UI8, placeObject3_clipActions :: Maybe CLIPACTIONS }
@@ -691,7 +692,7 @@ data Tag = UnknownTag ByteString
            streamID_videoData :: ByteString}
          |  DefineBinaryData{defineBinaryData_tag :: UI16,
                    defineBinaryData_data :: ByteString}
-         deriving (Show, Typeable, Data)
+         deriving (Eq, Show, Typeable, Data)
 
 getRECORD = do
     rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
@@ -827,7 +828,7 @@ getPlaceObject2
 \begin{code}
 
 data CLIPACTIONS = CLIPACTIONS { cLIPACTIONS_allEventFlags :: CLIPEVENTFLAGS, cLIPACTIONS_clipActionRecords :: CLIPACTIONRECORDS }
-                 deriving (Show, Typeable, Data)
+                 deriving (Eq, Show, Typeable, Data)
 
 getCLIPACTIONS = do
     _reserved <- getUI16
@@ -846,7 +847,7 @@ getCLIPACTIONRECORDS = do
        fmap (x:) getCLIPACTIONRECORDS
 
 data CLIPACTIONRECORD = CLIPACTIONRECORD { cLIPACTIONRECORD_eventFlags :: CLIPEVENTFLAGS, cLIPACTIONRECORD_keyCode :: Maybe UI8, cLIPACTIONRECORD_actions :: [ACTIONRECORD] }
-                      deriving (Show, Typeable, Data)
+                      deriving (Eq, Show, Typeable, Data)
 
 getCLIPACTIONRECORD = do
     cLIPACTIONRECORD_eventFlags <- getCLIPEVENTFLAGS
@@ -895,7 +896,7 @@ data BlendMode = Normal0 | Normal1
                | Erase | Overlay
                | Hardlight
                | UnknownBlendMode UI8
-               deriving (Show, Typeable, Data)
+               deriving (Eq, Show, Typeable, Data)
 
 getBlendMode = do
     i <- getUI8
@@ -919,7 +920,7 @@ data FILTER = DropShadowFilter DROPSHADOWFILTER
             | ConvolutionFilter CONVOLUTIONFILTER
             | ColorMatrixFilter COLORMATRIXFILTER
             | GradientBevelFilter GRADIENTBEVELFILTER
-            deriving (Show, Typeable, Data)
+            deriving (Eq, Show, Typeable, Data)
 
 getFILTER = do
     filterID <- getUI8
@@ -940,7 +941,7 @@ p42: Color Matrix filter
  
 data COLORMATRIXFILTER = COLORMATRIXFILTER{cOLORMATRIXFILTER_matrix
                                            :: [FLOAT]}
-                       deriving (Show, Typeable, Data)
+                       deriving (Eq, Show, Typeable, Data)
 getCOLORMATRIXFILTER
   = do cOLORMATRIXFILTER_matrix <- genericReplicateM 20 getFLOAT
        return (COLORMATRIXFILTER{..})
@@ -959,7 +960,7 @@ data CONVOLUTIONFILTER = CONVOLUTIONFILTER{cONVOLUTIONFILTER_matrixX
                                            cONVOLUTIONFILTER_defaultColor :: RGBA,
                                            cONVOLUTIONFILTER_clamp :: Bool,
                                            cONVOLUTIONFILTER_preserveAlpha :: Bool}
-                       deriving (Show, Typeable, Data)
+                       deriving (Eq, Show, Typeable, Data)
 getCONVOLUTIONFILTER
   = do cONVOLUTIONFILTER_matrixX <- getUI8
        cONVOLUTIONFILTER_matrixY <- getUI8
@@ -981,7 +982,7 @@ p44: Blur filter
  
 data BLURFILTER = BLURFILTER{bLURFILTER_blurX :: FIXED,
                              bLURFILTER_blurY :: FIXED, bLURFILTER_passes :: UB}
-                deriving (Show, Typeable, Data)
+                deriving (Eq, Show, Typeable, Data)
 getBLURFILTER
   = do bLURFILTER_blurX <- getFIXED
        bLURFILTER_blurY <- getFIXED
@@ -1005,7 +1006,7 @@ data DROPSHADOWFILTER = DROPSHADOWFILTER{dROPSHADOWFILTER_dropShadowColor
                                          dROPSHADOWFILTER_knockout :: Bool,
                                          dROPSHADOWFILTER_compositeSource :: Bool,
                                          dROPSHADOWFILTER_passes :: UB}
-                      deriving (Show, Typeable, Data)
+                      deriving (Eq, Show, Typeable, Data)
 getDROPSHADOWFILTER
   = do dROPSHADOWFILTER_dropShadowColor <- getRGBA
        dROPSHADOWFILTER_blurX <- getFIXED
@@ -1029,7 +1030,7 @@ data GLOWFILTER = GLOWFILTER{gLOWFILTER_glowColor :: RGBA,
                              gLOWFILTER_strength :: FIXED8, gLOWFILTER_innerGlow :: Bool,
                              gLOWFILTER_knockout :: Bool, gLOWFILTER_compositeSource :: Bool,
                              gLOWFILTER_passes :: UB}
-                deriving (Show, Typeable, Data)
+                deriving (Eq, Show, Typeable, Data)
 getGLOWFILTER
   = do gLOWFILTER_glowColor <- getRGBA
        gLOWFILTER_blurX <- getFIXED
@@ -1053,7 +1054,7 @@ data BEVELFILTER = BEVELFILTER{bEVELFILTER_shadowColor :: RGBA,
                                bEVELFILTER_innerShadow :: Bool, bEVELFILTER_knockout :: Bool,
                                bEVELFILTER_compositeSource :: Bool, bEVELFILTER_onTop :: Bool,
                                bEVELFILTER_passes :: UB}
-                 deriving (Show, Typeable, Data)
+                 deriving (Eq, Show, Typeable, Data)
 getBEVELFILTER
   = do bEVELFILTER_shadowColor <- getRGBA
        bEVELFILTER_highlightColor <- getRGBA
@@ -1088,7 +1089,7 @@ data GRADIENTGLOWFILTER = GRADIENTGLOWFILTER{gRADIENTGLOWFILTER_numColors
                                              gRADIENTGLOWFILTER_compositeSource :: Bool,
                                              gRADIENTGLOWFILTER_onTop :: Bool,
                                              gRADIENTGLOWFILTER_passes :: UB}
-                        deriving (Show, Typeable, Data)
+                        deriving (Eq, Show, Typeable, Data)
 getGRADIENTGLOWFILTER
   = do gRADIENTGLOWFILTER_numColors <- getUI8
        gRADIENTGLOWFILTER_gradientColors <- genericReplicateM
@@ -1127,7 +1128,7 @@ data GRADIENTBEVELFILTER = GRADIENTBEVELFILTER{gRADIENTBEVELFILTER_numColors
                                                gRADIENTBEVELFILTER_compositeSource :: Bool,
                                                gRADIENTBEVELFILTER_onTop :: Bool,
                                                gRADIENTBEVELFILTER_passes :: UB}
-                         deriving (Show, Typeable, Data)
+                         deriving (Eq, Show, Typeable, Data)
 getGRADIENTBEVELFILTER
   = do gRADIENTBEVELFILTER_numColors <- getUI8
        gRADIENTBEVELFILTER_gradientColors <- genericReplicateM
@@ -1393,7 +1394,7 @@ p68: ACTIONRECORD
 \begin{code}
 
 data ACTIONRECORDHEADER = ACTIONRECORDHEADER { aCTIONRECORDHEADER_actionCode :: UI8, aCTIONRECORDHEADER_actionLength :: Maybe UI16 }
-                        deriving (Show, Typeable, Data)
+                        deriving (Eq, Show, Typeable, Data)
 
 getACTIONRECORDHEADER = do
     aCTIONRECORDHEADER_actionCode <- getUI8
@@ -1401,7 +1402,7 @@ getACTIONRECORDHEADER = do
     return $ ACTIONRECORDHEADER {..}
 
 data ACTIONRECORD = ACTIONRECORD { aCTIONRECORD_actionRecordHeader :: ACTIONRECORDHEADER, aCTIONRECORD_actionRecordAction :: Action }
-                  deriving (Show, Typeable, Data)
+                  deriving (Eq, Show, Typeable, Data)
 
 data Action = UnknownAction (Maybe ByteString)
             | ActionPush { actionPush_actionPushLiteral :: ActionPushLiteral }
@@ -1526,7 +1527,7 @@ data Action = UnknownAction (Maybe ByteString)
             actionTry_catchRegister :: Maybe UI8, actionTry_tryBody :: [UI8],
             actionTry_catchBody :: [UI8], actionTry_finallyBody :: [UI8]}
          |  ActionThrow{}
-            deriving (Show, Typeable, Data)
+            deriving (Eq, Show, Typeable, Data)
 
 getACTIONRECORD = do
     aCTIONRECORD_actionRecordHeader@(ACTIONRECORDHEADER {..}) <- getACTIONRECORDHEADER
@@ -1743,7 +1744,7 @@ data ActionPushLiteral
   | ActionPushInteger UI32
   | ActionPushConstant8 UI8
   | ActionPushConstant16 UI16
-  deriving (Show, Typeable, Data)
+  deriving (Eq, Show, Typeable, Data)
 
 getActionPush = do
     typ <- getUI8
@@ -2317,7 +2318,7 @@ getActionDefineFunction2
  
 data REGISTERPARAM = REGISTERPARAM{rEGISTERPARAM_register :: UI8,
                                    rEGISTERPARAM_paramName :: STRING}
-                   deriving (Show, Typeable, Data)
+                   deriving (Eq, Show, Typeable, Data)
 getREGISTERPARAM
   = do rEGISTERPARAM_register <- getUI8
        rEGISTERPARAM_paramName <- getSTRING
@@ -2396,16 +2397,16 @@ getFILLSTYLEARRAY shapeVer = do
     genericReplicateM count (getFILLSTYLE shapeVer)
 
 data LinearRadial = Linear | Radial
-                  deriving (Show, Typeable, Data)
+                  deriving (Eq, Show, Typeable, Data)
 
 data RepeatingClipped = Repeating | Clipped
-                      deriving (Show, Typeable, Data)
+                      deriving (Eq, Show, Typeable, Data)
 
 data FILLSTYLE = SolidFill { fILLSTYLE_color :: Either RGB RGBA }
                | GradientFill { fILLSTYLE_linearRadial :: LinearRadial, fILLSTYLE_gradientMatrix :: MATRIX, fILLSTYLE_gradient :: GRADIENT }
                | FocalRadialGradientFill { fILLSTYLE_gradientMatrix :: MATRIX, fILLSTYLE_focalGradient :: FOCALGRADIENT }
                | BitmapFill { fILLSTYLE_repeatingClipped :: RepeatingClipped, fILLSTYLE_smoothed :: Bool, fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
-               deriving (Show, Typeable, Data)
+               deriving (Eq, Show, Typeable, Data)
 
 getFILLSTYLE shapeVer = do
     fillStyleType <- getUI8
@@ -2435,7 +2436,7 @@ getLINESTYLEARRAY shapeVer = do
 
 
 data LINESTYLE = LINESTYLE { lINESTYLE_width :: UI16, lINESTYLE_color :: Either RGB RGBA }
-               deriving (Show, Typeable, Data)
+               deriving (Eq, Show, Typeable, Data)
 
 getLINESTYLE shapeVer = do
     lINESTYLE_width <- getUI16
@@ -2454,7 +2455,7 @@ data LINESTYLE2 = LINESTYLE2{lINESTYLE2_width :: UI16,
                              lINESTYLE2_miterLimitFactor :: Maybe UI16,
                              lINESTYLE2_color :: Maybe RGBA,
                              lINESTYLE2_fillType :: Maybe FILLSTYLE}
-                deriving (Show, Typeable, Data)
+                deriving (Eq, Show, Typeable, Data)
 getLINESTYLE2
   = do lINESTYLE2_width <- getUI16
        lINESTYLE2_startCapStyle <- getUB 2
@@ -2480,7 +2481,7 @@ p133: Shape Structures
  
 data SHAPE = SHAPE{sHAPE_numFillBits :: UB,
                    sHAPE_numLineBits :: UB, sHAPE_shapeRecords :: SHAPERECORDS}
-           deriving (Show, Typeable, Data)
+           deriving (Eq, Show, Typeable, Data)
 getSHAPE sHAPE_shapeVer
   = do sHAPE_numFillBits <- getUB 4
        sHAPE_numLineBits <- getUB 4
@@ -2499,7 +2500,7 @@ data SHAPEWITHSTYLE = SHAPEWITHSTYLE{sHAPEWITHSTYLE_fillStyles ::
                                      sHAPEWITHSTYLE_numFillBits :: UB,
                                      sHAPEWITHSTYLE_numLineBits :: UB,
                                      sHAPEWITHSTYLE_shapeRecords :: SHAPERECORDS}
-                    deriving (Show, Typeable, Data)
+                    deriving (Eq, Show, Typeable, Data)
 getSHAPEWITHSTYLE sHAPEWITHSTYLE_shapeVer
   = do sHAPEWITHSTYLE_fillStyles <- getFILLSTYLEARRAY
                                       sHAPEWITHSTYLE_shapeVer
@@ -2551,7 +2552,7 @@ data SHAPERECORD
                    cURVEDEDGERECORD_controlDeltaY :: SB,
                    cURVEDEDGERECORD_anchorDeltaX :: SB,
                    cURVEDEDGERECORD_anchorDeltaY :: SB}
-                 deriving (Show, Typeable, Data)
+                 deriving (Eq, Show, Typeable, Data)
 
 \end{code}
 
@@ -2612,7 +2613,7 @@ getSTRAIGHTEDGERECORD
 data StraightEdge = GeneralLine { straightEdge_deltaX :: SB, straightEdge_deltaY :: SB }
                   | VerticalLine { straightEdge_deltaY :: SB }
                   | HorizontalLine { straightEdge_deltaX :: SB }
-                  deriving (Show, Typeable, Data)
+                  deriving (Eq, Show, Typeable, Data)
 
 getStraightEdge numBits = do
     generalLine <- getFlag
@@ -2697,7 +2698,7 @@ p145: GRADIENT
 data GRADIENT = GRADIENT{gRADIENT_spreadMode :: UB,
                          gRADIENT_interpolationMode :: UB,
                          gRADIENT_gradientRecords :: [GRADRECORD]}
-              deriving (Show, Typeable, Data)
+              deriving (Eq, Show, Typeable, Data)
 getGRADIENT gRADIENT_shapeVer
   = do gRADIENT_spreadMode <- getUB 2
        gRADIENT_interpolationMode <- getUB 2
@@ -2715,7 +2716,7 @@ data FOCALGRADIENT = FOCALGRADIENT{fOCALGRADIENT_spreadMode :: UB,
                                    fOCALGRADIENT_interpolationMode :: UB,
                                    fOCALGRADIENT_gradientRecords :: [GRADRECORD],
                                    fOCALGRADIENT_focalPoint :: FIXED8}
-                   deriving (Show, Typeable, Data)
+                   deriving (Eq, Show, Typeable, Data)
 getFOCALGRADIENT fOCALGRADIENT_shapeVer
   = do fOCALGRADIENT_spreadMode <- getUB 2
        fOCALGRADIENT_interpolationMode <- getUB 2
@@ -2732,7 +2733,7 @@ p146: GRADRECORD
 \begin{code}
 
 data GRADRECORD = GRADRECORD { gRADRECORD_ratio :: UI8, gRADRECORD_color :: Either RGB RGBA }
-                deriving (Show, Typeable, Data)
+                deriving (Eq, Show, Typeable, Data)
 
 getGRADRECORD shapeVer = do
     gRADRECORD_ratio <- getUI8
@@ -2880,7 +2881,7 @@ getMORPHFILLSTYLEARRAY = do
 data MORPHFILLSTYLE = SolidMorphFill { mORPHFILLSTYLE_startColor :: RGBA, mORPHFILLSTYLE_endColor :: RGBA }
                     | LinearGradientMorphFill { mORPHFILLSTYLE_linearRadial :: LinearRadial, mORPHFILLSTYLE_startGradientMatrix :: MATRIX, mORPHFILLSTYLE_endGradientMatrix :: MATRIX, mORPHFILLSTYLE_gradient :: MORPHGRADIENT }
                     | BitmapMorphFill { mORPHFILLSTYLE_repeatingClipped :: RepeatingClipped, mORPHFILLSTYLE_smoothed :: Bool, mORPHFILLSTYLE_bitmapId :: UI16, mORPHFILLSTYLE_startBitmapMatrix :: MATRIX, mORPHFILLSTYLE_endBitmapMatrix :: MATRIX }
-                    deriving (Show, Typeable, Data)
+                    deriving (Eq, Show, Typeable, Data)
 
 getMORPHFILLSTYLE = do
     fillStyleType <- getUI8
@@ -2913,7 +2914,7 @@ data MORPHGRADRECORD = MORPHGRADRECORD{mORPHGRADRECORD_startRatio
                                        mORPHGRADRECORD_startColor :: RGBA,
                                        mORPHGRADRECORD_endRatio :: UI8,
                                        mORPHGRADRECORD_endColor :: RGBA}
-                     deriving (Show, Typeable, Data)
+                     deriving (Eq, Show, Typeable, Data)
 getMORPHGRADRECORD
   = do mORPHGRADRECORD_startRatio <- getUI8
        mORPHGRADRECORD_startColor <- getRGBA
@@ -2944,7 +2945,7 @@ data MORPHLINESTYLE = MORPHLINESTYLE{mORPHLINESTYLE_startWidth ::
                                      mORPHLINESTYLE_endWidth :: UI16,
                                      mORPHLINESTYLE_startColor :: RGBA,
                                      mORPHLINESTYLE_endColor :: RGBA}
-                    deriving (Show, Typeable, Data)
+                    deriving (Eq, Show, Typeable, Data)
 getMORPHLINESTYLE
   = do mORPHLINESTYLE_startWidth <- getUI16
        mORPHLINESTYLE_endWidth <- getUI16
@@ -2969,7 +2970,7 @@ data MORPHLINESTYLE2 = MORPHLINESTYLE2{mORPHLINESTYLE2_startWidth
                                        mORPHLINESTYLE2_miterLimitFactor :: Maybe UI16,
                                        mORPHLINESTYLE2_color :: Maybe (RGBA, RGBA),
                                        mORPHLINESTYLE2_fillType :: Maybe MORPHFILLSTYLE}
-                     deriving (Show, Typeable, Data)
+                     deriving (Eq, Show, Typeable, Data)
 getMORPHLINESTYLE2
   = do mORPHLINESTYLE2_startWidth <- getUI16
        mORPHLINESTYLE2_endWidth <- getUI16
@@ -3181,7 +3182,7 @@ getDefineFontAlignZones
  
 data ZONERECORD = ZONERECORD{zONERECORD_zoneData :: [ZONEDATA],
                              zONERECORD_zoneMaskY :: Bool, zONERECORD_zoneMaskX :: Bool}
-                deriving (Show, Typeable, Data)
+                deriving (Eq, Show, Typeable, Data)
 getZONERECORD
   = do zONERECORD_numZoneData <- getUI8
        zONERECORD_zoneData <- genericReplicateM zONERECORD_numZoneData
@@ -3197,7 +3198,7 @@ getZONERECORD
  
 data ZONEDATA = ZONEDATA{zONEDATA_alignmentCoordinate :: FLOAT16,
                          zONEDATA_range :: FLOAT16}
-              deriving (Show, Typeable, Data)
+              deriving (Eq, Show, Typeable, Data)
 getZONEDATA
   = do zONEDATA_alignmentCoordinate <- getFLOAT16
        zONEDATA_range <- getFLOAT16
@@ -3211,7 +3212,7 @@ p188: Kerning record
 data KERNINGRECORD = KERNINGRECORD{kERNINGRECORD_fontKerningCodes
                                    :: Either (UI16, UI16) (UI8, UI8),
                                    kERNINGRECORD_fontKerningAdjustment :: SI16}
-                   deriving (Show, Typeable, Data)
+                   deriving (Eq, Show, Typeable, Data)
 getKERNINGRECORD kERNINGRECORD_fontFlagsWideCodes
   = do kERNINGRECORD_fontKerningCodes <- if
                                            kERNINGRECORD_fontFlagsWideCodes then
@@ -3272,7 +3273,7 @@ data TEXTRECORD = TEXTRECORD{tEXTRECORD_textRecordType :: Bool,
                              tEXTRECORD_xOffset :: Maybe SI16, tEXTRECORD_yOffset :: Maybe SI16,
                              tEXTRECORD_textHeight :: Maybe UI16,
                              tEXTRECORD_glyphEntries :: [GLYPHENTRY]}
-                deriving (Show, Typeable, Data)
+                deriving (Eq, Show, Typeable, Data)
 getTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
   tEXTRECORD_advanceBits
   = do tEXTRECORD_textRecordType <- getFlag
@@ -3303,7 +3304,7 @@ p192: Glyph entry
  
 data GLYPHENTRY = GLYPHENTRY{gLYPHENTRY_glyphIndex :: UB,
                              gLYPHENTRY_glyphAdvance :: SB}
-                deriving (Show, Typeable, Data)
+                deriving (Eq, Show, Typeable, Data)
 getGLYPHENTRY gLYPHENTRY_glyphBits gLYPHENTRY_advanceBits
   = do gLYPHENTRY_glyphIndex <- getUB gLYPHENTRY_glyphBits
        gLYPHENTRY_glyphAdvance <- getSB gLYPHENTRY_advanceBits
@@ -3445,7 +3446,7 @@ data SOUNDINFO = SOUNDINFO{sOUNDINFO_syncStop :: Bool,
                            sOUNDINFO_outPoint :: Maybe UI32,
                            sOUNDINFO_loopCount :: Maybe UI16,
                            sOUNDINFO_env :: Maybe (UI8, [SOUNDENVELOPE])}
-               deriving (Show, Typeable, Data)
+               deriving (Eq, Show, Typeable, Data)
 getSOUNDINFO
   = do _sOUNDINFO_reserved <- getUB 2
        sOUNDINFO_syncStop <- getFlag
@@ -3472,7 +3473,7 @@ p206: SOUNDENVELOPE
 data SOUNDENVELOPE = SOUNDENVELOPE{sOUNDENVELOPE_pos44 :: UI32,
                                    sOUNDENVELOPE_leftLevel :: UI16,
                                    sOUNDENVELOPE_rightLevel :: UI16}
-                   deriving (Show, Typeable, Data)
+                   deriving (Eq, Show, Typeable, Data)
 getSOUNDENVELOPE
   = do sOUNDENVELOPE_pos44 <- getUI32
        sOUNDENVELOPE_leftLevel <- getUI16
@@ -3561,7 +3562,7 @@ data BUTTONRECORD = BUTTONRECORD{bUTTONRECORD_buttonHasBlendMode ::
                                  bUTTONRECORD_placeMatrix :: MATRIX,
                                  bUTTONRECORD_buttonDisplay ::
                                  Maybe (CXFORMWITHALPHA, Maybe FILTERLIST, Maybe UI8)}
-                  deriving (Show, Typeable, Data)
+                  deriving (Eq, Show, Typeable, Data)
 getBUTTONRECORD bUTTONRECORD_buttonVer
   = do _bUTTONRECORD_buttonReserved <- getUB 2
        bUTTONRECORD_buttonHasBlendMode <- getFlag
@@ -3628,7 +3629,7 @@ data BUTTONCONDACTION = BUTTONCONDACTION{bUTTONCONDACTION_condIdleToOverDown
                                          bUTTONCONDACTION_condKeyPress :: UB,
                                          bUTTONCONDACTION_condOverDownToIdle :: Bool,
                                          bUTTONCONDACTION_actions :: ACTIONRECORDS}
-                      deriving (Show, Typeable, Data)
+                      deriving (Eq, Show, Typeable, Data)
 getBUTTONCONDACTION
   = do bUTTONCONDACTION_condIdleToOverDown <- getFlag
        bUTTONCONDACTION_condOutDownToIdle <- getFlag

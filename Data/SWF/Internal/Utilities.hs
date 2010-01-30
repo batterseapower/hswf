@@ -3,13 +3,16 @@ module Data.SWF.Internal.Utilities (
     
     module Control.Monad,
     module Data.Maybe,
-    module Data.List
+    module Data.List,
+    module Debug.Trace
   ) where
 
 import Control.Monad
 
 import Data.Maybe
 import Data.List
+
+import Debug.Trace
 
 
 orElse = flip fromMaybe

@@ -164,13 +164,14 @@ type UB = UI32
 type FB = FIXED
 
 signextend :: (Integral a, Integral b) => a -> Word32 -> b
-signextend nbits bits = fromIntegral $ bits .|. complement (2 ^ nbits - 1)
+signextend nbits bits
+  = fromIntegral (bits .&. complement signbitmask) - if (bits .&. signbitmask) /= 0 then 2 ^ (nbits - 1) else 0
+  where signbitmask = 1 `shiftL` (fromIntegral $ nbits - 1)
 
  -- 1110b = -2
  -- 0x30000 (19 bit) = 196608
 getSB :: Integral a => a -> SwfGet SB
 getSB nbits = fmap (signextend nbits) (getBits nbits)
-  where 
   
  -- 1110b = 14
 getUB :: Integral a => a -> SwfGet UB
