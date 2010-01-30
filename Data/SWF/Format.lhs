@@ -2535,7 +2535,7 @@ getSHAPERECORDS shapeVer = go
        else do
           look <- lookAhead (getUB 5)
           if look == 0
-           then getUB 5 >> byteAlign >> return []
+           then getUB 5 >> byteAlign >> return [] -- NB: contrary to the spec, we only byte align at the *last* record
            else do
              x <- getSTYLECHANGERECORD shapeVer fillBits lineBits
              let (fillBits', lineBits') = fromMaybe (fillBits, lineBits) $ fmap (thd4 &&& fth4) $ sTYLECHANGERECORD_new x
@@ -2597,7 +2597,6 @@ getSTYLECHANGERECORD sTYLECHANGERECORD_shapeVer
                                          sTYLECHANGERECORD_newLineStyles,
                                          sTYLECHANGERECORD_newNumFillBits,
                                          sTYLECHANGERECORD_newNumLineBits))
-       _sTYLECHANGERECORD_reserved <- byteAlign
        return (STYLECHANGERECORD{..})
 
 \end{code}
@@ -2607,7 +2606,6 @@ getSTRAIGHTEDGERECORD
   = do sTRAIGHTEDGERECORD_numBits <- getUB 4
        sTRAIGHTEDGERECORD_straightEdge <- getStraightEdge
                                             sTRAIGHTEDGERECORD_numBits
-       _sTRAIGHTEDGERECORD_reserved <- byteAlign
        return (STRAIGHTEDGERECORD{..})
 
 \end{code}
@@ -2640,7 +2638,6 @@ getCURVEDEDGERECORD
                                           (cURVEDEDGERECORD_numBits + 2)
        cURVEDEDGERECORD_anchorDeltaY <- getSB
                                           (cURVEDEDGERECORD_numBits + 2)
-       _cURVEDEDGERECORD_reserved <- byteAlign
        return (CURVEDEDGERECORD{..})
 
 \end{code}

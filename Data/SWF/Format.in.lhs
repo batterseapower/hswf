@@ -1850,7 +1850,7 @@ getSHAPERECORDS shapeVer = go
        else do
           look <- lookAhead (getUB 5)
           if look == 0
-           then getUB 5 >> byteAlign >> return []
+           then getUB 5 >> byteAlign >> return [] -- NB: contrary to the spec, we only byte align at the *last* record
            else do
              x <- getSTYLECHANGERECORD shapeVer fillBits lineBits
              let (fillBits', lineBits') = fromMaybe (fillBits, lineBits) $ fmap (thd4 &&& fth4) $ sTYLECHANGERECORD_new x
@@ -1880,7 +1880,6 @@ NewFillStyles   If StateNewStyles, FILLSTYLEARRAY(ShapeVer) Array of new fill st
 NewLineStyles   If StateNewStyles, LINESTYLEARRAY(ShapeVer) Array of new line styles.
 NewNumFillBits  If StateNewStyles, UB[4]                    Number of fill index bits for new styles.
 NewNumLineBits  If StateNewStyles, UB[4]                    Number of line index bits for new styles.
-Reserved        UB[]                                        Padding to byte boundary
 \end{record}
 
 \begin{record}
@@ -1888,7 +1887,6 @@ STRAIGHTEDGERECORD
 Field           Type                  Comment
 NumBits         UB[4]                 Number of bits per value (2 less than the actual number).
 StraightEdge    StraightEdge(NumBits) Position information
-Reserved        UB[]                  Padding to byte boundary
 \end{record}
 
 \begin{code}
@@ -1916,7 +1914,6 @@ ControlDeltaX SB[NumBits+2] X control point change.
 ControlDeltaY SB[NumBits+2] Y control point change.
 AnchorDeltaX  SB[NumBits+2] X anchor point change.
 AnchorDeltaY  SB[NumBits+2] Y anchor point change.
-Reserved      UB[]          Padding to byte boundary
 \end{record}
 
 p140: DefineShape
