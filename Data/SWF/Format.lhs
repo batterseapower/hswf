@@ -4,6 +4,8 @@ module Data.SWF.Format where
 import Data.SWF.Internal.Binary
 import Data.SWF.Internal.Utilities
 
+import Control.Arrow((&&&))
+
 import Data.Char
 import Data.Data
 import Data.Ratio
@@ -286,26 +288,25 @@ p20: MATRIX record
 \begin{code}
  
 data MATRIX = MATRIX{mATRIX_scale :: Maybe (UB, FB, FB),
-                     mATRIX_rotate :: Maybe (UB, FB, FB), mATRIX_nTranslateBits :: UB,
+                     mATRIX_rotate :: Maybe (UB, FB, FB), mATRIX_translateBits :: UB,
                      mATRIX_translateX :: SB, mATRIX_translateY :: SB}
             deriving (Eq, Show, Typeable, Data)
 getMATRIX
   = do mATRIX_hasScale <- getFlag
        mATRIX_scale <- maybeHas mATRIX_hasScale
-                         (do mATRIX_nScaleBits <- getUB 5
-                             mATRIX_scaleX <- getFB mATRIX_nScaleBits
-                             mATRIX_scaleY <- getFB mATRIX_nScaleBits
-                             return (mATRIX_nScaleBits, mATRIX_scaleX, mATRIX_scaleY))
+                         (do mATRIX_scaleBits <- getUB 5
+                             mATRIX_scaleX <- getFB mATRIX_scaleBits
+                             mATRIX_scaleY <- getFB mATRIX_scaleBits
+                             return (mATRIX_scaleBits, mATRIX_scaleX, mATRIX_scaleY))
        mATRIX_hasRotate <- getFlag
        mATRIX_rotate <- maybeHas mATRIX_hasRotate
-                          (do mATRIX_nRotateBits <- getUB 5
-                              mATRIX_rotateSkew0 <- getFB mATRIX_nRotateBits
-                              mATRIX_rotateSkew1 <- getFB mATRIX_nRotateBits
-                              return
-                                (mATRIX_nRotateBits, mATRIX_rotateSkew0, mATRIX_rotateSkew1))
-       mATRIX_nTranslateBits <- getUB 5
-       mATRIX_translateX <- getSB mATRIX_nTranslateBits
-       mATRIX_translateY <- getSB mATRIX_nTranslateBits
+                          (do mATRIX_rotateBits <- getUB 5
+                              mATRIX_rotateSkew0 <- getFB mATRIX_rotateBits
+                              mATRIX_rotateSkew1 <- getFB mATRIX_rotateBits
+                              return (mATRIX_rotateBits, mATRIX_rotateSkew0, mATRIX_rotateSkew1))
+       mATRIX_translateBits <- getUB 5
+       mATRIX_translateX <- getSB mATRIX_translateBits
+       mATRIX_translateY <- getSB mATRIX_translateBits
        return (MATRIX{..})
 
 \end{code}
@@ -2521,34 +2522,35 @@ getSHAPEWITHSTYLE sHAPEWITHSTYLE_shapeVer
 
 type SHAPERECORDS = [SHAPERECORD]
 
-getSHAPERECORDS shapeVer fillBits lineBits = go
+getSHAPERECORDS shapeVer = go
   where
-    go = do
+    go fillBits lineBits = do
       edgeRecord <- getFlag
       if edgeRecord
        then do
           straightEdge <- getFlag
           if straightEdge
-           then getSTRAIGHTEDGERECORD >>= \x -> fmap (x:) go
-           else getCURVEDEDGERECORD >>= \x -> fmap (x:) go
+           then getSTRAIGHTEDGERECORD >>= \x -> fmap (x:) $ go fillBits lineBits
+           else getCURVEDEDGERECORD >>= \x -> fmap (x:) $ go fillBits lineBits
        else do
           look <- lookAhead (getUB 5)
           if look == 0
            then getUB 5 >> byteAlign >> return []
-           else getSTYLECHANGERECORD shapeVer fillBits lineBits >>= \x -> fmap (x:) go
+           else do
+             x <- getSTYLECHANGERECORD shapeVer fillBits lineBits
+             let (fillBits', lineBits') = fromMaybe (fillBits, lineBits) $ fmap (thd4 &&& fth4) $ sTYLECHANGERECORD_new x
+             fmap (x:) $ go fillBits' lineBits'
 
 data SHAPERECORD
          =  STYLECHANGERECORD{sTYLECHANGERECORD_move :: Maybe (UB, SB, SB),
                     sTYLECHANGERECORD_fillStyle0 :: Maybe UB,
                     sTYLECHANGERECORD_fillStyle1 :: Maybe UB,
                     sTYLECHANGERECORD_lineStyle :: Maybe UB,
-                    sTYLECHANGERECORD_s ::
+                    sTYLECHANGERECORD_new ::
                     Maybe (FILLSTYLEARRAY, LINESTYLEARRAY, UB, UB)}
          |  STRAIGHTEDGERECORD{sTRAIGHTEDGERECORD_numBits :: UB,
                      sTRAIGHTEDGERECORD_straightEdge :: StraightEdge}
-         |  CURVEDEDGERECORD{cURVEDEDGERECORD_typeFlag :: Bool,
-                   cURVEDEDGERECORD_straightFlag :: Bool,
-                   cURVEDEDGERECORD_numBits :: UB,
+         |  CURVEDEDGERECORD{cURVEDEDGERECORD_numBits :: UB,
                    cURVEDEDGERECORD_controlDeltaX :: SB,
                    cURVEDEDGERECORD_controlDeltaY :: SB,
                    cURVEDEDGERECORD_anchorDeltaX :: SB,
@@ -2583,17 +2585,18 @@ getSTYLECHANGERECORD sTYLECHANGERECORD_shapeVer
        sTYLECHANGERECORD_lineStyle <- maybeHas
                                         sTYLECHANGERECORD_stateLineStyle
                                         (getUB sTYLECHANGERECORD_lineBits)
-       sTYLECHANGERECORD_s <- maybeHas sTYLECHANGERECORD_stateNewStyles
-                                (do sTYLECHANGERECORD_fillStyles <- getFILLSTYLEARRAY
-                                                                      sTYLECHANGERECORD_shapeVer
-                                    sTYLECHANGERECORD_lineStyles <- getLINESTYLEARRAY
-                                                                      sTYLECHANGERECORD_shapeVer
-                                    sTYLECHANGERECORD_numFillBits <- getUB 4
-                                    sTYLECHANGERECORD_numLineBits <- getUB 4
-                                    return
-                                      (sTYLECHANGERECORD_fillStyles, sTYLECHANGERECORD_lineStyles,
-                                       sTYLECHANGERECORD_numFillBits,
-                                       sTYLECHANGERECORD_numLineBits))
+       sTYLECHANGERECORD_new <- maybeHas sTYLECHANGERECORD_stateNewStyles
+                                  (do sTYLECHANGERECORD_newFillStyles <- getFILLSTYLEARRAY
+                                                                           sTYLECHANGERECORD_shapeVer
+                                      sTYLECHANGERECORD_newLineStyles <- getLINESTYLEARRAY
+                                                                           sTYLECHANGERECORD_shapeVer
+                                      sTYLECHANGERECORD_newNumFillBits <- getUB 4
+                                      sTYLECHANGERECORD_newNumLineBits <- getUB 4
+                                      return
+                                        (sTYLECHANGERECORD_newFillStyles,
+                                         sTYLECHANGERECORD_newLineStyles,
+                                         sTYLECHANGERECORD_newNumFillBits,
+                                         sTYLECHANGERECORD_newNumLineBits))
        _sTYLECHANGERECORD_reserved <- byteAlign
        return (STYLECHANGERECORD{..})
 
@@ -2628,9 +2631,7 @@ getStraightEdge numBits = do
 
 \begin{code}
 getCURVEDEDGERECORD
-  = do cURVEDEDGERECORD_typeFlag <- getFlag
-       cURVEDEDGERECORD_straightFlag <- getFlag
-       cURVEDEDGERECORD_numBits <- getUB 4
+  = do cURVEDEDGERECORD_numBits <- getUB 4
        cURVEDEDGERECORD_controlDeltaX <- getSB
                                            (cURVEDEDGERECORD_numBits + 2)
        cURVEDEDGERECORD_controlDeltaY <- getSB

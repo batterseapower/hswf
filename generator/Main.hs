@@ -258,7 +258,7 @@ spanMaybe f = go
 
 compositeName :: [String] -> String
 compositeName names
-  = case commonPrefix (map (dropWhile (== 'N')) names) `fallback` commonSuffix names of Just name -> name; Nothing -> error ("Nothing in common: " ++ show names)
+  = case commonPrefix names `fallback` commonSuffix names of Just name -> name; Nothing -> error ("Nothing in common: " ++ show names)
   where
     commonPrefix :: Eq a => [[a]] -> Maybe [a]
     commonPrefix = go []

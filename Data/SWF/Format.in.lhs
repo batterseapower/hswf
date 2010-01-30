@@ -4,6 +4,8 @@ module Data.SWF.Format where
 import Data.SWF.Internal.Binary
 import Data.SWF.Internal.Utilities
 
+import Control.Arrow((&&&))
+
 import Data.Char
 import Data.Data
 import Data.Ratio
@@ -266,18 +268,18 @@ p20: MATRIX record
 
 \begin{record}
 MATRIX
-Field          Type                              Comment
-HasScale       UB[1]                             Has scale values if equal to 1
-NScaleBits     If HasScale = 1, UB[5]            Bits in each scale value field
-ScaleX         If HasScale = 1, FB[NScaleBits]   x scale value
-ScaleY         If HasScale = 1, FB[NScaleBits]   y scale value
-HasRotate      UB[1]                             Has rotate and skew values if equal to 1
-NRotateBits    If HasRotate = 1, UB[5]           Bits in each rotate value field
-RotateSkew0    If HasRotate = 1, FB[NRotateBits] First rotate and skew value
-RotateSkew1    If HasRotate = 1, FB[NRotateBits] Second rotate and skew value
-NTranslateBits UB[5]                             Bits in each translate value field
-TranslateX     SB[NTranslateBits]                x translate value in twips
-TranslateY     SB[NTranslateBits]                y translate value in twips
+Field         Type                             Comment
+HasScale      UB[1]                            Has scale values if equal to 1
+ScaleBits     If HasScale = 1, UB[5]           Bits in each scale value field
+ScaleX        If HasScale = 1, FB[ScaleBits]   x scale value
+ScaleY        If HasScale = 1, FB[ScaleBits]   y scale value
+HasRotate     UB[1]                            Has rotate and skew values if equal to 1
+RotateBits    If HasRotate = 1, UB[5]          Bits in each rotate value field
+RotateSkew0   If HasRotate = 1, FB[RotateBits] First rotate and skew value
+RotateSkew1   If HasRotate = 1, FB[RotateBits] Second rotate and skew value
+TranslateBits UB[5]                            Bits in each translate value field
+TranslateX    SB[TranslateBits]                x translate value in twips
+TranslateY    SB[TranslateBits]                y translate value in twips
 \end{record}
 
 p22: Color transform record
@@ -1835,21 +1837,24 @@ ShapeRecords SHAPERECORDS(ShapeVer, NumFillBits, NumLineBits) Shape records (see
 
 type SHAPERECORDS = [SHAPERECORD]
 
-getSHAPERECORDS shapeVer fillBits lineBits = go
+getSHAPERECORDS shapeVer = go
   where
-    go = do
+    go fillBits lineBits = do
       edgeRecord <- getFlag
       if edgeRecord
        then do
           straightEdge <- getFlag
           if straightEdge
-           then getSTRAIGHTEDGERECORD >>= \x -> fmap (x:) go
-           else getCURVEDEDGERECORD >>= \x -> fmap (x:) go
+           then getSTRAIGHTEDGERECORD >>= \x -> fmap (x:) $ go fillBits lineBits
+           else getCURVEDEDGERECORD >>= \x -> fmap (x:) $ go fillBits lineBits
        else do
           look <- lookAhead (getUB 5)
           if look == 0
            then getUB 5 >> byteAlign >> return []
-           else getSTYLECHANGERECORD shapeVer fillBits lineBits >>= \x -> fmap (x:) go
+           else do
+             x <- getSTYLECHANGERECORD shapeVer fillBits lineBits
+             let (fillBits', lineBits') = fromMaybe (fillBits, lineBits) $ fmap (thd4 &&& fth4) $ sTYLECHANGERECORD_new x
+             fmap (x:) $ go fillBits' lineBits'
 
 data SHAPERECORD
 \genconstructors{shaperecord}
@@ -1871,10 +1876,10 @@ MoveDeltaY      If StateMoveTo, SB[MoveBits]                Delta Y value.
 FillStyle0      If StateFillStyle0, UB[FillBits]            Fill 0 Style.
 FillStyle1      If StateFillStyle1, UB[FillBits]            Fill 1 Style.
 LineStyle       If StateLineStyle, UB[LineBits]             Line Style.
-FillStyles      If StateNewStyles, FILLSTYLEARRAY(ShapeVer) Array of new fill styles.
-LineStyles      If StateNewStyles, LINESTYLEARRAY(ShapeVer) Array of new line styles.
-NumFillBits     If StateNewStyles, UB[4]                    Number of fill index bits for new styles.
-NumLineBits     If StateNewStyles, UB[4]                    Number of line index bits for new styles.
+NewFillStyles   If StateNewStyles, FILLSTYLEARRAY(ShapeVer) Array of new fill styles.
+NewLineStyles   If StateNewStyles, LINESTYLEARRAY(ShapeVer) Array of new line styles.
+NewNumFillBits  If StateNewStyles, UB[4]                    Number of fill index bits for new styles.
+NewNumLineBits  If StateNewStyles, UB[4]                    Number of line index bits for new styles.
 Reserved        UB[]                                        Padding to byte boundary
 \end{record}
 
@@ -1906,8 +1911,6 @@ getStraightEdge numBits = do
 \begin{record}
 CURVEDEDGERECORD
 Field         Type          Comment
-TypeFlag      UB[1]         This is an edge record. Always 1.
-StraightFlag  UB[1]         Curved edge. Always 0.
 NumBits       UB[4]         Number of bits per value (2 less than the actual number).
 ControlDeltaX SB[NumBits+2] X control point change.
 ControlDeltaY SB[NumBits+2] Y control point change.
