@@ -274,7 +274,7 @@ compositeName names
 identifyExclusions :: [Field] -> [Field]
 identifyExclusions [] = []
 identifyExclusions (f:fs)
-  | "Reserved" `isInfixOf` field_name f
+  | any (`isInfixOf` field_name f) ["Reserved", "Padding"]
   = f { field_excluded = Just IsReserved } : identifyExclusions fs
   
   -- TODO: only do these two if no other fields mention this one?
@@ -379,8 +379,9 @@ typeToSyntax defuser typ = case typ of
           _       -> (apps (var $ "liftM" ++ show ntycons) (var ("(" ++ replicate (ntycons - 1) ',' ++ ")") : map getOne tycons), TyTuple Boxed (map tyOne tycons))
         
         ntycons = length tycons
-        getOne (TyCon tycon args) = apps (var $ "get" ++ tycon) (map (fieldExprToSyntax defuser) args)
-        tyOne (TyCon tycon _)     = LHE.TyCon (qname tycon)
+        getOne (TyCon "PADDING8" []) = var "byteAlign"
+        getOne (TyCon tycon args)    = apps (var $ "get" ++ tycon) (map (fieldExprToSyntax defuser) args)
+        tyOne (TyCon tycon _)        = LHE.TyCon (qname tycon)
 
   where
     maybeTy_ = TyApp (LHE.TyCon (qname "Maybe"))

@@ -208,20 +208,20 @@ getSTRING = getLazyByteStringNul
 p18: Language code
 \begin{code}
 
-data LANGCODE = None | Latin | Japanese | Korean | SimplifiedChinese | TraditionalChinese | Unrecognized UI8
+data LANGCODE = NoLanguage | LatinLanguage | JapaneseLanguage | KoreanLanguage | SimplifiedChineseLanguage | TraditionalChineseLanguage | UnrecognizedLanguage UI8
               deriving (Eq, Show, Typeable, Data)
 
 getLANGCODE :: SwfGet LANGCODE
 getLANGCODE = do
     n <- getUI8
     return $ case n of
-      0 -> None
-      1 -> Latin
-      2 -> Japanese
-      3 -> Korean
-      4 -> SimplifiedChinese
-      5 -> TraditionalChinese
-      _ -> Unrecognized n
+      0 -> NoLanguage
+      1 -> LatinLanguage
+      2 -> JapaneseLanguage
+      3 -> KoreanLanguage
+      4 -> SimplifiedChineseLanguage
+      5 -> TraditionalChineseLanguage
+      _ -> UnrecognizedLanguage n
 
 \end{code}
 
@@ -256,12 +256,13 @@ Blue  UI8  Blue color value
 p20: Rectangle record
 \begin{record}
 RECT
-Field Type      Comment
-Nbits UB[5]     Bits used for each subsequent field
-Xmin  SB[Nbits] x minimum position for rectangle in twips
-Xmax  SB[Nbits] x maximum position for rectangle in twips
-Ymin  SB[Nbits] y minimum position for rectangle in twips
-Ymax  SB[Nbits] y maximum position for rectangle in twips
+Field   Type      Comment
+Nbits   UB[5]     Bits used for each subsequent field
+Xmin    SB[Nbits] x minimum position for rectangle in twips
+Xmax    SB[Nbits] x maximum position for rectangle in twips
+Ymin    SB[Nbits] y minimum position for rectangle in twips
+Ymax    SB[Nbits] y maximum position for rectangle in twips
+Padding PADDING8  Padding to byte boundary
 \end{record}
 
 p20: MATRIX record
@@ -280,6 +281,7 @@ RotateSkew1   If HasRotate = 1, FB[RotateBits] Second rotate and skew value
 TranslateBits UB[5]                            Bits in each translate value field
 TranslateX    SB[TranslateBits]                x translate value in twips
 TranslateY    SB[TranslateBits]                y translate value in twips
+Padding       PADDING8                         Padding to byte boundary
 \end{record}
 
 p22: Color transform record
@@ -295,6 +297,7 @@ BlueMultTerm  If HasMultTerms = 1, SB[Nbits] Blue multiply value
 RedAddTerm    If HasAddTerms = 1, SB[Nbits]  Red addition value
 GreenAddTerm  If HasAddTerms = 1, SB[Nbits]  Green addition value
 BlueAddTerm   If HasAddTerms = 1, SB[Nbits]  Blue addition value
+Padding       PADDING8                       Padding to byte boundary
 \end{record}
 
 p23: Color transform with alpha record
@@ -313,6 +316,7 @@ RedAddTerm    If HasAddTerms = 1, SB[Nbits]  Red addition value
 GreenAddTerm  If HasAddTerms = 1, SB[Nbits]  Green addition value
 BlueAddTerm   If HasAddTerms = 1, SB[Nbits]  Blue addition value
 AlphaAddTerm  If HasAddTerms = 1, SB[Nbits]  Transparency addition value
+Padding       PADDING8                       Padding to byte boundary
 \end{record}
 
 
@@ -664,20 +668,25 @@ Passes          UB[4]           Number of blur passes
 p50: CLIPEVENTFLAGS
 \begin{code}
 
-data CLIPEVENTFLAG = ClipEventKeyUp | ClipEventKeyDown | ClipEventMouseUp | ClipEventMouseDown | ClipEventMouseMove
-                   | ClipEventUnload | ClipEventEnterFrame | ClipEventLoad | ClipEventDragOver | ClipEventRollOut
-                   | ClipEventRollOver | ClipEventReleaseOutside | ClipEventRelease | ClipEventPress | ClipEventInitialize
-                   | ClipEventData | ClipEventConstruct | ClipEventKeyPress | ClipEventDragOut
+data CLIPEVENTFLAG = ClipEventKeyUp | ClipEventKeyDown
+                   | ClipEventMouseUp | ClipEventMouseDown | ClipEventMouseMove
+                   | ClipEventUnload | ClipEventEnterFrame | ClipEventLoad
+                   | ClipEventDragOver | ClipEventRollOut | ClipEventRollOver
+                   | ClipEventReleaseOutside | ClipEventRelease | ClipEventPress
+                   | ClipEventInitialize | ClipEventData
+                   | ClipEventConstruct | ClipEventKeyPress | ClipEventDragOut
                    deriving (Eq, Show, Data, Typeable)
 
 type CLIPEVENTFLAGS = [CLIPEVENTFLAG]
 
 getCLIPEVENTFLAGS = do
     let f cefs cef = getFlag >>= \b -> return $ if b then cef:cefs else cefs
-    cefs <- foldM f [] [ClipEventKeyUp, ClipEventKeyDown, ClipEventMouseUp, ClipEventMouseDown,
-                        ClipEventMouseMove, ClipEventUnload, ClipEventEnterFrame, ClipEventLoad,
-                        ClipEventDragOver, ClipEventRollOut, ClipEventReleaseOutside, ClipEventRelease,
-                        ClipEventPress, ClipEventInitialize, ClipEventData]
+    cefs <- foldM f [] [ClipEventKeyUp, ClipEventKeyDown,
+                        ClipEventMouseUp, ClipEventMouseDown, ClipEventMouseMove,
+                        ClipEventUnload, ClipEventEnterFrame, ClipEventLoad,
+                        ClipEventDragOver, ClipEventRollOut, ClipEventRollOver,
+                        ClipEventReleaseOutside, ClipEventRelease, ClipEventPress,
+                        ClipEventInitialize, ClipEventData]
     
     version <- fmap swfVersion get
     if (version <= 5)
@@ -685,8 +694,9 @@ getCLIPEVENTFLAGS = do
      else do
         _reserved <- getUB 5
         cefs <- foldM f cefs [ClipEventConstruct, ClipEventKeyPress, ClipEventDragOut]
-        _reserved <- getFlag
+        _reserved <- getUB 8
         return cefs
+
 \end{code}
 
 p52: RemoveObject
@@ -1855,7 +1865,7 @@ getSHAPERECORDS shapeVer = go
           look <- lookAhead (getUB 5)
           if look == 0
            then do
-             -- NB: contrary to the spec, we only byte align at the *last* record
+             -- NB: align the SHAPERECORD array only at the end!
              getUB 5 >> byteAlign
              return []
            else do
@@ -1868,6 +1878,12 @@ data SHAPERECORD
                  deriving (Eq, Show, Typeable, Data)
 
 \end{code}
+
+NB: the various SHAPERECORDs are intentionally not padded to byte
+align them, because they are packed together on disk. The entire
+array will be aligned as a unit, however.
+
+This appears to be the exact opposite of what the spec says happens!
 
 \begin{record}
 STYLECHANGERECORD(ShapeVer, FillBits, LineBits)
@@ -2409,6 +2425,10 @@ getTEXTRECORDS textVer glyphBits advanceBits = go
 \end{code}
 
 p190: Text records
+
+Note that the TEXTRECORD must be padded (despite this not being mentioned
+in the specification) because GLYPHENTRY may be of a size which is not a multiple of 8.
+
 \begin{record}
 TEXTRECORD(TextVer, GlyphBits, AdvanceBits)
 Field                Type                                                      Comment
@@ -2425,6 +2445,7 @@ YOffset              If StyleFlagsHasYOffset, SI16                             y
 TextHeight           If StyleFlagsHasFont, UI16                                Font height for following text.
 GlyphCount           UI8                                                       Number of glyphs in record.
 GlyphEntries         GLYPHENTRY(GlyphBits, AdvanceBits)[GlyphCount]            Glyph entry (see following).
+Padding              PADDING8                                                  Padding to byte boundary
 \end{record}
 
 p192: Glyph entry

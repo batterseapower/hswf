@@ -27,6 +27,7 @@ showBinary x = showIntAtBase 2 (\d -> toEnum (fromEnum '0' + d)) (fromIntegral x
 
 -- The actual tests:
 
+-- From the specification: tests handling of bitfields and SB values
 vanilla_rect_bytes = [
     0x78, 0x00, 0x05, 0x5F, 0x00, 0x00, 0x0F, 0xA0, 0x00
   ]
@@ -34,6 +35,9 @@ vanilla_rect_bytes = [
 vanilla_rect = RECT { rECT_nbits = 15, rECT_xmin = 0, rECT_xmax = 11000, rECT_ymin = 0, rECT_ymax = 8000 }
 
 
+-- Observed in flash-gordon/blue.swf: if MATRIX records don't end by being
+-- byte aligned then this will parse incorrectly (the gradient list will be
+-- empty because you confuse padding with part of the GRADIENT entry).
 define_shape_bytes = [
     0x16, 0x00, 0x86, 0x4A, 0xF2, 0xD9, 0xAE, 0x3E,
     0x71, 0xBB, 0xD8, 0x01, 0x10, 0x95, 0x2D, 0xC3,

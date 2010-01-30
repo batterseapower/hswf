@@ -208,20 +208,20 @@ getSTRING = getLazyByteStringNul
 p18: Language code
 \begin{code}
 
-data LANGCODE = None | Latin | Japanese | Korean | SimplifiedChinese | TraditionalChinese | Unrecognized UI8
+data LANGCODE = NoLanguage | LatinLanguage | JapaneseLanguage | KoreanLanguage | SimplifiedChineseLanguage | TraditionalChineseLanguage | UnrecognizedLanguage UI8
               deriving (Eq, Show, Typeable, Data)
 
 getLANGCODE :: SwfGet LANGCODE
 getLANGCODE = do
     n <- getUI8
     return $ case n of
-      0 -> None
-      1 -> Latin
-      2 -> Japanese
-      3 -> Korean
-      4 -> SimplifiedChinese
-      5 -> TraditionalChinese
-      _ -> Unrecognized n
+      0 -> NoLanguage
+      1 -> LatinLanguage
+      2 -> JapaneseLanguage
+      3 -> KoreanLanguage
+      4 -> SimplifiedChineseLanguage
+      5 -> TraditionalChineseLanguage
+      _ -> UnrecognizedLanguage n
 
 \end{code}
 
@@ -279,6 +279,7 @@ getRECT
        rECT_xmax <- getSB rECT_nbits
        rECT_ymin <- getSB rECT_nbits
        rECT_ymax <- getSB rECT_nbits
+       _rECT_padding <- byteAlign
        return (RECT{..})
 
 \end{code}
@@ -307,6 +308,7 @@ getMATRIX
        mATRIX_translateBits <- getUB 5
        mATRIX_translateX <- getSB mATRIX_translateBits
        mATRIX_translateY <- getSB mATRIX_translateBits
+       _mATRIX_padding <- byteAlign
        return (MATRIX{..})
 
 \end{code}
@@ -334,6 +336,7 @@ getCXFORM
                                cXFORM_blueAddTerm <- getSB cXFORM_nbits
                                return
                                  (cXFORM_redAddTerm, cXFORM_greenAddTerm, cXFORM_blueAddTerm))
+       _cXFORM_padding <- byteAlign
        return (CXFORM{..})
 
 \end{code}
@@ -371,6 +374,7 @@ getCXFORMWITHALPHA
                                           (cXFORMWITHALPHA_redAddTerm, cXFORMWITHALPHA_greenAddTerm,
                                            cXFORMWITHALPHA_blueAddTerm,
                                            cXFORMWITHALPHA_alphaAddTerm))
+       _cXFORMWITHALPHA_padding <- byteAlign
        return (CXFORMWITHALPHA{..})
 
 \end{code}
@@ -1156,20 +1160,25 @@ getGRADIENTBEVELFILTER
 p50: CLIPEVENTFLAGS
 \begin{code}
 
-data CLIPEVENTFLAG = ClipEventKeyUp | ClipEventKeyDown | ClipEventMouseUp | ClipEventMouseDown | ClipEventMouseMove
-                   | ClipEventUnload | ClipEventEnterFrame | ClipEventLoad | ClipEventDragOver | ClipEventRollOut
-                   | ClipEventRollOver | ClipEventReleaseOutside | ClipEventRelease | ClipEventPress | ClipEventInitialize
-                   | ClipEventData | ClipEventConstruct | ClipEventKeyPress | ClipEventDragOut
+data CLIPEVENTFLAG = ClipEventKeyUp | ClipEventKeyDown
+                   | ClipEventMouseUp | ClipEventMouseDown | ClipEventMouseMove
+                   | ClipEventUnload | ClipEventEnterFrame | ClipEventLoad
+                   | ClipEventDragOver | ClipEventRollOut | ClipEventRollOver
+                   | ClipEventReleaseOutside | ClipEventRelease | ClipEventPress
+                   | ClipEventInitialize | ClipEventData
+                   | ClipEventConstruct | ClipEventKeyPress | ClipEventDragOut
                    deriving (Eq, Show, Data, Typeable)
 
 type CLIPEVENTFLAGS = [CLIPEVENTFLAG]
 
 getCLIPEVENTFLAGS = do
     let f cefs cef = getFlag >>= \b -> return $ if b then cef:cefs else cefs
-    cefs <- foldM f [] [ClipEventKeyUp, ClipEventKeyDown, ClipEventMouseUp, ClipEventMouseDown,
-                        ClipEventMouseMove, ClipEventUnload, ClipEventEnterFrame, ClipEventLoad,
-                        ClipEventDragOver, ClipEventRollOut, ClipEventReleaseOutside, ClipEventRelease,
-                        ClipEventPress, ClipEventInitialize, ClipEventData]
+    cefs <- foldM f [] [ClipEventKeyUp, ClipEventKeyDown,
+                        ClipEventMouseUp, ClipEventMouseDown, ClipEventMouseMove,
+                        ClipEventUnload, ClipEventEnterFrame, ClipEventLoad,
+                        ClipEventDragOver, ClipEventRollOut, ClipEventRollOver,
+                        ClipEventReleaseOutside, ClipEventRelease, ClipEventPress,
+                        ClipEventInitialize, ClipEventData]
     
     version <- fmap swfVersion get
     if (version <= 5)
@@ -1177,8 +1186,9 @@ getCLIPEVENTFLAGS = do
      else do
         _reserved <- getUB 5
         cefs <- foldM f cefs [ClipEventConstruct, ClipEventKeyPress, ClipEventDragOut]
-        _reserved <- getFlag
+        _reserved <- getUB 8
         return cefs
+
 \end{code}
 
 p52: RemoveObject
@@ -2540,7 +2550,7 @@ getSHAPERECORDS shapeVer = go
           look <- lookAhead (getUB 5)
           if look == 0
            then do
-             -- NB: contrary to the spec, we only byte align at the *last* record
+             -- NB: align the SHAPERECORD array only at the end!
              getUB 5 >> byteAlign
              return []
            else do
@@ -2565,6 +2575,12 @@ data SHAPERECORD
                  deriving (Eq, Show, Typeable, Data)
 
 \end{code}
+
+NB: the various SHAPERECORDs are intentionally not padded to byte
+align them, because they are packed together on disk. The entire
+array will be aligned as a unit, however.
+
+This appears to be the exact opposite of what the spec says happens!
 
 \begin{code}
 getSTYLECHANGERECORD sTYLECHANGERECORD_shapeVer
@@ -3270,6 +3286,10 @@ getTEXTRECORDS textVer glyphBits advanceBits = go
 \end{code}
 
 p190: Text records
+
+Note that the TEXTRECORD must be padded (despite this not being mentioned
+in the specification) because GLYPHENTRY may be of a size which is not a multiple of 8.
+
 \begin{code}
  
 data TEXTRECORD = TEXTRECORD{tEXTRECORD_textRecordType :: Bool,
@@ -3301,6 +3321,7 @@ getTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
        tEXTRECORD_glyphCount <- getUI8
        tEXTRECORD_glyphEntries <- genericReplicateM tEXTRECORD_glyphCount
                                     (getGLYPHENTRY tEXTRECORD_glyphBits tEXTRECORD_advanceBits)
+       _tEXTRECORD_padding <- byteAlign
        return (TEXTRECORD{..})
 
 \end{code}
