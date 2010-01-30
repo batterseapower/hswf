@@ -361,9 +361,6 @@ typeToSyntax defuser typ = case typ of
       | tycon `elem` ["UB", "SB", "FB"]
       -> (App (var $ "get" ++ tycon) (fieldExprToSyntax defuser lenexpr), LHE.TyCon (qname tycon))
     
-    Type [TyCon "UB" []] RepeatsUntilEnd
-      -> (var "byteAlign", TyTuple Boxed [])
-    
     Type [TyCon "BYTE" []] RepeatsUntilEnd
       -> (var "getRemainingLazyByteString", LHE.TyCon (qname "ByteString"))
     
