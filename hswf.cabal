@@ -1,13 +1,13 @@
 Cabal-Version:      >= 1.2
 Build-Type:         Simple
-Name:               swf
+Name:               hswf
 Version:            0.1
 Maintainer:         Max Bolingbroke <batterseapower@hotmail.com>
-Homepage:           http://www.github.com/batterseapower/swf
+Homepage:           http://www.github.com/batterseapower/hswf
 License:            BSD3
 License-File:       LICENSE
 Author:             Max Bolingbroke
-Synopsis:           A library for SWF roundtripping and creation
+Synopsis:           A library for SWF reading and writing, aiming for byte-for-byte roundtripping support
 Category:           Language
 
 Executable swf
