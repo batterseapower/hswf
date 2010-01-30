@@ -311,8 +311,10 @@ recordToDecls (Record { record_name, record_params, record_fields })
   = (Just (ShapeRecord, error "ShapeRecord pattern", record_name, datacon), [getter])
   
   | (datacon, getter) <- process record_fields
-  = (Nothing, [DataDecl noSrcLoc DataType [] (Ident record_name) [] [datacon] [], getter])
+  = (Nothing, [DataDecl noSrcLoc DataType [] (Ident record_name) [] [datacon] derivng, getter])
   where
+    derivng = [(qname "Eq", []), (qname "Show", []), (qname "Typeable", []), (qname "Data", [])]
+    
     process record_fields = (datacon, getter)
       where
         datacon = QualConDecl noSrcLoc [] [] (RecDecl (Ident record_name) recfields)

@@ -1,5 +1,5 @@
-module Utilities (
-    module Utilities,
+module Data.SWF.Internal.Utilities (
+    module Data.SWF.Internal.Utilities,
     
     module Control.Monad,
     module Data.Maybe,

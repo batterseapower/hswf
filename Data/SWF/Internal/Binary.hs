@@ -1,5 +1,5 @@
-module Binary (
-    module Binary,
+module Data.SWF.Internal.Binary (
+    module Data.SWF.Internal.Binary,
     
     module Data.Bits,
     module Data.ByteString.Lazy,
@@ -7,7 +7,7 @@ module Binary (
     module Data.Word
   ) where
 
-import Utilities
+import Data.SWF.Internal.Utilities
 
 import Codec.Compression.Zlib
 
@@ -23,6 +23,9 @@ import Data.Word
 newtype SwfGetEnv = SwfGetEnv {
     swfVersion :: Word8
   }
+
+emptySwfGetEnv :: SwfGetEnv
+emptySwfGetEnv = SwfGetEnv { swfVersion = error "swfVersion not known yet!" }
 
 newtype SwfGet a = SwfGet { unSwfGet :: SwfGetEnv -> Word8 -> Int -> B.Get (Word8, Int, a) }
 

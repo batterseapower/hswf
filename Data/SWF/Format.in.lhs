@@ -1,11 +1,11 @@
 \begin{code}
-module Main where
+module Data.SWF.Format where
 
-import Binary
-import Utilities
+import Data.SWF.Internal.Binary
+import Data.SWF.Internal.Utilities
 
-import qualified Data.ByteString.Lazy as BS
 import Data.Char
+import Data.Data
 import Data.Ratio
 
 import Foreign.Storable
@@ -13,7 +13,6 @@ import Foreign.C.Types
 import Foreign.Marshal.Utils
 import Foreign.Ptr
 
-import System.Environment
 import System.IO.Unsafe
 
 \end{code}
@@ -75,7 +74,10 @@ p12: Fixed-point numbers
 \begin{code}
 
 data FIXED = FIXED SI16 UI16
+           deriving (Eq, Show, Typeable, Data)
+
 data FIXED8 = FIXED8 SI8 UI8
+            deriving (Eq, Show, Typeable, Data)
 
 getFIXED :: SwfGet FIXED
 getFIXED = liftM2 (flip FIXED) getUI16 getSI16
@@ -96,6 +98,7 @@ fIXED8ToFractional = fromRational . fIXED8ToRational
 -- Page 13: Floating-point numbers
 
 newtype FLOAT16 = FLOAT16 Float
+                deriving (Eq, Show, Typeable, Data)
 type FLOAT = Float
 type DOUBLE = Double
 
@@ -127,7 +130,7 @@ storableCast w = unsafePerformIO $ with w $ peek . castPtr
 -- Page 14: encoded integers
 
 newtype EncodedU32 = EncodedU32 UI32
-                   deriving (Eq, Ord, Enum, Show, Num, Real, Integral)
+                   deriving (Eq, Ord, Enum, Show, Num, Real, Integral, Typeable, Data)
 
 getEncodedU32 :: SwfGet EncodedU32
 getEncodedU32 = fmap EncodedU32 $ do
@@ -202,6 +205,7 @@ p18: Language code
 \begin{code}
 
 data LANGCODE = None | Latin | Japanese | Korean | SimplifiedChinese | TraditionalChinese | Unrecognized UI8
+              deriving (Eq, Show, Typeable, Data)
 
 getLANGCODE :: SwfGet LANGCODE
 getLANGCODE = do
@@ -315,9 +319,10 @@ p25: The SWF header
 \begin{code}
 
 data Swf = Swf { compressed :: Bool, version :: UI8, fileLength :: UI32 {- after decompression -}, frameSize :: RECT {- Twips -}, frameRate :: FIXED8, frameCount :: UI16, tags :: [RECORD] }
+         deriving (Eq, Show, Typeable, Data)
 
-getSwf :: SwfGet Swf
-getSwf = do
+getSwf :: ByteString -> Swf
+getSwf bs = runSwfGet emptySwfGetEnv bs $ do
     signature_1 <- fmap fromIntegral getWord8
     compressed <- case lookup signature_1 [(ord 'F', False), (ord 'C', True)] of
         Just c  -> return c
@@ -343,6 +348,7 @@ p27: Tag format
 \begin{code}
 
 data RECORDHEADER = RECORDHEADER { rECORDHEADER_tagType :: UI16, rECORDHEADER_tagLength :: SI32 }
+                  deriving (Eq, Show, Typeable, Data)
 
 getRECORDHEADER :: SwfGet RECORDHEADER
 getRECORDHEADER = do
@@ -359,6 +365,7 @@ Chapter 3: The Display List
 \begin{code}
 
 data RECORD = RECORD { rECORD_recordHeader :: RECORDHEADER, rECORD_recordTag :: Tag }
+            deriving (Eq, Show, Typeable, Data)
 
 data Tag = UnknownTag ByteString
          | PlaceObject3 { placeObject3_placeFlagMove :: Bool, placeObject3_placeFlagHasImage :: Bool, placeObject3_placeFlagHasClassName :: Bool, placeObject3_depth :: UI16, placeObject3_className :: Maybe STRING, placeObject3_characterId :: Maybe UI16, placeObject3_matrix :: Maybe MATRIX, placeObject3_colorTransform :: Maybe CXFORMWITHALPHA, placeObject3_ratio :: Maybe UI16, placeObject3_name :: Maybe STRING, placeObject3_clipDepth :: Maybe UI16, placeObject3_surfaceFilterList :: Maybe FILTERLIST, placeObject3_blendMode :: Maybe BlendMode, placeObject3_bitmapCache :: Maybe UI8, placeObject3_clipActions :: Maybe CLIPACTIONS }
@@ -366,6 +373,7 @@ data Tag = UnknownTag ByteString
          | DoInitAction { doInitAction_spriteID :: UI16, doInitAction_actions :: ACTIONRECORDS }
          | DefineFont { defineFont_fontID :: UI16, defineFont_glyphShapeTable :: [SHAPE] }
 \genconstructors{tag}
+         deriving (Eq, Show, Typeable, Data)
 
 getRECORD = do
     rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
@@ -424,6 +432,7 @@ ClipActions                If PlaceFlagHasClipActions CLIPACTIONS        SWF 5 a
 \begin{code}
 
 data CLIPACTIONS = CLIPACTIONS { cLIPACTIONS_allEventFlags :: CLIPEVENTFLAGS, cLIPACTIONS_clipActionRecords :: CLIPACTIONRECORDS }
+                 deriving (Eq, Show, Typeable, Data)
 
 getCLIPACTIONS = do
     _reserved <- getUI16
@@ -442,6 +451,7 @@ getCLIPACTIONRECORDS = do
        fmap (x:) getCLIPACTIONRECORDS
 
 data CLIPACTIONRECORD = CLIPACTIONRECORD { cLIPACTIONRECORD_eventFlags :: CLIPEVENTFLAGS, cLIPACTIONRECORD_keyCode :: Maybe UI8, cLIPACTIONRECORD_actions :: [ACTIONRECORD] }
+                      deriving (Eq, Show, Typeable, Data)
 
 getCLIPACTIONRECORD = do
     cLIPACTIONRECORD_eventFlags <- getCLIPEVENTFLAGS
@@ -482,9 +492,15 @@ getPlaceObject3 = do
     placeObject3_clipActions <- maybeHas placeFlagHasClipActions getCLIPACTIONS
     return $ PlaceObject3 {..}
 
-data BlendMode = Normal0 | Normal1 | Layer | Multiply | Screen | Lighten | Darken
-               | Difference | Add | Subtract | Invert | Alpha | Erase | Overlay
-               | Hardlight | UnknownBlendMode UI8
+data BlendMode = Normal0 | Normal1
+               | Layer | Multiply | Screen
+               | Lighten | Darken
+               | Difference | Add | Subtract
+               | Invert | Alpha
+               | Erase | Overlay
+               | Hardlight
+               | UnknownBlendMode UI8
+               deriving (Eq, Show, Typeable, Data)
 
 getBlendMode = do
     i <- getUI8
@@ -508,6 +524,7 @@ data FILTER = DropShadowFilter DROPSHADOWFILTER
             | ConvolutionFilter CONVOLUTIONFILTER
             | ColorMatrixFilter COLORMATRIXFILTER
             | GradientBevelFilter GRADIENTBEVELFILTER
+            deriving (Eq, Show, Typeable, Data)
 
 getFILTER = do
     filterID <- getUI8
@@ -647,7 +664,7 @@ data CLIPEVENTFLAG = ClipEventKeyUp | ClipEventKeyDown | ClipEventMouseUp | Clip
                    | ClipEventUnload | ClipEventEnterFrame | ClipEventLoad | ClipEventDragOver | ClipEventRollOut
                    | ClipEventRollOver | ClipEventReleaseOutside | ClipEventRelease | ClipEventPress | ClipEventInitialize
                    | ClipEventData | ClipEventConstruct | ClipEventKeyPress | ClipEventDragOut
-                   deriving (Eq)
+                   deriving (Eq, Show, Data, Typeable)
 
 type CLIPEVENTFLAGS = [CLIPEVENTFLAG]
 
@@ -881,6 +898,7 @@ p68: ACTIONRECORD
 \begin{code}
 
 data ACTIONRECORDHEADER = ACTIONRECORDHEADER { aCTIONRECORDHEADER_actionCode :: UI8, aCTIONRECORDHEADER_actionLength :: Maybe UI16 }
+                        deriving (Eq, Show, Typeable, Data)
 
 getACTIONRECORDHEADER = do
     aCTIONRECORDHEADER_actionCode <- getUI8
@@ -888,10 +906,12 @@ getACTIONRECORDHEADER = do
     return $ ACTIONRECORDHEADER {..}
 
 data ACTIONRECORD = ACTIONRECORD { aCTIONRECORD_actionRecordHeader :: ACTIONRECORDHEADER, aCTIONRECORD_actionRecordAction :: Action }
+                  deriving (Eq, Show, Typeable, Data)
 
 data Action = UnknownAction (Maybe ByteString)
             | ActionPush { actionPush_actionPushLiteral :: ActionPushLiteral }
 \genconstructors{action}
+            deriving (Eq, Show, Typeable, Data)
 
 getACTIONRECORD = do
     aCTIONRECORD_actionRecordHeader@(ACTIONRECORDHEADER {..}) <- getACTIONRECORDHEADER
@@ -1011,6 +1031,7 @@ data ActionPushLiteral
   | ActionPushInteger UI32
   | ActionPushConstant8 UI8
   | ActionPushConstant16 UI16
+  deriving (Eq, Show, Typeable, Data)
 
 getActionPush = do
     typ <- getUI8
@@ -1723,13 +1744,16 @@ getFILLSTYLEARRAY shapeVer = do
     genericReplicateM count (getFILLSTYLE shapeVer)
 
 data LinearRadial = Linear | Radial
+                  deriving (Eq, Show, Typeable, Data)
 
 data RepeatingClipped = Repeating | Clipped
+                      deriving (Eq, Show, Typeable, Data)
 
 data FILLSTYLE = SolidFill { fILLSTYLE_color :: Either RGB RGBA }
                | GradientFill { fILLSTYLE_linearRadial :: LinearRadial, fILLSTYLE_gradientMatrix :: MATRIX, fILLSTYLE_gradient :: GRADIENT }
                | FocalRadialGradientFill { fILLSTYLE_gradientMatrix :: MATRIX, fILLSTYLE_focalGradient :: FOCALGRADIENT }
                | BitmapFill { fILLSTYLE_repeatingClipped :: RepeatingClipped, fILLSTYLE_smoothed :: Bool, fILLSTYLE_bitmapId :: UI16, fILLSTYLE_bitmapMatrix :: MATRIX }
+               deriving (Eq, Show, Typeable, Data)
 
 getFILLSTYLE shapeVer = do
     fillStyleType <- getUI8
@@ -1759,6 +1783,7 @@ getLINESTYLEARRAY shapeVer = do
 
 
 data LINESTYLE = LINESTYLE { lINESTYLE_width :: UI16, lINESTYLE_color :: Either RGB RGBA }
+               deriving (Eq, Show, Typeable, Data)
 
 getLINESTYLE shapeVer = do
     lINESTYLE_width <- getUI16
@@ -1826,6 +1851,7 @@ getSHAPERECORDS shapeVer fillBits lineBits = go
 
 data SHAPERECORD
 \genconstructors{shaperecord}
+                 deriving (Eq, Show, Typeable, Data)
 
 \end{code}
 
@@ -1863,6 +1889,7 @@ Reserved        UB[]                  Padding to byte boundary
 data StraightEdge = GeneralLine { straightEdge_deltaX :: SB, straightEdge_deltaY :: SB }
                   | VerticalLine { straightEdge_deltaY :: SB }
                   | HorizontalLine { straightEdge_deltaX :: SB }
+                  deriving (Eq, Show, Typeable, Data)
 
 getStraightEdge numBits = do
     generalLine <- getFlag
@@ -1961,6 +1988,7 @@ p146: GRADRECORD
 \begin{code}
 
 data GRADRECORD = GRADRECORD { gRADRECORD_ratio :: UI8, gRADRECORD_color :: Either RGB RGBA }
+                deriving (Eq, Show, Typeable, Data)
 
 getGRADRECORD shapeVer = do
     gRADRECORD_ratio <- getUI8
@@ -2100,6 +2128,7 @@ getMORPHFILLSTYLEARRAY = do
 data MORPHFILLSTYLE = SolidMorphFill { mORPHFILLSTYLE_startColor :: RGBA, mORPHFILLSTYLE_endColor :: RGBA }
                     | LinearGradientMorphFill { mORPHFILLSTYLE_linearRadial :: LinearRadial, mORPHFILLSTYLE_startGradientMatrix :: MATRIX, mORPHFILLSTYLE_endGradientMatrix :: MATRIX, mORPHFILLSTYLE_gradient :: MORPHGRADIENT }
                     | BitmapMorphFill { mORPHFILLSTYLE_repeatingClipped :: RepeatingClipped, mORPHFILLSTYLE_smoothed :: Bool, mORPHFILLSTYLE_bitmapId :: UI16, mORPHFILLSTYLE_startBitmapMatrix :: MATRIX, mORPHFILLSTYLE_endBitmapMatrix :: MATRIX }
+                    deriving (Eq, Show, Typeable, Data)
 
 getMORPHFILLSTYLE = do
     fillStyleType <- getUI8
@@ -2755,13 +2784,4 @@ Reserved UI32         Reserved space; must be 0
 Data     BYTE[]       A blob of binary data, up to the end of the tag
 \end{record}
 
-
-\begin{code}
-
-main :: IO ()
-main = do
-    [file] <- getArgs
-    bs <- BS.readFile file
-    let swf = runSwfGet (SwfGetEnv { swfVersion = error "swfVersion not known yet!" }) bs getSwf
-    print $ version swf
 \end{code}
