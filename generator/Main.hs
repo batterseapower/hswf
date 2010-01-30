@@ -8,6 +8,7 @@ import Data.Char
 import Data.List
 import Data.List.Split (split, keepDelimsR, condense, oneOf)
 import Data.Maybe
+import qualified Data.Map as M
 
 import System.Environment
 import System.IO
@@ -30,15 +31,18 @@ main = do
     --mapM_ (hPutStrLn stderr . show) [r | RecordChunk r <- chunks]
     --mapM_ (hPutStrLn stderr . LHEP.prettyPrint) $ concat [recordToDecls r | RecordChunk r <- chunks]
     
-    let (mb_specialinfos, lss) = unzip $ map (unParseChunk $ catMaybes mb_specialinfos) chunks
+    let (specialinfos, lss) = unzip $ map (unParseChunk $ unionSpecialInfos specialinfos) chunks
     putStrLn $ unlines $ concat lss
 
 
-unParseChunk :: [SpecialInfo] -> Chunk -> (Maybe SpecialInfo, [String])
-unParseChunk _ (NonRecordChunk ls) = (Nothing, ls)
-unParseChunk _ (RecordChunk r) = (mb_specialinfo, codeBlock decls)
-  where (mb_specialinfo, decls) = recordToDecls $ r { record_fields = identifyExclusions $ identifyComposites $ simplify $ record_fields r }
-unParseChunk specialinfos (GenGettersChunk gen) = (Nothing, codeBlock [decl])
+unParseChunk :: SpecialInfo -> Chunk -> (SpecialInfo, [String])
+unParseChunk _ (NonRecordChunk ls)
+  = (emptySpecialInfo, ls)
+unParseChunk _ (RecordChunk r)
+  = (specialinfo, codeBlock decls)
+  where (specialinfo, decls) = recordToDecls $ r { record_fields = identifyExclusions $ identifyComposites $ simplify $ record_fields r }
+unParseChunk (getter_special, putter_special, _) (GenFunctionsChunk gen)
+  = (emptySpecialInfo, codeBlock [decl]) -- TODO: use putter_special
   where (varName, getterName) = case gen of
             Tag         -> ("tagType",    "generatedTagGetters")
             Action      -> ("actionCode", "generatedActionGetters")
@@ -46,23 +50,33 @@ unParseChunk specialinfos (GenGettersChunk gen) = (Nothing, codeBlock [decl])
     
         decl = FunBind [Match noSrcLoc (Ident getterName) [PVar (Ident varName)] Nothing (UnGuardedRhs dispatcher) (BDecls [])]
         dispatcher = Case (var varName) (alts ++ [default_alt])
-        alts = [Alt noSrcLoc pat (UnGuardedAlt (App (con "Just") (var $ "get" ++ recordName))) (BDecls []) | (gen', pat, recordName, _) <- specialinfos, gen' == gen]
+        alts = [Alt noSrcLoc pat (UnGuardedAlt (App (con "Just") (Var $ UnQual getterName))) (BDecls []) | (pat, getterName) <- M.findWithDefault [] gen getter_special]
         default_alt = Alt noSrcLoc PWildCard (UnGuardedAlt (con "Nothing")) (BDecls [])
-unParseChunk specialinfos (GenConstructorsChunk gen) = (Nothing, ["         " ++ (if firstalt then "=" else "|") ++ LHEP.prettyPrint datacon | (firstalt, datacon) <- (exhaustive : repeat False) `zip` datacons])
+unParseChunk (_, _, datacon_special) (GenConstructorsChunk gen)
+  = (emptySpecialInfo, ["         " ++ (if firstalt then "=" else "|") ++ LHEP.prettyPrint datacon | (firstalt, datacon) <- (exhaustive : repeat False) `zip` datacons])
   where exhaustive = gen == ShapeRecord
-        datacons = [datacon | (gen', _, _, datacon) <- specialinfos, gen' == gen]
+        datacons = M.findWithDefault [] gen datacon_special
 
 codeBlock ls = "\\begin{code}" : map LHEP.prettyPrint ls ++ ["", "\\end{code}"]
 
 
 data Generatable = Tag | Action | ShapeRecord
-                 deriving (Eq, Show)
+                 deriving (Eq, Ord, Show)
 
-type SpecialInfo = (Generatable, Pat, RecordName, QualConDecl)
+type SpecialInfo = (M.Map Generatable [(Pat, Name)], -- Dispatch to getter with given name
+                    M.Map Generatable [(Pat, Name)], -- Dispatch to putter with given name
+                    M.Map Generatable [QualConDecl]) -- Output specified data constructor
+
+emptySpecialInfo = (M.empty, M.empty, M.empty)
+
+unionSpecialInfos :: [SpecialInfo] -> SpecialInfo
+unionSpecialInfos sis = case unzip3 sis of
+    (si1s, si2s, si3s) -> (M.unionsWith (++) si1s, M.unionsWith (++) si2s, M.unionsWith (++) si3s)
+
 
 data Chunk = NonRecordChunk [String]
            | RecordChunk Record
-           | GenGettersChunk Generatable
+           | GenFunctionsChunk Generatable
            | GenConstructorsChunk Generatable
            deriving (Show)
 
@@ -126,9 +140,9 @@ parseFile contents = goNo [] (lines contents)
       | Just chunk <- lookup l commands = NonRecordChunk acc : chunk : goNo [] ls
       | l == "\\begin{record}"          = NonRecordChunk acc : goYes [] ls
       | otherwise                       = goNo (acc ++ [l]) ls
-      where commands = [("\\genfunctions{tag}",            GenGettersChunk Tag),
+      where commands = [("\\genfunctions{tag}",            GenFunctionsChunk Tag),
                         ("\\genconstructors{tag}",         GenConstructorsChunk Tag),
-                        ("\\genfunctions{action}",         GenGettersChunk Action),
+                        ("\\genfunctions{action}",         GenFunctionsChunk Action),
                         ("\\genconstructors{action}",      GenConstructorsChunk Action),
                         ("\\genconstructors{shaperecord}", GenConstructorsChunk ShapeRecord)]
     
@@ -293,98 +307,146 @@ identifyExclusions (f:fs)
   = f : identifyExclusions fs
 
 
-recordToDecls :: Record -> (Maybe SpecialInfo, [Decl])
+recordToDecls :: Record -> (SpecialInfo, [Decl])
 recordToDecls (Record { record_name, record_params, record_fields })
   | (Field "Header" (Type [TyCon "RECORDHEADER" []] Once) comment Nothing):record_fields <- record_fields
   , let tag_type = read $ drop (length "Tag type = ") comment
-  , (datacon, getter) <- process record_fields
-  = (Just (Tag, PLit (Int tag_type), record_name, datacon), [getter])
+  , (datacon, getter, getter_name) <- process record_fields
+  = ((M.singleton Tag [(PLit (Int tag_type), getter_name)],
+      M.empty, -- TODO
+      M.singleton Tag [datacon]),
+     [getter])
   
   | (Field field_name (Type [TyCon "ACTIONRECORDHEADER" []] Once) comment Nothing):record_fields <- record_fields
   , field_name == record_name
   , [(action_code, _)] <- readHex $ drop (length "ActionCode = 0x") comment
-  , (datacon, getter) <- process record_fields
-  = (Just (Action, PLit (Int action_code), record_name, datacon), [getter])
+  , (datacon, getter, getter_name) <- process record_fields
+  = ((M.singleton Action [(PLit (Int action_code), getter_name)],
+      M.empty, -- TODO
+      M.singleton Action [datacon]),
+     [getter])
   
   | record_name `elem` ["STYLECHANGERECORD", "STRAIGHTEDGERECORD", "CURVEDEDGERECORD"]
-  , (datacon, getter) <- process record_fields
-  = (Just (ShapeRecord, error "ShapeRecord pattern", record_name, datacon), [getter])
+  , (datacon, getter, _) <- process record_fields
+  = ((M.empty, M.empty, M.singleton ShapeRecord [datacon]),
+     [getter])
   
-  | (datacon, getter) <- process record_fields
-  = (Nothing, [DataDecl noSrcLoc DataType [] (Ident record_name) [] [datacon] derivng, getter])
+  | (datacon, getter, _) <- process record_fields
+  = ((M.empty, M.empty, M.empty),
+     [DataDecl noSrcLoc DataType [] (Ident record_name) [] [datacon] derivng, getter])
   where
     derivng = [(qname "Eq", []), (qname "Show", []), (qname "Typeable", []), (qname "Data", [])]
     
-    process record_fields = (datacon, getter)
+    process record_fields = (datacon, getter, getter_name)
       where
         datacon = QualConDecl noSrcLoc [] [] (RecDecl (Ident record_name) recfields)
-        getter = FunBind [Match noSrcLoc (Ident $ "get" ++ record_name) (map (PVar . Ident . defuser) record_params) Nothing (UnGuardedRhs getexpr) (BDecls [])]
+        
+        getter_name = Ident $ "get" ++ record_name
+        getter = FunBind [Match noSrcLoc getter_name (map (PVar . Ident . defuser) record_params) Nothing (UnGuardedRhs getexpr) (BDecls [])]
         
         defuser = defuseFieldName record_name
-        (field_getters, field_mb_types) = unzip $ map (fieldToSyntax defuser) record_fields
+        (field_getters, field_putters, field_mb_types) = unzip3 $ map (fieldToSyntax defuser) record_fields
         
         recfields = [([Ident $ defuser field_name], UnBangedTy field_type) | (Field { field_name }, Just field_type) <- record_fields `zip` field_mb_types]
         getexpr = Do $ field_getters ++ [Qualifier $ App (var "return") (RecConstr (qname record_name) [FieldWildcard])]
 
-fieldToSyntax :: (FieldName -> String) -> Field -> (Stmt, Maybe LHE.Type)
-fieldToSyntax defuser field = (Generator noSrcLoc bind_to genexp, if should_exclude then Nothing else Just ty)
+fieldToSyntax :: (FieldName -> String) -> Field -> (Stmt, Exp -> Stmt, Maybe LHE.Type)
+fieldToSyntax defuser field
+  = (Generator noSrcLoc bind_to getexp,
+     \e -> Qualifier (putexp e),
+     if should_exclude then Nothing else Just ty)
   where
     should_exclude = isJust (field_excluded field)
-    (genexp, ty) = typeToSyntax defuser (field_type field)
+    (getexp, putexp, ty) = typeToSyntax defuser (field_type field)
     bind_to = PVar $ Ident $ (case field_excluded field of Just IsReserved -> ('_':); _ -> id) $ defuser (field_name field)
 
-typeToSyntax :: (FieldName -> String) -> Type -> (Exp, LHE.Type)
+typeToSyntax :: (FieldName -> String) -> Type -> (Exp, Exp -> Exp, LHE.Type)
 typeToSyntax defuser typ = case typ of
     CompositeType fields
-      -> (Do $ getters ++ [Qualifier $ App (var "return") (Tuple components)], TyTuple Boxed (catMaybes mb_tys))
+      -> (Do $ getters ++ [Qualifier $ App (var "return") (Tuple getcomponents)],
+          \e -> caseTuple_ (length getcomponents) e putcomponents,
+          TyTuple Boxed (catMaybes mb_tys))
       where
-        components = [Var (UnQual bound_to) | (Generator _ (PVar bound_to) _, Just _) <- gettertys]
-        gettertys = map (fieldToSyntax defuser) fields
-        (getters, mb_tys) = unzip gettertys
+        getcomponents = [Var (UnQual bound_to) | (Generator _ (PVar bound_to) _, _, Just _) <- fieldsyntaxs]
+        putcomponents xs = Do [putter (maybe (Lit (Int 0)) (Var . UnQual) mb_x) | (putter, mb_x) <- match xs fieldsyntaxs]
+        
+        -- Match up the components of the tuple we created previously with the fields
+        -- they originate from, so we can reconstruct those field contents.
+        match [] [] = []
+        match xs (fieldsyntax:fieldsyntaxs) = case fieldsyntax of
+            (_, putter, Just _)  | (x:xs) <- xs -> (putter, Just x) : match xs fieldsyntaxs
+            (_, putter, Nothing)                -> (putter, Nothing) : match xs fieldsyntaxs
+        
+        fieldsyntaxs = map (fieldToSyntax defuser) fields
+        (getters, putters, mb_tys) = unzip3 fieldsyntaxs
 
-    IfThenType condexpr typ
-      -> (App (App (var "maybeHas") (fieldExprToSyntax defuser condexpr)) genexp, maybeTy_ ty)
-      where (genexp, ty) = typeToSyntax defuser typ
+    IfThenType condexpr typ -- TODO: check consistency
+      -> (App (App (var "maybeHas") (fieldExprToSyntax defuser condexpr)) getexp,
+          \e -> caseMaybe_ e putexp (App (var "return") (Tuple [])),
+          maybeTy_ ty)
+      where (getexp, putexp, ty) = typeToSyntax defuser typ
     
-    IfThenElseType condexpr typt typf
-      -> (If (fieldExprToSyntax defuser condexpr) (fmap_ (con "Left") genexpt) (fmap_ (con "Right") genexpf), eitherTy_ tyt tyf)
-      where (genexpt, tyt) = typeToSyntax defuser typt
-            (genexpf, tyf) = typeToSyntax defuser typf
+    IfThenElseType condexpr typt typf -- TODO: check consistency
+      -> (If (fieldExprToSyntax defuser condexpr) (fmap_ (con "Left") getexpt) (fmap_ (con "Right") getexpf),
+          \e -> caseEither_ e putexpt putexpf,
+          eitherTy_ tyt tyf)
+      where (getexpt, putexpt, tyt) = typeToSyntax defuser typt
+            (getexpf, putexpf, tyf) = typeToSyntax defuser typf
             
             fmap_ efun efunctor = App (App (var "fmap") efun) efunctor
             eitherTy_ ty1 ty2 = TyApp (TyApp (LHE.TyCon (qname "Either")) ty1) ty2
     
     Type [TyCon "UB" []] (NumberOfTimes (LitE 1))
-      -> (var "getFlag", LHE.TyCon (qname "Bool"))
+      -> (var "getFlag",
+          App $ var "putFlag",
+          LHE.TyCon (qname "Bool"))
     
     Type [TyCon tycon []] (NumberOfTimes lenexpr)
       | tycon `elem` ["UB", "SB", "FB"]
-      -> (App (var $ "get" ++ tycon) (fieldExprToSyntax defuser lenexpr), LHE.TyCon (qname tycon))
+      -> (App (var $ "get" ++ tycon) lenexpr_syn,
+          App $ App (var $ "put" ++ tycon) lenexpr_syn,
+          LHE.TyCon (qname tycon))
+      where lenexpr_syn = fieldExprToSyntax defuser lenexpr
     
     Type [TyCon "BYTE" []] RepeatsUntilEnd
-      -> (var "getRemainingLazyByteString", LHE.TyCon (qname "ByteString"))
+      -> (var "getRemainingLazyByteString",
+          App $ var "putLazyByteString",
+          LHE.TyCon (qname "ByteString"))
     
     Type tycons repeats -> case repeats of
         Once
-          -> (onegenexp, onety)
+          -> (onegenexp, oneputexp, onety)
         NumberOfTimes lenexpr
-          -> (App (App (var "genericReplicateM") (fieldExprToSyntax defuser lenexpr)) onegenexp, TyList onety)
+          -> (App (App (var "genericReplicateM") (fieldExprToSyntax defuser lenexpr)) onegenexp,
+              mapM__ (reifyLambda oneputexp), -- TODO: check consistency
+              TyList onety)
         OptionallyAtEnd
-          -> (App (App (var "maybeHasM") (App (App (var "fmap") (var "not")) (var "isEmpty"))) onegenexp, maybeTy_ onety)
+          -> (App (App (var "maybeHasM") (App (App (var "fmap") (var "not")) (var "isEmpty"))) onegenexp,
+              \e -> caseMaybe_ e oneputexp (App (var "return") (Tuple [])),
+              maybeTy_ onety)
         RepeatsUntilEnd
-          -> (App (var "getToEnd") onegenexp, TyList onety)
+          -> (App (var "getToEnd") onegenexp,
+              mapM__ (reifyLambda oneputexp),
+              TyList onety)
       where
-        (onegenexp, onety) = case tycons of
-          [tycon] -> (getOne tycon, tyOne tycon)
-          _       -> (apps (var $ "liftM" ++ show ntycons) (var ("(" ++ replicate (ntycons - 1) ',' ++ ")") : map getOne tycons), TyTuple Boxed (map tyOne tycons))
+        (onegenexp, oneputexp, onety) = case tycons of
+          [tycon] -> (getOne tycon, putOne tycon, tyOne tycon)
+          _       -> (lift_ (Con con : map getOne tycons),
+                      \e -> caseTuple_ ntycons e $ \xs -> Do $ zipWith (\tycon x -> Qualifier $ putOne tycon (Var $ UnQual x)) tycons xs,
+                      TyTuple Boxed (map tyOne tycons))
+          where ntycons = length tycons
+                lift_   = apps (var $ "liftM" ++ show ntycons)
+                con     = qname $ "(" ++ replicate (ntycons - 1) ',' ++ ")"
         
-        ntycons = length tycons
+        fieldExprs = map (fieldExprToSyntax defuser)
+        
         getOne (TyCon "PADDING8" []) = var "byteAlign"
-        getOne (TyCon tycon args)    = apps (var $ "get" ++ tycon) (map (fieldExprToSyntax defuser) args)
+        getOne (TyCon tycon args)    = apps (var $ "get" ++ tycon) (fieldExprs args)
+        
+        putOne (TyCon "PADDING8" []) = const $ var "flushBits"
+        putOne (TyCon tycon args)    = App $ apps (var $ "put" ++ tycon) (fieldExprs args)
+        
         tyOne (TyCon tycon _)        = LHE.TyCon (qname tycon)
-
-  where
-    maybeTy_ = TyApp (LHE.TyCon (qname "Maybe"))
 
 fieldExprToSyntax _       (LitE i) = Lit (Int $ fromIntegral i)
 fieldExprToSyntax defuser (FieldE x) = var (defuser x)
@@ -401,11 +463,30 @@ simplifyFieldExpr True (BinOpE op e1 e2) = BinOpE op (simplifyFieldExpr e1ty e1)
 simplifyFieldExpr True (UnOpE Not e) = UnOpE Not (simplifyFieldExpr True e)
 simplifyFieldExpr _    e = e
 
+
+defuseFieldName record_name field_name = toVarName record_name ++ '_':toVarName field_name
+  where toVarName (c:s) = toLower c : s
+
+
+maybeTy_ = TyApp (LHE.TyCon (qname "Maybe"))
+
+reifyLambda oneputexp = Lambda noSrcLoc [PVar $ Ident "x"] (oneputexp $ var "x")
+mapM__ ef exs = App (App (var "mapM_") ef) exs
+
+caseMaybe_ e e_just e_nothing
+  = Case e [Alt noSrcLoc (PApp (qname "Just") [PVar $ Ident "x"]) (UnGuardedAlt $ e_just (var "x")) (BDecls []),
+            Alt noSrcLoc (PApp (qname "Nothing") [])              (UnGuardedAlt e_nothing)          (BDecls [])]
+
+caseEither_ e e_left e_right
+  = Case e [Alt noSrcLoc (PApp (qname "Left")  [PVar $ Ident "x"]) (UnGuardedAlt $ e_left (var "x"))  (BDecls []),
+            Alt noSrcLoc (PApp (qname "Right") [PVar $ Ident "x"]) (UnGuardedAlt $ e_right (var "x")) (BDecls [])]
+
+caseTuple_ n e e_branch
+  = Case e [Alt noSrcLoc (PTuple (map PVar xs)) (UnGuardedAlt $ e_branch xs) (BDecls [])]
+  where xs = map (Ident . ("x" ++) . show) [1..n]
+
 var = Var . UnQual . Ident
 qname = UnQual . Ident
 con = Con . qname
 noSrcLoc = SrcLoc "<unknown>" 0 0
 apps = foldl App
-
-defuseFieldName record_name field_name = toVarName record_name ++ '_':toVarName field_name
-  where toVarName (c:s) = toLower c : s
