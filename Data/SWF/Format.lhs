@@ -425,8 +425,8 @@ putARGB ARGB{..}
 p20: Rectangle record
 \begin{code}
  
-data RECT = RECT{rECT_xmin :: SB, rECT_xmax :: SB, rECT_ymin :: SB,
-                 rECT_ymax :: SB}
+data RECT = RECT{rECT_nbits :: UB, rECT_xmin :: SB,
+                 rECT_xmax :: SB, rECT_ymin :: SB, rECT_ymax :: SB}
           deriving (Eq, Show, Typeable, Data)
 getRECT
   = do rECT_nbits <- getUB 5
@@ -437,14 +437,13 @@ getRECT
        _rECT_padding <- byteAlign
        return (RECT{..})
 putRECT RECT{..}
-  = do let rECT_nbits = genericLength rECT_xmin
-       putUB 5 rECT_nbits
+  = do putUB 5 rECT_nbits
        putSB rECT_nbits rECT_xmin
        putSB rECT_nbits rECT_xmax
        putSB rECT_nbits rECT_ymin
        putSB rECT_nbits rECT_ymax
-       let _rECT_padding = 0
-       flushBits
+       let _rECT_padding = reservedDefault
+       const flushBits (_rECT_padding :: ())
        return ()
 
 \end{code}
@@ -454,8 +453,8 @@ p20: MATRIX record
 \begin{code}
  
 data MATRIX = MATRIX{mATRIX_scale :: Maybe (UB, FB, FB),
-                     mATRIX_rotate :: Maybe (UB, FB, FB), mATRIX_translateX :: SB,
-                     mATRIX_translateY :: SB}
+                     mATRIX_rotate :: Maybe (UB, FB, FB), mATRIX_translateBits :: UB,
+                     mATRIX_translateX :: SB, mATRIX_translateY :: SB}
             deriving (Eq, Show, Typeable, Data)
 getMATRIX
   = do mATRIX_hasScale <- getFlag
@@ -504,12 +503,11 @@ putMATRIX MATRIX{..}
                                                       return ()
            Nothing -> if False /= (mATRIX_hasRotate) then inconsistent else
                         return ()
-       let mATRIX_translateBits = genericLength mATRIX_translateX
        putUB 5 mATRIX_translateBits
        putSB mATRIX_translateBits mATRIX_translateX
        putSB mATRIX_translateBits mATRIX_translateY
-       let _mATRIX_padding = 0
-       flushBits
+       let _mATRIX_padding = reservedDefault
+       const flushBits (_mATRIX_padding :: ())
        return ()
 
 \end{code}
@@ -565,8 +563,8 @@ putCXFORM CXFORM{..}
                                                       return ()
            Nothing -> if False /= (cXFORM_hasAddTerms) then inconsistent else
                         return ()
-       let _cXFORM_padding = 0
-       flushBits
+       let _cXFORM_padding = reservedDefault
+       const flushBits (_cXFORM_padding :: ())
        return ()
 
 \end{code}
@@ -647,8 +645,8 @@ putCXFORMWITHALPHA CXFORMWITHALPHA{..}
                                                                 return ()
            Nothing -> if False /= (cXFORMWITHALPHA_hasAddTerms) then
                         inconsistent else return ()
-       let _cXFORMWITHALPHA_padding = 0
-       flushBits
+       let _cXFORMWITHALPHA_padding = reservedDefault
+       const flushBits (_cXFORMWITHALPHA_padding :: ())
        return ()
 
 \end{code}
@@ -1287,7 +1285,7 @@ getCLIPACTIONS
        cLIPACTIONS_clipActionRecords <- getCLIPACTIONRECORDS
        return (CLIPACTIONS{..})
 putCLIPACTIONS CLIPACTIONS{..}
-  = do let _cLIPACTIONS_reserved = 0
+  = do let _cLIPACTIONS_reserved = reservedDefault
        putUI16 _cLIPACTIONS_reserved
        putCLIPEVENTFLAGS cLIPACTIONS_allEventFlags
        putCLIPACTIONRECORDS cLIPACTIONS_clipActionRecords
@@ -1409,7 +1407,7 @@ putPlaceObject3 PlaceObject3{..}
              = isJust placeObject3_characterId
        putFlag placeObject3_placeFlagHasCharacter
        putFlag placeObject3_placeFlagMove
-       let _placeObject3_reserved = 0
+       let _placeObject3_reserved = reservedDefault
        putUB 3 _placeObject3_reserved
        putFlag placeObject3_placeFlagHasImage
        putFlag placeObject3_placeFlagHasClassName
@@ -1621,7 +1619,7 @@ putCONVOLUTIONFILTER CONVOLUTIONFILTER{..}
          then inconsistent else
          mapM_ (\ x -> putFLOAT x) cONVOLUTIONFILTER_matrix
        putRGBA cONVOLUTIONFILTER_defaultColor
-       let _cONVOLUTIONFILTER_reserved = 0
+       let _cONVOLUTIONFILTER_reserved = reservedDefault
        putUB 6 _cONVOLUTIONFILTER_reserved
        putFlag cONVOLUTIONFILTER_clamp
        putFlag cONVOLUTIONFILTER_preserveAlpha
@@ -1645,7 +1643,7 @@ putBLURFILTER BLURFILTER{..}
   = do putFIXED bLURFILTER_blurX
        putFIXED bLURFILTER_blurY
        putUB 5 bLURFILTER_passes
-       let _bLURFILTER_reserved = 0
+       let _bLURFILTER_reserved = reservedDefault
        putUB 3 _bLURFILTER_reserved
        return ()
 
@@ -2077,7 +2075,7 @@ getEnableDebugger2
        enableDebugger2_password <- getSTRING
        return (EnableDebugger2{..})
 putEnableDebugger2 EnableDebugger2{..}
-  = do let _enableDebugger2_reserved = 0
+  = do let _enableDebugger2_reserved = reservedDefault
        putUI16 _enableDebugger2_reserved
        putSTRING enableDebugger2_password
        return ()
@@ -2123,16 +2121,16 @@ getFileAttributes
        _fileAttributes_reserved <- getUB 24
        return (FileAttributes{..})
 putFileAttributes FileAttributes{..}
-  = do let _fileAttributes_reserved = 0
+  = do let _fileAttributes_reserved = reservedDefault
        putFlag _fileAttributes_reserved
        putFlag fileAttributes_useDirectBlit
        putFlag fileAttributes_useGPU
        putFlag fileAttributes_hasMetadata
        putFlag fileAttributes_actionScript3
-       let _fileAttributes_reserved = 0
+       let _fileAttributes_reserved = reservedDefault
        putUB 2 _fileAttributes_reserved
        putFlag fileAttributes_useNetwork
-       let _fileAttributes_reserved = 0
+       let _fileAttributes_reserved = reservedDefault
        putUB 24 _fileAttributes_reserved
        return ()
 
@@ -2152,9 +2150,9 @@ getImportAssets2
        return (ImportAssets2{..})
 putImportAssets2 ImportAssets2{..}
   = do putSTRING importAssets2_uRL
-       let _importAssets2_reserved = 0
+       let _importAssets2_reserved = reservedDefault
        putUI8 _importAssets2_reserved
-       let _importAssets2_reserved = 0
+       let _importAssets2_reserved = reservedDefault
        putUI8 _importAssets2_reserved
        putUI16 importAssets2_count
        putUI16 importAssets2_tag1
@@ -3011,7 +3009,7 @@ getActionGetURL2
        return (ActionGetURL2{..})
 putActionGetURL2 ActionGetURL2{..}
   = do putUB 2 actionGetURL2_sendVarsMethod
-       let _actionGetURL2_reserved = 0
+       let _actionGetURL2_reserved = reservedDefault
        putUB 4 _actionGetURL2_reserved
        putFlag actionGetURL2_loadTargetFlag
        putFlag actionGetURL2_loadVariablesFlag
@@ -3030,7 +3028,7 @@ getActionGotoFrame2
                                        getUI16
        return (ActionGotoFrame2{..})
 putActionGotoFrame2 ActionGotoFrame2{..}
-  = do let _actionGotoFrame2_reserved = 0
+  = do let _actionGotoFrame2_reserved = reservedDefault
        putUB 6 _actionGotoFrame2_reserved
        let actionGotoFrame2_sceneBiasFlag
              = isJust actionGotoFrame2_sceneBias
@@ -3501,7 +3499,7 @@ putActionDefineFunction2 ActionDefineFunction2{..}
        putFlag actionDefineFunction2_preloadArgumentsFlag
        putFlag actionDefineFunction2_suppressThisFlag
        putFlag actionDefineFunction2_preloadThisFlag
-       let _actionDefineFunction2_reserved = 0
+       let _actionDefineFunction2_reserved = reservedDefault
        putUB 7 _actionDefineFunction2_reserved
        putFlag actionDefineFunction2_preloadGlobalFlag
        if
@@ -3571,7 +3569,7 @@ getActionTry
                                   getUI8
        return (ActionTry{..})
 putActionTry ActionTry{..}
-  = do let _actionTry_reserved = 0
+  = do let _actionTry_reserved = reservedDefault
        putUB 5 _actionTry_reserved
        let actionTry_catchInRegisterFlag = isJust actionTry_catchRegister
        putFlag actionTry_catchInRegisterFlag
@@ -3771,7 +3769,7 @@ putLINESTYLE2 LINESTYLE2{..}
        putFlag lINESTYLE2_noHScaleFlag
        putFlag lINESTYLE2_noVScaleFlag
        putFlag lINESTYLE2_pixelHintingFlag
-       let _lINESTYLE2_reserved = 0
+       let _lINESTYLE2_reserved = reservedDefault
        putUB 5 _lINESTYLE2_reserved
        putFlag lINESTYLE2_noClose
        putUB 2 lINESTYLE2_endCapStyle
@@ -4145,7 +4143,7 @@ putDefineShape4 DefineShape4{..}
   = do putUI16 defineShape4_shapeId
        putRECT defineShape4_shapeBounds
        putRECT defineShape4_edgeBounds
-       let _defineShape4_reserved = 0
+       let _defineShape4_reserved = reservedDefault
        putUB 5 _defineShape4_reserved
        putFlag defineShape4_usesFillWindingRule
        putFlag defineShape4_usesNonScalingStrokes
@@ -4441,7 +4439,7 @@ putDefineMorphShape2 DefineMorphShape2{..}
        putRECT defineMorphShape2_endBounds
        putRECT defineMorphShape2_startEdgeBounds
        putRECT defineMorphShape2_endEdgeBounds
-       let _defineMorphShape2_reserved = 0
+       let _defineMorphShape2_reserved = reservedDefault
        putUB 6 _defineMorphShape2_reserved
        putFlag defineMorphShape2_usesNonScalingStrokes
        putFlag defineMorphShape2_usesScalingStrokes
@@ -4637,7 +4635,7 @@ putMORPHLINESTYLE2 MORPHLINESTYLE2{..}
        putFlag mORPHLINESTYLE2_noHScaleFlag
        putFlag mORPHLINESTYLE2_noVScaleFlag
        putFlag mORPHLINESTYLE2_pixelHintingFlag
-       let _mORPHLINESTYLE2_reserved = 0
+       let _mORPHLINESTYLE2_reserved = reservedDefault
        putUB 5 _mORPHLINESTYLE2_reserved
        putFlag mORPHLINESTYLE2_noClose
        putUB 2 mORPHLINESTYLE2_endCapStyle
@@ -4722,7 +4720,7 @@ putDefineFontInfo DefineFontInfo{..}
            (defineFontInfo_fontNameLen)
          then inconsistent else
          mapM_ (\ x -> putUI8 x) defineFontInfo_fontName
-       let _defineFontInfo_fontFlagsReserved = 0
+       let _defineFontInfo_fontFlagsReserved = reservedDefault
        putUB 2 _defineFontInfo_fontFlagsReserved
        putFlag defineFontInfo_fontFlagsSmallText
        putFlag defineFontInfo_fontFlagsShiftJIS
@@ -4769,7 +4767,7 @@ putDefineFontInfo2 DefineFontInfo2{..}
            (defineFontInfo2_fontNameLen)
          then inconsistent else
          mapM_ (\ x -> putUI8 x) defineFontInfo2_fontName
-       let _defineFontInfo2_fontFlagsReserved = 0
+       let _defineFontInfo2_fontFlagsReserved = reservedDefault
        putUB 2 _defineFontInfo2_fontFlagsReserved
        putFlag defineFontInfo2_fontFlagsSmallText
        putFlag defineFontInfo2_fontFlagsShiftJIS
@@ -5088,7 +5086,7 @@ getDefineFontAlignZones
 putDefineFontAlignZones DefineFontAlignZones{..}
   = do putUI16 defineFontAlignZones_fontID
        putUB 2 defineFontAlignZones_cSMTableHint
-       let _defineFontAlignZones_reserved = 0
+       let _defineFontAlignZones_reserved = reservedDefault
        putUB 6 _defineFontAlignZones_reserved
        mapM_ (\ x -> putZONERECORD x) defineFontAlignZones_zoneTable
        return ()
@@ -5114,7 +5112,7 @@ putZONERECORD ZONERECORD{..}
        if genericLength zONERECORD_zoneData /= (zONERECORD_numZoneData)
          then inconsistent else
          mapM_ (\ x -> putZONEDATA x) zONERECORD_zoneData
-       let _zONERECORD_reserved = 0
+       let _zONERECORD_reserved = reservedDefault
        putUB 6 _zONERECORD_reserved
        putFlag zONERECORD_zoneMaskY
        putFlag zONERECORD_zoneMaskX
@@ -5267,7 +5265,7 @@ getTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
 putTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
   tEXTRECORD_advanceBits TEXTRECORD{..}
   = do putFlag tEXTRECORD_textRecordType
-       let _tEXTRECORD_styleFlagsReserved = 0
+       let _tEXTRECORD_styleFlagsReserved = reservedDefault
        putUB 3 _tEXTRECORD_styleFlagsReserved
        let tEXTRECORD_styleFlagsHasFont = isJust tEXTRECORD_fontID
        putFlag tEXTRECORD_styleFlagsHasFont
@@ -5315,8 +5313,8 @@ putTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
            (\ x ->
               putGLYPHENTRY tEXTRECORD_glyphBits tEXTRECORD_advanceBits x)
            tEXTRECORD_glyphEntries
-       let _tEXTRECORD_padding = 0
-       flushBits
+       let _tEXTRECORD_padding = reservedDefault
+       const flushBits (_tEXTRECORD_padding :: ())
        return ()
 
 \end{code}
@@ -5499,11 +5497,11 @@ putCSMTextSettings CSMTextSettings{..}
   = do putUI16 cSMTextSettings_textID
        putUB 2 cSMTextSettings_useFlashType
        putUB 3 cSMTextSettings_gridFit
-       let _cSMTextSettings_reserved = 0
+       let _cSMTextSettings_reserved = reservedDefault
        putUB 3 _cSMTextSettings_reserved
        putFLOAT cSMTextSettings_thickness
        putFLOAT cSMTextSettings_sharpness
-       let _cSMTextSettings_reserved = 0
+       let _cSMTextSettings_reserved = reservedDefault
        putUI8 _cSMTextSettings_reserved
        return ()
 
@@ -5522,7 +5520,7 @@ getDefineFont4
        return (DefineFont4{..})
 putDefineFont4 DefineFont4{..}
   = do putUI16 defineFont4_fontID
-       let _defineFont4_fontFlagsReserved = 0
+       let _defineFont4_fontFlagsReserved = reservedDefault
        putUB 5 _defineFont4_fontFlagsReserved
        putFlag defineFont4_fontFlagsHasFontData
        putFlag defineFont4_fontFlagsItalic
@@ -5613,7 +5611,7 @@ getSOUNDINFO
                               return (sOUNDINFO_envPoints, sOUNDINFO_envelopeRecords))
        return (SOUNDINFO{..})
 putSOUNDINFO SOUNDINFO{..}
-  = do let _sOUNDINFO_reserved = 0
+  = do let _sOUNDINFO_reserved = reservedDefault
        putUB 2 _sOUNDINFO_reserved
        putFlag sOUNDINFO_syncStop
        putFlag sOUNDINFO_syncNoMultiple
@@ -5702,7 +5700,7 @@ getSoundStreamHead
                                         getSI16
        return (SoundStreamHead{..})
 putSoundStreamHead SoundStreamHead{..}
-  = do let _soundStreamHead_reserved = 0
+  = do let _soundStreamHead_reserved = reservedDefault
        putUB 4 _soundStreamHead_reserved
        putUB 2 soundStreamHead_playbackSoundRate
        putFlag soundStreamHead_playbackSoundSize
@@ -5739,7 +5737,7 @@ getSoundStreamHead2
                                          getSI16
        return (SoundStreamHead2{..})
 putSoundStreamHead2 SoundStreamHead2{..}
-  = do let _soundStreamHead2_reserved = 0
+  = do let _soundStreamHead2_reserved = reservedDefault
        putUB 4 _soundStreamHead2_reserved
        putUB 2 soundStreamHead2_playbackSoundRate
        putFlag soundStreamHead2_playbackSoundSize
@@ -5835,7 +5833,7 @@ getBUTTONRECORD bUTTONRECORD_buttonVer
                                               bUTTONRECORD_buttonDisplayBlendMode))
        return (BUTTONRECORD{..})
 putBUTTONRECORD bUTTONRECORD_buttonVer BUTTONRECORD{..}
-  = do let _bUTTONRECORD_buttonReserved = 0
+  = do let _bUTTONRECORD_buttonReserved = reservedDefault
        putUB 2 _bUTTONRECORD_buttonReserved
        putFlag bUTTONRECORD_buttonHasBlendMode
        putFlag bUTTONRECORD_buttonHasFilterList
@@ -5923,7 +5921,7 @@ getDefineButton2
        return (DefineButton2{..})
 putDefineButton2 DefineButton2{..}
   = do putUI16 defineButton2_buttonId
-       let _defineButton2_reservedFlags = 0
+       let _defineButton2_reservedFlags = reservedDefault
        putUB 7 _defineButton2_reservedFlags
        putFlag defineButton2_trackAsMenu
        putUI16 defineButton2_actionOffset
@@ -6108,7 +6106,7 @@ putDefineVideoStream DefineVideoStream{..}
        putUI16 defineVideoStream_numFrames
        putUI16 defineVideoStream_width
        putUI16 defineVideoStream_height
-       let _defineVideoStream_videoFlagsReserved = 0
+       let _defineVideoStream_videoFlagsReserved = reservedDefault
        putUB 4 _defineVideoStream_videoFlagsReserved
        putUB 3 defineVideoStream_videoFlagsDeblocking
        putFlag defineVideoStream_videoFlagsSmoothing
@@ -6145,7 +6143,7 @@ getDefineBinaryData
        return (DefineBinaryData{..})
 putDefineBinaryData DefineBinaryData{..}
   = do putUI16 defineBinaryData_tag
-       let _defineBinaryData_reserved = 0
+       let _defineBinaryData_reserved = reservedDefault
        putUI32 _defineBinaryData_reserved
        putLazyByteString defineBinaryData_data
        return ()

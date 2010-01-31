@@ -22,6 +22,19 @@ import Data.Int
 import Data.Word
 
 
+class ReservedDefault a where
+    reservedDefault :: a
+
+instance ReservedDefault () where reservedDefault = error "() default only intended for use with flushBits!"
+instance ReservedDefault Bool where reservedDefault = False
+instance ReservedDefault Word8 where reservedDefault = 0
+instance ReservedDefault Word16 where reservedDefault = 0
+instance ReservedDefault Word32 where reservedDefault = 0
+instance ReservedDefault Int8 where reservedDefault = 0
+instance ReservedDefault Int16 where reservedDefault = 0
+instance ReservedDefault Int32 where reservedDefault = 0
+
+
 newtype SwfEnv = SwfEnv {
     swfVersion :: Word8
   }

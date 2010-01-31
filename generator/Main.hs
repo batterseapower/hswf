@@ -138,6 +138,9 @@ data FieldUnOp = Not
 data FieldBinOp = Plus | Mult | Equals | NotEquals | Or | And
                 deriving (Eq, Show, Typeable, Data)
 
+isBitTyCon (TyCon name []) | name `elem` ["UB", "SB", "FB"] = Just name
+isBitTyCon _ = Nothing
+
 type_cond_maybe :: Type -> Maybe (Bool, FieldExpr)
 type_cond_maybe (IfThenType { type_cond })     = Just (True, type_cond)
 type_cond_maybe (IfThenElseType { type_cond }) = Just (False, type_cond)
@@ -317,7 +320,8 @@ identifyExclusions (f:fs)
   | (controls_field:_)
       <- [other_f
          | other_f <- fs
-         , Type { type_repeats=NumberOfTimes (FieldE len_field_name) } <- [field_type other_f]
+         , Type { type_tycons=tycons, type_repeats=NumberOfTimes (FieldE len_field_name) } <- [field_type other_f]
+         , case tycons of [tycon] -> isNothing (isBitTyCon tycon);_ -> True  -- IMPORTANT: can't recover the used bit length from these fields!
          , len_field_name == field_name f]
   = f { field_excluded = Just (IsLength $ field_name controls_field) } : identifyExclusions fs
   
@@ -430,11 +434,11 @@ typeToSyntax defuser typ = case typ of
           App $ var "putFlag",
           LHE.TyCon (qname "Bool"))
     
-    Type [TyCon tycon []] (NumberOfTimes lenexpr)
-      | tycon `elem` ["UB", "SB", "FB"]
-      -> (App (var $ "get" ++ tycon) lenexpr_syn,
-          App $ App (var $ "put" ++ tycon) lenexpr_syn,
-          LHE.TyCon (qname tycon))
+    Type [tycon] (NumberOfTimes lenexpr)
+      | Just tycon_name <- isBitTyCon tycon
+      -> (App (var $ "get" ++ tycon_name) lenexpr_syn,
+          App $ App (var $ "put" ++ tycon_name) lenexpr_syn,
+          LHE.TyCon (qname tycon_name))
       where lenexpr_syn = fieldExprToSyntax defuser lenexpr
     
     Type [TyCon "BYTE" []] RepeatsUntilEnd
@@ -473,13 +477,15 @@ typeToSyntax defuser typ = case typ of
         getOne (TyCon "PADDING8" []) = var "byteAlign"
         getOne (TyCon tycon args)    = apps (var $ "get" ++ tycon) (fieldExprs args)
         
-        putOne (TyCon "PADDING8" []) = const $ var "flushBits"
+         -- Rather nasty hack here to deal with PADDING8. If we don't provide the expression
+         -- to "put" into this field with a type, GHC will complain about ambiguous type variables,
+         -- but flushBits doesn't need any value at all. Solution: force it to have a particular type.
+        putOne (TyCon "PADDING8" []) = \e -> App (App (var "const") (var "flushBits")) (ExpTypeSig noSrcLoc e $ TyTuple Boxed [])
         putOne (TyCon tycon args)    = App $ apps (var $ "put" ++ tycon) (fieldExprs args)
         
         tyOne (TyCon tycon _)        = LHE.TyCon (qname tycon)
 
-
-whyExcludedToSyntax _       IsReserved          = Lit (Int 0)
+whyExcludedToSyntax _       IsReserved          = var "reservedDefault"
 whyExcludedToSyntax defuser (IsPresenceFlag fn) = App (var "isJust") (var $ defuser fn)
 whyExcludedToSyntax defuser (IsSelectFlag fn)   = App (var "isLeft") (var $ defuser fn)
 whyExcludedToSyntax defuser (IsLength fn)       = App (var "genericLength") (var $ defuser fn)
