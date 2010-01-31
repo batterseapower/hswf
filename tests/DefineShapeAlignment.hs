@@ -3,7 +3,7 @@ module DefineShapeAlignment where
 import TestUtilities
 
 
-main = run define_shape_bytes getDefineShape `assertEquals` define_shape
+main = runGet define_shape_bytes getDefineShape `assertEquals` define_shape
 
 -- Observed in flash-gordon/blue.swf: if MATRIX records don't end by being
 -- byte aligned then this will parse incorrectly (the gradient list will be

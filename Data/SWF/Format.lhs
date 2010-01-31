@@ -137,34 +137,71 @@ fIXED8ToFractional = fromRational . fIXED8ToRational
 Page 13: Floating-point numbers
 \begin{code}
 
-newtype FLOAT16 = FLOAT16 Float
+newtype FLOAT16 = FLOAT16 Word16
                 deriving (Eq, Show, Typeable, Data)
 
 storableCast :: (Storable a, Storable b) => a -> b
 storableCast w = unsafePerformIO $ with w $ peek . castPtr
 
 getFLOAT16 :: SwfGet FLOAT16
-getFLOAT16 = do
-    w <- getWord16
-    let sign  = (w `shiftR` 15) .&. 0x1
-        expon = (w `shiftR` 10) .&. 0x1F
-        manti = w               .&. 0x3FF
-    
-        signer = if sign /= 0 then negate else id
-    return $ FLOAT16 $ if expon == 0x1F
-                       then if manti /= 0 then 0/0 else (signer 1 / 0)
-                       else signer $ (1.0 + (fromIntegral manti / 1024.0)) * 2 ^ (expon - 16)
+getFLOAT16 = fmap FLOAT16 getWord16
 
 putFLOAT16 :: FLOAT16 -> SwfPut
-putFLOAT16 (FLOAT16 x) = do
+putFLOAT16 (FLOAT16 x) = putWord16 x
+
+fLOAT16ToFloat :: FLOAT16 -> Float
+fLOAT16ToFloat (FLOAT16 w)
+  | expon == 0x00 -- Zero or denorm (TODO: produce denorms)
+  = 0.0
+  | expon == 0x1F -- Infinity or NaN
+  = if manti /= 0 then 0/0 else (signer 1 / 0)
+  | otherwise -- Simple number
+  = signer $ (1.0 + (fromIntegral manti / 1024.0)) * 2 ^ (expon - 16)
+  where
+    sign  = (w `shiftR` 15) .&. 0x001
+    expon = (w `shiftR` 10) .&. 0x01F
+    manti = w               .&. 0x3FF
+
+    signer = if sign /= 0 then negate else id
+
+floatToFLOAT16 :: Float -> FLOAT16
+floatToFLOAT16 x
+  | isNaN x = FLOAT16 0x7FFF -- Extra NaN handling because it seems NaN mantissa bits can be wrong...
+  | otherwise = FLOAT16 w'
+  where
     -- CFloat:  seeeeeeeemmmmmmmmmmmmmmmmmmmmmmm (1, 8, 23), bias = 127
     -- FLOAT16: seeeeemmmmmmmmmm                 (1, 5, 10), bias = 16
-    let depromote = storableCast . (realToFrac :: Float -> CFloat)
-        w = depromote x
-        sign  = (w `shiftR` 16)                                       .&. 0x8000
-        expon = ((((w `shiftR` 23) .&. 0xFF) - 127 + 16) `shiftL` 10) .&. 0x7C00
-        manti = (w `shiftR` 16)                                       .&. 0x3FF
-    putWord16 $ sign .|. expon .|. manti
+    depromote = (storableCast :: CFloat -> Word32) . realToFrac
+    w = depromote x
+    sign          = w `shiftR` 31 .&. 0x00000001
+    biased_expon  = w `shiftR` 23 .&. 0x000000FF
+    manti         = w             .&. 0x007FFFFF
+  
+    trimmed_manti = manti `shiftR` 13
+  
+    sign'         = sign
+    (biased_expon', manti')
+      | biased_expon == 0 -- Zero or denorm. May turn denorms into zeroes if they are too small - just accept that
+      = (0x0, trimmed_manti)
+      | biased_expon == 0xFF -- Infinity or NaN. Doesn't preserve which specific NaN we had.
+      = (0x1F, if manti == 0 then 0x000 else 0x3FF)
+      | biased_expon <= 127 - 16 -- Too small: (-)0
+      = (0x00, 0x000)
+      | biased_expon >= (127 - 16 + ((2^5) - 1)) -- Too big: (-)Infinity
+      = (0x1F, 0x000)
+      | otherwise -- Just right!
+      = (biased_expon - (127 - 16), trimmed_manti)
+
+    w' = fromIntegral $ (sign'         `shiftL` 15) .|.
+                        (biased_expon' `shiftL` 10) .|.
+                        manti'
+
+    {-
+    trace (unlines [showBinary w "" ++ " (" ++ show x ++ ")" ++ " ==> " ++ showBinary w' "",
+                    showBinary sign "" ++ " ==> " ++ showBinary sign' "",
+                    showBinary biased_expon' "" ++ " (" ++ show biased_expon ++ ")" ++ " ==> " ++ showBinary biased_expon' "" ++ " (" ++ show biased_expon' ++ ")",
+                    showBinary manti "" ++ " ==> " ++  showBinary manti' ""]) $ return ()
+    -}
 
 \end{code}
 

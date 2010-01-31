@@ -104,8 +104,11 @@ readFileWords = fmap BS.unpack . BS.readFile
 readFileBS :: FilePath -> IO ByteString
 readFileBS = BS.readFile
 
-run :: [Word8] -> SwfGet a -> a
-run = runSwfGet emptySwfEnv . BS.pack
+runGet :: [Word8] -> SwfGet a -> a
+runGet = runSwfGet emptySwfEnv . BS.pack
+
+runPut :: SwfPut -> [Word8]
+runPut = BS.unpack . runSwfPut emptySwfEnv
 
 runGetSwf :: [Word8] -> Swf
 runGetSwf = getSwf . BS.pack

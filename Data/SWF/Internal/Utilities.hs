@@ -5,7 +5,8 @@ module Data.SWF.Internal.Utilities (
     module Control.Monad,
     module Data.Maybe,
     module Data.List,
-    module Debug.Trace
+    module Debug.Trace,
+    module Numeric
   ) where
 
 import Control.Arrow (first, second, (&&&), (***))
@@ -15,6 +16,8 @@ import Data.Maybe
 import Data.List
 
 import Debug.Trace
+
+import Numeric
 
 
 orElse = flip fromMaybe
@@ -60,3 +63,10 @@ genericReplicateM n act = sequence $ genericReplicate n act
 isLeft :: Either a b -> Bool
 isLeft (Left _) = True
 isLeft _        = False
+
+
+padTo :: Int -> a -> [a] -> [a]
+padTo n c xs = replicate (n - length xs) c ++ xs
+
+showBinary :: Integral a => a -> ShowS
+showBinary x = showIntAtBase 2 (\d -> toEnum (fromEnum '0' + d)) (fromIntegral x)

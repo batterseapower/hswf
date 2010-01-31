@@ -3,7 +3,7 @@ module VanillaRect where
 import TestUtilities
 
 
-main = run vanilla_rect_bytes getRECT `assertEquals` vanilla_rect
+main = runGet vanilla_rect_bytes getRECT `assertEquals` vanilla_rect
 
 -- From the specification: tests handling of bitfields and SB values
 vanilla_rect_bytes = [

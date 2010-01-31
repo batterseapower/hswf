@@ -4,7 +4,7 @@ import qualified DefineShapeAlignment
 import qualified Roundtripping
 import qualified SpecificationExample
 
-import Numeric
+import Data.SWF.Internal.Utilities
 
 import Data.Char
 import Data.List
@@ -24,14 +24,8 @@ main = do
 showHexList :: Integral a => [a] -> String
 showHexList xs = "[" ++ intercalate ", " ["0x" ++ padTo 2 '0' (map toUpper $ showHex x "") | x <- xs] ++ "]"
 
-padTo :: Int -> a -> [a] -> [a]
-padTo n c xs = replicate (n - length xs) c ++ xs
-
 showListBinary :: Integral a => [a] -> String
 showListBinary xs = intercalate " " [padTo 8 '0' (showBinary x "") | x <- xs]
-
-showBinary :: Integral a => a -> ShowS
-showBinary x = showIntAtBase 2 (\d -> toEnum (fromEnum '0' + d)) (fromIntegral x)
 
 pretty :: String -> String
 pretty = unlines . go 0 ""
