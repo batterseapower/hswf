@@ -125,14 +125,15 @@ data WhyExcluded = IsReserved | IsPresenceFlag FieldName | IsSelectFlag FieldNam
 data TyCon = TyCon String [FieldExpr]
            deriving (Show, Typeable, Data)
 
-data Type = Type { type_tycons :: [TyCon], type_repeats :: Repeats }
+data Type = TyConType { type_tycon :: TyCon }
+          | RepeatType { type_type :: Type, type_repeats :: Repeats }
           | IfThenType { type_cond :: FieldExpr, type_then :: Type }
           | IfThenElseType { type_cond :: FieldExpr, type_then :: Type, type_else :: Type }
           | CompositeType { type_fields :: [Field] } -- Inserted by analysis
+          | TupleType { type_types :: [Type] }
           deriving (Show, Typeable, Data)
 
-data Repeats = Once
-             | NumberOfTimes FieldExpr
+data Repeats = NumberOfTimes FieldExpr
              | OptionallyAtEnd
              | RepeatsUntilEnd
              deriving (Show, Typeable, Data)
@@ -206,12 +207,11 @@ typ = try conditional
 
 basetyp = do
     optional <- optionality
-    cons <- fmap return tycon <|> tycons
-    repeats <- if optional then return OptionallyAtEnd else repeatspecifier
-    return $ Type cons repeats
+    cons <- tycon <|> tycons
+    mb_repeats <- if optional then return (Just OptionallyAtEnd) else optionMaybe repeatspecifier
+    return $ maybe cons (RepeatType cons) mb_repeats
 
 repeatspecifier = between (char '[') (char ']' >> spaces) (fmap NumberOfTimes expr <|> return RepeatsUntilEnd)
-              <|> return Once
               <?> "repeat specifier"
 
 optionality = do { string "(optional)"; spaces; return True }
@@ -229,7 +229,7 @@ conditional = do
         typ
     return $ maybe (IfThenType e tt) (IfThenElseType e tt) mb_tf
 
-tycon = do { tc <- many1 alphaNum; mb_args <- optionMaybe arguments; spaces; return $ TyCon tc (fromMaybe [] mb_args) }
+tycon = do { tc <- many1 alphaNum; mb_args <- optionMaybe arguments; spaces; return $ TyConType $ TyCon tc (fromMaybe [] mb_args) }
     <?> "type constructor"
 
 fieldname = do { x <- letter; xs <- many alphaNum; return (x:xs) }
@@ -240,7 +240,7 @@ arguments = between (char '(') (char ')' >> spaces) (sepBy expr (char ',' >> spa
 parameters = between (char '(') (char ')' >> spaces) (sepBy fieldname (char ',' >> spaces))
          <?> "parameters"
 
-tycons = between (char '<') (char '>' >> spaces) $ sepBy tycon (char ',' >> spaces)
+tycons = fmap TupleType $ between (char '<') (char '>' >> spaces) $ sepBy tycon (char ',' >> spaces)
 
 expr = buildExpressionParser table (do { e <- factor; spaces; return e })
    <?> "expression"
@@ -331,8 +331,8 @@ identifyExclusions (f:fs)
   | (controls_field:_)
       <- [other_f
          | other_f <- fs
-         , Type { type_tycons=tycons, type_repeats=NumberOfTimes (FieldE len_field_name) } <- [field_type other_f]
-         , case tycons of [tycon] -> isNothing (isBitTyCon tycon);_ -> True  -- IMPORTANT: can't recover the used bit length from these fields!
+         , RepeatType { type_type=typ, type_repeats=NumberOfTimes (FieldE len_field_name) } <- [field_type other_f]
+         , case typ of TyConType tycon -> isNothing (isBitTyCon tycon);_ -> True  -- IMPORTANT: can't recover the used bit length from these fields!
          , len_field_name == field_name f]
   = f { field_excluded = Just (IsLength $ field_name controls_field) } : identifyExclusions fs
   
@@ -342,14 +342,14 @@ identifyExclusions (f:fs)
 
 recordToDecls :: Record -> (SpecialInfo, [Decl])
 recordToDecls (Record { record_name, record_params, record_fields })
-  | (Field "Header" (Type [TyCon "RECORDHEADER" []] Once) comment Nothing):record_fields <- record_fields
+  | (Field "Header" (TyConType (TyCon "RECORDHEADER" [])) comment Nothing):record_fields <- record_fields
   , let tag_type = read $ drop (length "Tag type = ") comment
   , (datacon, datacon_name, getter, getter_name, putter, putter_name) <- process record_fields
   = ((M.singleton Tag [(Int tag_type, getter_name, PRec datacon_name [PFieldWildcard], putter_name)],
       M.singleton Tag [datacon]),
      [getter, putter])
   
-  | (Field field_name (Type [TyCon "ACTIONRECORDHEADER" []] Once) comment Nothing):record_fields <- record_fields
+  | (Field field_name (TyConType (TyCon "ACTIONRECORDHEADER" [])) comment Nothing):record_fields <- record_fields
   , field_name == record_name
   , [(action_code, _)] <- readHex $ drop (length "ActionCode = 0x") comment
   , (datacon, datacon_name, getter, getter_name, putter, putter_name) <- process record_fields
@@ -408,13 +408,35 @@ fieldToSyntax defuser field = case field_excluded field of
 
 typeToSyntax :: (FieldName -> Name) -> Type -> (Exp, Exp -> Exp, LHE.Type)
 typeToSyntax defuser typ = case typ of
+    TyConType (TyCon "PADDING8" [])
+      -> (var "byteAlign",
+           -- Rather nasty hack here to deal with PADDING8. If we don't provide the expression
+           -- to "put" into this field with a type, GHC will complain about ambiguous type variables,
+           -- but flushBits doesn't need any value at all. Solution: force it to have a particular type.
+          \e -> App (App (var "const") (var "flushBits")) (ExpTypeSig noSrcLoc e $ TyTuple Boxed []),
+          TyTuple Boxed [])
+    
+    TyConType (TyCon tycon args)
+      -> (apps (var $ "get" ++ tycon) args_syns,
+          App $ apps (var $ "put" ++ tycon) args_syns,
+          LHE.TyCon (qname tycon))
+      where args_syns = map (fieldExprToSyntax defuser) args
+
+    TupleType typs
+      -> (lift_ (Con con : getters),
+          \e -> caseTuple_ nelems e $ \xs -> Do $ zipWith (\putter x -> Qualifier $ putter (Var $ UnQual x)) putters xs,
+          TyTuple Boxed tys)
+      where (getters, putters, tys) = unzip3 $ map (typeToSyntax defuser) typs
+            nelems = length typs
+            lift_  = apps (var $ "liftM" ++ show nelems)
+            con    = qname $ "(" ++ replicate (nelems - 1) ',' ++ ")"
+
     CompositeType fields
       -> (getter,
           \e -> caseTupleKnownNames_ present_bndrs e putter,
           TyTuple Boxed present_typs)
-      where
-        (present_bndrs, present_typs) = unzip present_fields
-        (present_fields, getter, putter) = fieldsToSyntax defuser fields (Tuple . map (Var . UnQual))
+      where (present_bndrs, present_typs) = unzip present_fields
+            (present_fields, getter, putter) = fieldsToSyntax defuser fields (Tuple . map (Var . UnQual))
 
     IfThenType condexpr typ
       -> (App (App (var "maybeHas") condexprsyn) getexp,
@@ -433,26 +455,24 @@ typeToSyntax defuser typ = case typ of
             (getexpt, putexpt, tyt) = typeToSyntax defuser typt
             (getexpf, putexpf, tyf) = typeToSyntax defuser typf
     
-    Type [TyCon "UB" []] (NumberOfTimes (LitE 1))
+    RepeatType (TyConType (TyCon "UB" [])) (NumberOfTimes (LitE 1))
       -> (var "getFlag",
           App $ var "putFlag",
           LHE.TyCon (qname "Bool"))
     
-    Type [tycon] (NumberOfTimes lenexpr)
+    RepeatType (TyConType tycon) (NumberOfTimes lenexpr)
       | Just tycon_name <- isBitTyCon tycon
       -> (App (var $ "get" ++ tycon_name) lenexpr_syn,
           App $ App (var $ "put" ++ tycon_name) lenexpr_syn,
           LHE.TyCon (qname tycon_name))
       where lenexpr_syn = fieldExprToSyntax defuser lenexpr
     
-    Type [TyCon "BYTE" []] RepeatsUntilEnd
+    RepeatType (TyConType (TyCon "BYTE" [])) RepeatsUntilEnd
       -> (var "getRemainingLazyByteString",
           App $ var "putLazyByteString",
           LHE.TyCon (qname "ByteString"))
     
-    Type tycons repeats -> case repeats of
-        Once
-          -> (onegenexp, oneputexp, onety)
+    RepeatType typ repeats -> case repeats of
         NumberOfTimes lenexpr
           -> (App (App (var "genericReplicateM") lenexprsyn) onegenexp,
               \e -> checkConsistency_ (App (var "genericLength") e) lenexprsyn $ mapM__ (reifyLambda oneputexp) e, -- TODO: check consistency
@@ -466,28 +486,7 @@ typeToSyntax defuser typ = case typ of
           -> (App (var "getToEnd") onegenexp,
               mapM__ (reifyLambda oneputexp),
               TyList onety)
-      where
-        (onegenexp, oneputexp, onety) = case tycons of
-          [tycon] -> (getOne tycon, putOne tycon, tyOne tycon)
-          _       -> (lift_ (Con con : map getOne tycons),
-                      \e -> caseTuple_ ntycons e $ \xs -> Do $ zipWith (\tycon x -> Qualifier $ putOne tycon (Var $ UnQual x)) tycons xs,
-                      TyTuple Boxed (map tyOne tycons))
-          where ntycons = length tycons
-                lift_   = apps (var $ "liftM" ++ show ntycons)
-                con     = qname $ "(" ++ replicate (ntycons - 1) ',' ++ ")"
-        
-        fieldExprs = map (fieldExprToSyntax defuser)
-        
-        getOne (TyCon "PADDING8" []) = var "byteAlign"
-        getOne (TyCon tycon args)    = apps (var $ "get" ++ tycon) (fieldExprs args)
-        
-         -- Rather nasty hack here to deal with PADDING8. If we don't provide the expression
-         -- to "put" into this field with a type, GHC will complain about ambiguous type variables,
-         -- but flushBits doesn't need any value at all. Solution: force it to have a particular type.
-        putOne (TyCon "PADDING8" []) = \e -> App (App (var "const") (var "flushBits")) (ExpTypeSig noSrcLoc e $ TyTuple Boxed [])
-        putOne (TyCon tycon args)    = App $ apps (var $ "put" ++ tycon) (fieldExprs args)
-        
-        tyOne (TyCon tycon _)        = LHE.TyCon (qname tycon)
+      where (onegenexp, oneputexp, onety) = typeToSyntax defuser typ
 
 whyExcludedToSyntax _       IsReserved          = var "reservedDefault"
 whyExcludedToSyntax defuser (IsPresenceFlag fn) = App (var "isJust") (Var $ UnQual $ defuser fn)
@@ -495,7 +494,7 @@ whyExcludedToSyntax defuser (IsSelectFlag fn)   = App (var "isLeft") (Var $ UnQu
 whyExcludedToSyntax defuser (IsLength fn)       = App (var "genericLength") (Var $ UnQual $ defuser fn)
 
 fieldExprToSyntax _       (LitE i) = Lit (Int $ fromIntegral i)
-fieldExprToSyntax defuser (FieldE x) = Var $ UnQual $ defuser x
+fieldExprToSyntax defuser (FieldE x) = Var $ UnQual $ defuser x -- TODO: this is blocking us using short names for non-stored fields, since we don't know what kind of name it will have
 fieldExprToSyntax defuser (UnOpE op e) = App eop (fieldExprToSyntax defuser e)
   where eop = case op of Not -> var "not"
 fieldExprToSyntax defuser (BinOpE op e1 e2) = InfixApp (fieldExprToSyntax defuser e1) (QVarOp $ UnQual $ Symbol $ eop) (fieldExprToSyntax defuser e2)
