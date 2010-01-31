@@ -391,26 +391,19 @@ fieldsToSyntax defuser fields finish
      Do $ getter_stmts ++ [Qualifier $ App (var "return") $ finish (map fst present_fields)],
      Do $ putter_stmts ++ [Qualifier $ App (var "return") (Tuple [])])
   where
-    present_fields = [(bndr, typ) | (Just bndr, Right typ) <- mb_bndrs `zip` storages]
-    
-    getter_stmt Nothing     getter = Qualifier getter
-    getter_stmt (Just bndr) getter = Generator noSrcLoc (PVar bndr) getter
-    getter_stmts = zipWith getter_stmt mb_bndrs getters
-    
-    putter_stmt mb_bndr storage putter
-      = [LetStmt (BDecls [PatBind noSrcLoc (PVar bndr) Nothing (UnGuardedRhs $ whyExcludedToSyntax defuser we) (BDecls [])]) | Left we <- [storage]] ++
-        [Qualifier $ putter (Var (UnQual bndr))]
-      where bndr = fromMaybe (Ident "tmp") mb_bndr
-    putter_stmts = concat $ zipWith3 putter_stmt mb_bndrs storages putters
-    
-    (mb_bndrs, getters, putters, storages) = unzip4 $ map (fieldToSyntax defuser) fields
+    present_fields = catMaybes mb_present_fieldss
+    putter_stmts = concat putter_stmtss
+    (mb_present_fieldss, getter_stmts, putter_stmtss) = unzip3 $ map (fieldToSyntax defuser) fields
 
-fieldToSyntax :: (FieldName -> String) -> Field -> (Maybe Name, Exp, Exp -> Exp, Either WhyExcluded LHE.Type)
-fieldToSyntax defuser field
-  = (mb_bndr, getexp', putexp, maybe (Right ty) Left (field_excluded field))
+fieldToSyntax :: (FieldName -> String) -> Field -> (Maybe (Name, LHE.Type), Stmt, [Stmt])
+fieldToSyntax defuser field = case field_excluded field of
+    Just we | IsReserved <- we -> (Nothing, Qualifier (App (var "discardReserved") getexp), putter_stmts)
+            | otherwise        -> (Nothing, Generator noSrcLoc (PVar bndr) getexp, putter_stmts)
+            where putter_stmts = [LetStmt (BDecls [PatBind noSrcLoc (PVar bndr) Nothing (UnGuardedRhs $ whyExcludedToSyntax defuser we) (BDecls [])]),
+                                  Qualifier $ putexp (Var (UnQual bndr))]
+    Nothing -> (Just (bndr, ty), Generator noSrcLoc (PVar bndr) getexp, [Qualifier $ putexp (Var (UnQual bndr))])
   where
-    (mb_bndr, getexp') | Just IsReserved <- field_excluded field = (Nothing, App (var "discardReserved") getexp)
-                       | otherwise                               = (Just $ Ident $ defuser (field_name field), getexp)
+    bndr = Ident $ defuser (field_name field)
     (getexp, putexp, ty) = typeToSyntax defuser (field_type field)
 
 typeToSyntax :: (FieldName -> String) -> Type -> (Exp, Exp -> Exp, LHE.Type)
