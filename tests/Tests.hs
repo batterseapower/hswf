@@ -9,8 +9,6 @@ import Numeric
 import Data.Char
 import Data.List
 
-import Test.QuickCheck
-
 
 -- The actual tests:
 main :: IO ()

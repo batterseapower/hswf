@@ -6,7 +6,6 @@ import TestUtilities
 main = do
     run [0x00, 0x80, 0x07, 0x00] getFIXED `assertEquals` FIXED { fIXED_integer = 7, fIXED_decimal = 32768 } -- 7.5
     
-    let aligned what = do { x <- what; byteAlign; return x }
     run [0x78] (aligned $ getUB 5) `assertEquals` 15
     run [0xE0] (aligned $ getSB 4) `assertEquals` (-2)
     run [0x46] (aligned $ getSB 7) `assertEquals` 35

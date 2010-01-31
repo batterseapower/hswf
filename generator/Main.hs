@@ -1,4 +1,4 @@
-{-# LANGUAGE NamedFieldPuns, PatternGuards #-}
+{-# LANGUAGE NamedFieldPuns, PatternGuards, DerivingDataTypeable #-}
 module Main where
 
 import Control.Arrow (first)
@@ -25,6 +25,9 @@ import qualified Language.Haskell.Exts.Pretty as LHEP
 
 -- TODO:
 --  * Mark reserved fields with _ instead of detecting them
+--  * Don't generate consistency checks for condexpr and
+--    lenexpr that are the basis for excluding a field, since
+--    they will always be consistent with the rematerialised value
 
 
 main :: IO ()
@@ -93,7 +96,7 @@ data Record = Record {
     record_name :: RecordName,
     record_params :: [FieldName],
     record_fields :: [Field]
-  } deriving (Show)
+  } deriving (Show, Typeable, Data)
 
 type FieldName = String
 
@@ -102,37 +105,37 @@ data Field = Field {
     field_type :: Type,
     field_comment :: String,
     field_excluded :: Maybe WhyExcluded
-  } deriving (Show)
+  } deriving (Show, Typeable, Data)
 
 data WhyExcluded = IsReserved | IsPresenceFlag FieldName | IsSelectFlag FieldName | IsLength FieldName
-                 deriving (Show)
+                 deriving (Show, Typeable, Data)
 
 data TyCon = TyCon String [FieldExpr]
-           deriving (Show)
+           deriving (Show, Typeable, Data)
 
 data Type = Type { type_tycons :: [TyCon], type_repeats :: Repeats }
           | IfThenType { type_cond :: FieldExpr, type_then :: Type }
           | IfThenElseType { type_cond :: FieldExpr, type_then :: Type, type_else :: Type }
           | CompositeType { type_fields :: [Field] } -- Inserted by analysis
-          deriving (Show)
+          deriving (Show, Typeable, Data)
 
 data Repeats = Once
              | NumberOfTimes FieldExpr
              | OptionallyAtEnd
              | RepeatsUntilEnd
-             deriving (Show)
+             deriving (Show, Typeable, Data)
 
 data FieldExpr = LitE Int
                | FieldE FieldName
                | UnOpE FieldUnOp FieldExpr
                | BinOpE FieldBinOp FieldExpr FieldExpr
-               deriving (Eq, Show)
+               deriving (Eq, Show, Typeable, Data)
 
 data FieldUnOp = Not
-               deriving (Eq, Show)
+               deriving (Eq, Show, Typeable, Data)
 
 data FieldBinOp = Plus | Mult | Equals | NotEquals | Or | And
-                deriving (Eq, Show)
+                deriving (Eq, Show, Typeable, Data)
 
 type_cond_maybe :: Type -> Maybe (Bool, FieldExpr)
 type_cond_maybe (IfThenType { type_cond })     = Just (True, type_cond)
@@ -251,6 +254,7 @@ skiptspaces ma = do
     return a
 
 
+-- The real purpose of this is to fix up the types of the conditional expressions (0 may be used instead of False, etc)
 simplify :: [Field] -> [Field]
 simplify = map simplifyOne
   where simplifyOne f = f { field_type = fmapFieldExpr (simplifyFieldExpr True) (field_type f) }
@@ -293,16 +297,27 @@ identifyExclusions (f:fs)
   | any (`isInfixOf` field_name f) ["Reserved", "Padding"]
   = f { field_excluded = Just IsReserved } : identifyExclusions fs
   
-  -- TODO: only do these two if no other fields mention this one?
+  -- NB: we can only be said to control a field if the length count
+  -- or condition is at the top level. If it is nested within another
+  -- then when we write back we won't necessarily be able to materialise
+  -- its value.
   
-  | [(if_then, controls_field)] <- [(if_then, other_f) | other_f <- fs
-                                                       , Just (if_then, FieldE cond_field_name) <- [type_cond_maybe (field_type other_f)]
-                                                       , cond_field_name == field_name f]
+  -- However, it's totally OK to control more than one field. We can
+  -- still extract a value in this case, and the consistency checks
+  -- will ensure that everything is OK when writing back.
+  
+  | ((if_then, controls_field):_)
+      <- [(if_then, other_f)
+         | other_f <- fs
+         , Just (if_then, FieldE cond_field_name) <- [type_cond_maybe (field_type other_f)]
+         , cond_field_name == field_name f]
   = f { field_excluded = Just ((if if_then then IsPresenceFlag else IsSelectFlag) $ field_name controls_field) } : identifyExclusions fs
   
-  | [controls_field] <- [other_f | other_f <- fs
-                                 , Type { type_repeats=NumberOfTimes (FieldE len_field_name) } <- [field_type other_f]
-                                 , len_field_name == field_name f]
+  | (controls_field:_)
+      <- [other_f
+         | other_f <- fs
+         , Type { type_repeats=NumberOfTimes (FieldE len_field_name) } <- [field_type other_f]
+         , len_field_name == field_name f]
   = f { field_excluded = Just (IsLength $ field_name controls_field) } : identifyExclusions fs
   
   | otherwise

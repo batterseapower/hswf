@@ -295,7 +295,7 @@ getFB nbits = fmap parse (getBits nbits)
   where parse bits = FIXED { fIXED_integer = signextend (nbits - 16) (bits `shiftR` 16), fIXED_decimal = fromIntegral (bits .&. 0xFFFF) }
 
 putFB :: Integral a => a -> FB -> SwfPut
-putFB nbits fixed = putBits nbits $ (signretract (nbits - 15) $ fIXED_integer fixed) `shiftL` 16 .|. (fromIntegral (fIXED_decimal fixed) .&. 0xFFFF)
+putFB nbits fixed = putBits nbits $ ((signretract (nbits - 16) $ fIXED_integer fixed) `shiftL` 16) .|. fromIntegral (fIXED_decimal fixed)
 
 \end{code}
 

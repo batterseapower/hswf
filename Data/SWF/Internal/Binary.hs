@@ -158,8 +158,8 @@ runSwfPut env = snd . runSwfPutM env
 checkFlushesAll :: SwfPutM a -> SwfPutM a 
 checkFlushesAll mx = SwfPutM $ \env byte nbits -> do
     (byte, nbits, x) <- unSwfPutM mx env byte nbits
-    if nbits /= 0
-     then error $ show nbits ++ " unwritten bits - almost certainly an error"
+    if nbits /= 8
+     then error $ show (8 - nbits) ++ " unwritten bits - almost certainly an error"
      else return (byte, nbits, x)
 
 
@@ -215,4 +215,4 @@ putBits n x | n <  0    = error "putBits: negative bits"
       | otherwise = return (byte .|. fromIntegral (x `shiftL` (want_nbits - nbits)), want_nbits - nbits, ())
 
 flushBits :: SwfPut
-flushBits = SwfPutM $ \_ byte _nbits -> B.putWord8 byte >> return (0, 8, ())
+flushBits = SwfPutM $ \_ byte nbits -> when (nbits /= 8) (B.putWord8 byte) >> return (0, 8, ())

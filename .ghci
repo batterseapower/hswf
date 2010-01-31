@@ -1,3 +1,4 @@
-:set -XTupleSections -XRecordWildCards -XDeriveDataTypeable -XGeneralizedNewtypeDeriving
+:set -XTupleSections -XRecordWildCards -XDeriveDataTypeable -XGeneralizedNewtypeDeriving -XStandaloneDeriving
 :set -itests -i.
+:set -package QuickCheck-1.2.0.0
 :load tests/Tests.hs
