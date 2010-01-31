@@ -527,7 +527,7 @@ fieldExprToSyntax _       (LitE i) = Lit (Int $ fromIntegral i)
 fieldExprToSyntax defuser (FieldE x) = Var $ UnQual $ defuser x -- TODO: this is blocking us using short names for non-stored fields, since we don't know what kind of name it will have
 fieldExprToSyntax defuser (UnOpE op e) = App eop (fieldExprToSyntax defuser e)
   where eop = case op of Not -> var "not"
-fieldExprToSyntax defuser (BinOpE op e1 e2) = InfixApp (fieldExprToSyntax defuser e1) (QVarOp $ UnQual $ Symbol $ eop) (fieldExprToSyntax defuser e2)
+fieldExprToSyntax defuser (BinOpE op e1 e2) = InfixApp (fieldExprToSyntax defuser e1) (qop eop) (fieldExprToSyntax defuser e2)
   where eop = case op of Plus -> "+"; Mult -> "*"; Equals -> "=="; NotEquals -> "/="; And -> "&&"; Or -> "||"
 
 
@@ -553,7 +553,7 @@ mapM__ ef exs = App (App (var "mapM_") ef) exs
 reifyLambda oneputexp = Lambda noSrcLoc [PVar $ Ident "x"] (oneputexp $ var "x")
 
 checkConsistency_ ehave ecomputed eresult
-  = If (InfixApp ehave (QVarOp $ UnQual $ Symbol "/=") (Paren ecomputed)) (var "inconsistent") eresult
+  = If (InfixApp ehave (qop "/=") (Paren ecomputed)) (var "inconsistent") eresult
 
 checkConsistencyAltsTrue_ ecomputed eresult
   = GuardedAlts [GuardedAlt noSrcLoc [Qualifier ecomputed]         eresult,
@@ -584,6 +584,7 @@ caseTupleKnownNames_ xs e e_branch
 
 var = Var . UnQual . Ident
 qname = UnQual . Ident
+qop = QVarOp . UnQual . Symbol
 con = Con . qname
 noSrcLoc = SrcLoc "<unknown>" 0 0
 apps = foldl App

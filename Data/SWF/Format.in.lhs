@@ -25,14 +25,17 @@ TODOS
   * In particular, the zlib compressed fields in the image chapter
   * Perhaps also those embedding sound and video formats
 3) Reduce semantic junk
-  * NBits fields
+  * NBits fields, even those in CXFORM and stuff like mATRIX_scaleBits
+  * "NumFillBits" and the like...
 4) Asserts to validate semantic junk is in agreement with each other in all custom data types
+  * And assertions for NBits!
 5) Simplify away generated consistency checks that are trivially true
 6) Overflow checks on UB/SB/FB fields, since the data types used to represent them are imprecise
 7) Generate comments on constructor fields and add them to custom ones
 8) Represent some [UI8] as ByteString?
 9) Add String sources to the inconsistency checks for debugging
 10) Clean up names in putters and getters: don't give excluded fields record-prefixed names
+11) Review all handled tags to ensure that changing the size due to the roundtrip won't screw up any offset fields.. hmm!
 
 
 Roundtripping
@@ -313,6 +316,9 @@ getFlag = fmap (/= 0) (getUB 1)
 putFlag :: Bool -> SwfPut
 putFlag x = putUB 1 (if x then 1 else 0)
 
+requiredBitsUB :: Integral a => UB -> a
+requiredBitsUB = ceiling . logBase 2 . (+1) . fromIntegral
+
 \end{code}
 
 \begin{code}
@@ -343,6 +349,9 @@ signretract nbits num
 putSB :: Integral a => a -> SB -> SwfPut
 putSB nbits = putBits nbits . signretract nbits
 
+requiredBitsSB :: Integral a => SB -> a
+requiredBitsSB = (+1) . ceiling . logBase 2 . (+1) . fromIntegral . abs
+
 \end{code}
 
 \begin{code}
@@ -356,6 +365,9 @@ getFB nbits = fmap parse (getBits nbits)
 
 putFB :: Integral a => a -> FB -> SwfPut
 putFB nbits fixed = putBits nbits $ ((signretract (nbits - 16) $ fIXED_integer fixed) `shiftL` 16) .|. fromIntegral (fIXED_decimal fixed)
+
+requiredBitsFB :: Integral a => FB -> a
+requiredBitsFB = (+16) . requiredBitsSB . fromIntegral . fIXED_integer
 
 \end{code}
 
