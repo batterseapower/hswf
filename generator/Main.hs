@@ -391,21 +391,22 @@ typeToSyntax defuser typ = case typ of
         (present_bndrs, present_typs) = unzip present_fields
         (present_fields, getter, putter) = fieldsToSyntax defuser fields (Tuple . map (Var . UnQual))
 
-    IfThenType condexpr typ -- TODO: check consistency
-      -> (App (App (var "maybeHas") (fieldExprToSyntax defuser condexpr)) getexp,
-          \e -> caseMaybe_ e putexp (App (var "return") (Tuple [])),
+    IfThenType condexpr typ
+      -> (App (App (var "maybeHas") condexprsyn) getexp,
+          \e -> caseMaybe_ e (checkConsistency_ (con "True")  condexprsyn . putexp)
+                             (checkConsistency_ (con "False") condexprsyn $ App (var "return") (Tuple [])),
           maybeTy_ ty)
-      where (getexp, putexp, ty) = typeToSyntax defuser typ
+      where condexprsyn = fieldExprToSyntax defuser condexpr
+            (getexp, putexp, ty) = typeToSyntax defuser typ
     
-    IfThenElseType condexpr typt typf -- TODO: check consistency
-      -> (If (fieldExprToSyntax defuser condexpr) (fmap_ (con "Left") getexpt) (fmap_ (con "Right") getexpf),
-          \e -> caseEither_ e putexpt putexpf,
+    IfThenElseType condexpr typt typf
+      -> (If condexprsyn (fmap_ (con "Left") getexpt) (fmap_ (con "Right") getexpf),
+          \e -> caseEither_ e (checkConsistency_ (con "True")  condexprsyn . putexpt)
+                              (checkConsistency_ (con "False") condexprsyn . putexpf),
           eitherTy_ tyt tyf)
-      where (getexpt, putexpt, tyt) = typeToSyntax defuser typt
+      where condexprsyn = fieldExprToSyntax defuser condexpr
+            (getexpt, putexpt, tyt) = typeToSyntax defuser typt
             (getexpf, putexpf, tyf) = typeToSyntax defuser typf
-            
-            fmap_ efun efunctor = App (App (var "fmap") efun) efunctor
-            eitherTy_ ty1 ty2 = TyApp (TyApp (LHE.TyCon (qname "Either")) ty1) ty2
     
     Type [TyCon "UB" []] (NumberOfTimes (LitE 1))
       -> (var "getFlag",
@@ -428,9 +429,10 @@ typeToSyntax defuser typ = case typ of
         Once
           -> (onegenexp, oneputexp, onety)
         NumberOfTimes lenexpr
-          -> (App (App (var "genericReplicateM") (fieldExprToSyntax defuser lenexpr)) onegenexp,
-              mapM__ (reifyLambda oneputexp), -- TODO: check consistency
+          -> (App (App (var "genericReplicateM") lenexprsyn) onegenexp,
+              \e -> checkConsistency_ (App (var "genericLength") e) lenexprsyn $ mapM__ (reifyLambda oneputexp) e, -- TODO: check consistency
               TyList onety)
+          where lenexprsyn = fieldExprToSyntax defuser lenexpr
         OptionallyAtEnd
           -> (App (App (var "maybeHasM") (App (App (var "fmap") (var "not")) (var "isEmpty"))) onegenexp,
               \e -> caseMaybe_ e oneputexp (App (var "return") (Tuple [])),
@@ -486,10 +488,16 @@ defuseFieldName record_name field_name = toVarName record_name ++ '_':toVarName 
   where toVarName (c:s) = toLower c : s
 
 
-maybeTy_ = TyApp (LHE.TyCon (qname "Maybe"))
+maybeTy_ = TyApp (LHE.TyCon (qname "Maybe"))  
+eitherTy_ ty1 ty2 = TyApp (TyApp (LHE.TyCon (qname "Either")) ty1) ty2
+
+fmap_ efun efunctor = App (App (var "fmap") efun) efunctor
+mapM__ ef exs = App (App (var "mapM_") ef) exs
 
 reifyLambda oneputexp = Lambda noSrcLoc [PVar $ Ident "x"] (oneputexp $ var "x")
-mapM__ ef exs = App (App (var "mapM_") ef) exs
+
+checkConsistency_ ehave ecomputed eresult
+  = If (InfixApp ehave (QVarOp $ UnQual $ Symbol "/=") (Paren ecomputed)) (var "inconsistent") eresult
 
 caseMaybe_ e e_just e_nothing
   = Case e [Alt noSrcLoc (PApp (qname "Just") [PVar $ Ident "x"]) (UnGuardedAlt $ e_just (var "x")) (BDecls []),
