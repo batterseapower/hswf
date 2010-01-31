@@ -2505,7 +2505,7 @@ getMORPHGRADIENT = do
 
 putMORPHGRADIENT ms = do
     putUI8 (genericLength ms)
-    mapM_ putMORPHGRADIENTRECORD ms
+    mapM_ putMORPHGRADRECORD ms
 
 \end{code}
 

@@ -23,6 +23,10 @@ import qualified Language.Haskell.Exts.Syntax as LHE
 import qualified Language.Haskell.Exts.Pretty as LHEP
 
 
+-- TODO:
+--  * Mark reserved fields with _ instead of detecting them
+
+
 main :: IO ()
 main = do
     [file] <- getArgs
@@ -42,16 +46,16 @@ unParseChunk _ (RecordChunk r)
   = (specialinfo, codeBlock decls)
   where (specialinfo, decls) = recordToDecls $ r { record_fields = identifyExclusions $ identifyComposites $ simplify $ record_fields r }
 unParseChunk (getter_special, putter_special, _) (GenFunctionsChunk gen)
-  = (emptySpecialInfo, codeBlock [decl]) -- TODO: use putter_special
-  where (varName, getterName) = case gen of
-            Tag         -> ("tagType",    "generatedTagGetters")
-            Action      -> ("actionCode", "generatedActionGetters")
-            ShapeRecord -> error "No getter for generated shape records"
+  = (emptySpecialInfo, codeBlock [mkDispatcher "Getters" getter_special,
+                                  mkDispatcher "Putters" putter_special])
+  where varName = map toLower (show gen)
     
-        decl = FunBind [Match noSrcLoc (Ident getterName) [PVar (Ident varName)] Nothing (UnGuardedRhs dispatcher) (BDecls [])]
-        dispatcher = Case (var varName) (alts ++ [default_alt])
-        alts = [Alt noSrcLoc pat (UnGuardedAlt (App (con "Just") (Var $ UnQual getterName))) (BDecls []) | (pat, getterName) <- M.findWithDefault [] gen getter_special]
-        default_alt = Alt noSrcLoc PWildCard (UnGuardedAlt (con "Nothing")) (BDecls [])
+        mkDispatcher thing thingmap
+          = FunBind [Match noSrcLoc (Ident $ "generated" ++ show gen ++ thing) [PVar (Ident varName)] Nothing (UnGuardedRhs dispatcher) (BDecls [])]
+          where
+            dispatcher = Case (var varName) (alts ++ [default_alt])
+            alts = [Alt noSrcLoc pat (UnGuardedAlt (App (con "Just") (Var $ UnQual thingname))) (BDecls []) | (pat, thingname) <- M.findWithDefault [] gen thingmap]
+            default_alt = Alt noSrcLoc PWildCard (UnGuardedAlt (con "Nothing")) (BDecls [])
 unParseChunk (_, _, datacon_special) (GenConstructorsChunk gen)
   = (emptySpecialInfo, ["         " ++ (if firstalt then "=" else "|") ++ LHEP.prettyPrint datacon | (firstalt, datacon) <- (exhaustive : repeat False) `zip` datacons])
   where exhaustive = gen == ShapeRecord
@@ -264,11 +268,6 @@ identifyComposites (f:fs)
   | otherwise
   = f : identifyComposites fs
 
-spanMaybe :: (a -> Maybe b) -> [a] -> ([b], [a])
-spanMaybe f = go
-  where go []     = ([], [])
-        go (x:xs) | Just y <- f x = first (y:) $ go xs
-                  | otherwise     = ([], x:xs)
 
 compositeName :: [String] -> String
 compositeName names
@@ -311,74 +310,83 @@ recordToDecls :: Record -> (SpecialInfo, [Decl])
 recordToDecls (Record { record_name, record_params, record_fields })
   | (Field "Header" (Type [TyCon "RECORDHEADER" []] Once) comment Nothing):record_fields <- record_fields
   , let tag_type = read $ drop (length "Tag type = ") comment
-  , (datacon, getter, getter_name) <- process record_fields
+  , (datacon, datacon_name, getter, getter_name, putter, putter_name) <- process record_fields
   = ((M.singleton Tag [(PLit (Int tag_type), getter_name)],
-      M.empty, -- TODO
+      M.singleton Tag [(PRec datacon_name [PFieldWildcard], putter_name)],
       M.singleton Tag [datacon]),
-     [getter])
+     [getter, putter])
   
   | (Field field_name (Type [TyCon "ACTIONRECORDHEADER" []] Once) comment Nothing):record_fields <- record_fields
   , field_name == record_name
   , [(action_code, _)] <- readHex $ drop (length "ActionCode = 0x") comment
-  , (datacon, getter, getter_name) <- process record_fields
+  , (datacon, datacon_name, getter, getter_name, putter, putter_name) <- process record_fields
   = ((M.singleton Action [(PLit (Int action_code), getter_name)],
-      M.empty, -- TODO
+      M.singleton Action [(PRec datacon_name [PFieldWildcard], putter_name)],
       M.singleton Action [datacon]),
-     [getter])
+     [getter, putter])
   
   | record_name `elem` ["STYLECHANGERECORD", "STRAIGHTEDGERECORD", "CURVEDEDGERECORD"]
-  , (datacon, getter, _) <- process record_fields
+  , (datacon, _, getter, _, putter, _) <- process record_fields
   = ((M.empty, M.empty, M.singleton ShapeRecord [datacon]),
-     [getter])
+     [getter, putter])
   
-  | (datacon, getter, _) <- process record_fields
+  | (datacon, _, getter, _, putter, _) <- process record_fields
   = ((M.empty, M.empty, M.empty),
-     [DataDecl noSrcLoc DataType [] (Ident record_name) [] [datacon] derivng, getter])
+     [DataDecl noSrcLoc DataType [] (Ident record_name) [] [datacon] derivng, getter, putter])
   where
     derivng = [(qname "Eq", []), (qname "Show", []), (qname "Typeable", []), (qname "Data", [])]
     
-    process record_fields = (datacon, getter, getter_name)
+    process record_fields = (datacon, datacon_name, getter, getter_name, putter, putter_name)
       where
+        datacon_name = qname record_name
         datacon = QualConDecl noSrcLoc [] [] (RecDecl (Ident record_name) recfields)
-        
-        getter_name = Ident $ "get" ++ record_name
-        getter = FunBind [Match noSrcLoc getter_name (map (PVar . Ident . defuser) record_params) Nothing (UnGuardedRhs getexpr) (BDecls [])]
+        recfields = [([bndr], UnBangedTy typ) | (bndr, typ) <- present_fields]
         
         defuser = defuseFieldName record_name
-        (field_getters, field_putters, field_mb_types) = unzip3 $ map (fieldToSyntax defuser) record_fields
+        params_bndrs = map (PVar . Ident . defuser) record_params
         
-        recfields = [([Ident $ defuser field_name], UnBangedTy field_type) | (Field { field_name }, Just field_type) <- record_fields `zip` field_mb_types]
-        getexpr = Do $ field_getters ++ [Qualifier $ App (var "return") (RecConstr (qname record_name) [FieldWildcard])]
+        getter_name = Ident $ "get" ++ record_name
+        getter = FunBind [Match noSrcLoc getter_name params_bndrs Nothing (UnGuardedRhs getexpr) (BDecls [])]
+        
+        putter_name = Ident $ "put" ++ record_name
+        putter = FunBind [Match noSrcLoc putter_name (params_bndrs ++ [PRec datacon_name [PFieldWildcard]]) Nothing (UnGuardedRhs putexpr) (BDecls [])]
+        
+        (present_fields, getexpr, putexpr) = fieldsToSyntax defuser record_fields (\_ -> RecConstr (qname record_name) [FieldWildcard])
 
-fieldToSyntax :: (FieldName -> String) -> Field -> (Stmt, Exp -> Stmt, Maybe LHE.Type)
-fieldToSyntax defuser field
-  = (Generator noSrcLoc bind_to getexp,
-     \e -> Qualifier (putexp e),
-     if should_exclude then Nothing else Just ty)
+fieldsToSyntax :: (FieldName -> String) -> [Field] -> ([Name] -> Exp) -> ([(Name, LHE.Type)], Exp, Exp)
+fieldsToSyntax defuser fields finish
+  = (present_fields,
+     Do $ getter_stmts ++ [Qualifier $ App (var "return") $ finish (map fst present_fields)],
+     Do $ putter_stmts ++ [Qualifier $ App (var "return") (Tuple [])])
   where
-    should_exclude = isJust (field_excluded field)
-    (getexp, putexp, ty) = typeToSyntax defuser (field_type field)
-    bind_to = PVar $ Ident $ (case field_excluded field of Just IsReserved -> ('_':); _ -> id) $ defuser (field_name field)
+    present_fields = [(bndr, typ) | (bndr, Right typ) <- bndrs `zip` storages]
+    
+    getter_stmt bndr getter = Generator noSrcLoc (PVar bndr) getter
+    getter_stmts = zipWith getter_stmt bndrs getters
+    
+    putter_stmt bndr (Left we) putter = LetStmt (BDecls [PatBind noSrcLoc (PVar bndr) Nothing (UnGuardedRhs $ whyExcludedToSyntax defuser we) (BDecls [])])
+    putter_stmt bndr (Right _) putter = Qualifier $ putter (Var (UnQual bndr))
+    putter_stmts = zipWith3 putter_stmt bndrs storages putters
+    
+    (bndrs, getters, putters, storages) = unzip4 $ map (fieldToSyntax defuser) fields
+
+fieldToSyntax :: (FieldName -> String) -> Field -> (Name, Exp, Exp -> Exp, Either WhyExcluded LHE.Type)
+fieldToSyntax defuser field
+  = (Ident $ (case field_excluded field of Just IsReserved -> ('_':); _ -> id) $ defuser (field_name field),
+     getexp,
+     putexp,
+     maybe (Right ty) Left (field_excluded field))
+  where (getexp, putexp, ty) = typeToSyntax defuser (field_type field)
 
 typeToSyntax :: (FieldName -> String) -> Type -> (Exp, Exp -> Exp, LHE.Type)
 typeToSyntax defuser typ = case typ of
     CompositeType fields
-      -> (Do $ getters ++ [Qualifier $ App (var "return") (Tuple getcomponents)],
-          \e -> caseTuple_ (length getcomponents) e putcomponents,
-          TyTuple Boxed (catMaybes mb_tys))
+      -> (getter,
+          \e -> caseTupleKnownNames_ present_bndrs e putter,
+          TyTuple Boxed present_typs)
       where
-        getcomponents = [Var (UnQual bound_to) | (Generator _ (PVar bound_to) _, _, Just _) <- fieldsyntaxs]
-        putcomponents xs = Do [putter (maybe (Lit (Int 0)) (Var . UnQual) mb_x) | (putter, mb_x) <- match xs fieldsyntaxs]
-        
-        -- Match up the components of the tuple we created previously with the fields
-        -- they originate from, so we can reconstruct those field contents.
-        match [] [] = []
-        match xs (fieldsyntax:fieldsyntaxs) = case fieldsyntax of
-            (_, putter, Just _)  | (x:xs) <- xs -> (putter, Just x) : match xs fieldsyntaxs
-            (_, putter, Nothing)                -> (putter, Nothing) : match xs fieldsyntaxs
-        
-        fieldsyntaxs = map (fieldToSyntax defuser) fields
-        (getters, putters, mb_tys) = unzip3 fieldsyntaxs
+        (present_bndrs, present_typs) = unzip present_fields
+        (present_fields, getter, putter) = fieldsToSyntax defuser fields (Tuple . map (Var . UnQual))
 
     IfThenType condexpr typ -- TODO: check consistency
       -> (App (App (var "maybeHas") (fieldExprToSyntax defuser condexpr)) getexp,
@@ -448,12 +456,18 @@ typeToSyntax defuser typ = case typ of
         
         tyOne (TyCon tycon _)        = LHE.TyCon (qname tycon)
 
+
+whyExcludedToSyntax _       IsReserved          = Lit (Int 0)
+whyExcludedToSyntax defuser (IsPresenceFlag fn) = App (var "isJust") (var $ defuser fn)
+whyExcludedToSyntax defuser (IsLength fn)       = App (var "genericLength") (var $ defuser fn)
+
 fieldExprToSyntax _       (LitE i) = Lit (Int $ fromIntegral i)
 fieldExprToSyntax defuser (FieldE x) = var (defuser x)
 fieldExprToSyntax defuser (UnOpE op e) = App eop (fieldExprToSyntax defuser e)
   where eop = case op of Not -> var "not"
 fieldExprToSyntax defuser (BinOpE op e1 e2) = InfixApp (fieldExprToSyntax defuser e1) (QVarOp $ UnQual $ Symbol $ eop) (fieldExprToSyntax defuser e2)
   where eop = case op of Plus -> "+"; Mult -> "*"; Equals -> "=="; NotEquals -> "/="; And -> "&&"; Or -> "||"
+
 
 simplifyFieldExpr True (BinOpE Equals e1 (LitE 1)) = simplifyFieldExpr True e1
 simplifyFieldExpr True (BinOpE Equals e1 (LitE 0)) = UnOpE Not (simplifyFieldExpr True e1)
@@ -481,12 +495,22 @@ caseEither_ e e_left e_right
   = Case e [Alt noSrcLoc (PApp (qname "Left")  [PVar $ Ident "x"]) (UnGuardedAlt $ e_left (var "x"))  (BDecls []),
             Alt noSrcLoc (PApp (qname "Right") [PVar $ Ident "x"]) (UnGuardedAlt $ e_right (var "x")) (BDecls [])]
 
-caseTuple_ n e e_branch
-  = Case e [Alt noSrcLoc (PTuple (map PVar xs)) (UnGuardedAlt $ e_branch xs) (BDecls [])]
+caseTuple_ n e e_branch = caseTupleKnownNames_ xs e (e_branch xs)
   where xs = map (Ident . ("x" ++) . show) [1..n]
+
+caseTupleKnownNames_ xs e e_branch
+  = Case e [Alt noSrcLoc (PTuple (map PVar xs)) (UnGuardedAlt e_branch) (BDecls [])]
+
 
 var = Var . UnQual . Ident
 qname = UnQual . Ident
 con = Con . qname
 noSrcLoc = SrcLoc "<unknown>" 0 0
 apps = foldl App
+
+
+spanMaybe :: (a -> Maybe b) -> [a] -> ([b], [a])
+spanMaybe f = go
+  where go []     = ([], [])
+        go (x:xs) | Just y <- f x = first (y:) $ go xs
+                  | otherwise     = ([], x:xs)

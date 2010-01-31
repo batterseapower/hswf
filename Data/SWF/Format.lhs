@@ -93,6 +93,10 @@ getFIXED
   = do fIXED_decimal <- getUI16
        fIXED_integer <- getSI16
        return (FIXED{..})
+putFIXED FIXED{..}
+  = do putUI16 fIXED_decimal
+       putSI16 fIXED_integer
+       return ()
 
 \end{code}
 
@@ -114,6 +118,10 @@ getFIXED8
   = do fIXED8_decimal <- getUI8
        fIXED8_integer <- getSI8
        return (FIXED8{..})
+putFIXED8 FIXED8{..}
+  = do putUI8 fIXED8_decimal
+       putSI8 fIXED8_integer
+       return ()
 
 \end{code}
 
@@ -363,6 +371,11 @@ getRGB
        rGB_green <- getUI8
        rGB_blue <- getUI8
        return (RGB{..})
+putRGB RGB{..}
+  = do putUI8 rGB_red
+       putUI8 rGB_green
+       putUI8 rGB_blue
+       return ()
 
 \end{code}
 
@@ -378,6 +391,12 @@ getRGBA
        rGBA_blue <- getUI8
        rGBA_alpha <- getUI8
        return (RGBA{..})
+putRGBA RGBA{..}
+  = do putUI8 rGBA_red
+       putUI8 rGBA_green
+       putUI8 rGBA_blue
+       putUI8 rGBA_alpha
+       return ()
 
 \end{code}
 
@@ -392,6 +411,12 @@ getARGB
        aRGB_green <- getUI8
        aRGB_blue <- getUI8
        return (ARGB{..})
+putARGB ARGB{..}
+  = do putUI8 aRGB_alpha
+       putUI8 aRGB_red
+       putUI8 aRGB_green
+       putUI8 aRGB_blue
+       return ()
 
 \end{code}
 
@@ -409,6 +434,14 @@ getRECT
        rECT_ymax <- getSB rECT_nbits
        _rECT_padding <- byteAlign
        return (RECT{..})
+putRECT RECT{..}
+  = do putUB 5 rECT_nbits
+       putSB rECT_nbits rECT_xmin
+       putSB rECT_nbits rECT_xmax
+       putSB rECT_nbits rECT_ymin
+       putSB rECT_nbits rECT_ymax
+       let _rECT_padding = 0
+       return ()
 
 \end{code}
 
@@ -438,6 +471,34 @@ getMATRIX
        mATRIX_translateY <- getSB mATRIX_translateBits
        _mATRIX_padding <- byteAlign
        return (MATRIX{..})
+putMATRIX MATRIX{..}
+  = do let mATRIX_hasScale = isJust mATRIX_scale
+       case mATRIX_scale of
+           Just x -> case x of
+                         (mATRIX_scaleBits, mATRIX_scaleX, mATRIX_scaleY) -> do putUB 5
+                                                                                  mATRIX_scaleBits
+                                                                                putFB
+                                                                                  mATRIX_scaleBits
+                                                                                  mATRIX_scaleX
+                                                                                putFB
+                                                                                  mATRIX_scaleBits
+                                                                                  mATRIX_scaleY
+                                                                                return ()
+           Nothing -> return ()
+       let mATRIX_hasRotate = isJust mATRIX_rotate
+       case mATRIX_rotate of
+           Just x -> case x of
+                         (mATRIX_rotateBits, mATRIX_rotateSkew0,
+                          mATRIX_rotateSkew1) -> do putUB 5 mATRIX_rotateBits
+                                                    putFB mATRIX_rotateBits mATRIX_rotateSkew0
+                                                    putFB mATRIX_rotateBits mATRIX_rotateSkew1
+                                                    return ()
+           Nothing -> return ()
+       putUB 5 mATRIX_translateBits
+       putSB mATRIX_translateBits mATRIX_translateX
+       putSB mATRIX_translateBits mATRIX_translateY
+       let _mATRIX_padding = 0
+       return ()
 
 \end{code}
 
@@ -466,6 +527,28 @@ getCXFORM
                                  (cXFORM_redAddTerm, cXFORM_greenAddTerm, cXFORM_blueAddTerm))
        _cXFORM_padding <- byteAlign
        return (CXFORM{..})
+putCXFORM CXFORM{..}
+  = do let cXFORM_hasAddTerms = isJust cXFORM_addTerm
+       let cXFORM_hasMultTerms = isJust cXFORM_multTerm
+       putUB 4 cXFORM_nbits
+       case cXFORM_multTerm of
+           Just x -> case x of
+                         (cXFORM_redMultTerm, cXFORM_greenMultTerm,
+                          cXFORM_blueMultTerm) -> do putSB cXFORM_nbits cXFORM_redMultTerm
+                                                     putSB cXFORM_nbits cXFORM_greenMultTerm
+                                                     putSB cXFORM_nbits cXFORM_blueMultTerm
+                                                     return ()
+           Nothing -> return ()
+       case cXFORM_addTerm of
+           Just x -> case x of
+                         (cXFORM_redAddTerm, cXFORM_greenAddTerm,
+                          cXFORM_blueAddTerm) -> do putSB cXFORM_nbits cXFORM_redAddTerm
+                                                    putSB cXFORM_nbits cXFORM_greenAddTerm
+                                                    putSB cXFORM_nbits cXFORM_blueAddTerm
+                                                    return ()
+           Nothing -> return ()
+       let _cXFORM_padding = 0
+       return ()
 
 \end{code}
 
@@ -504,6 +587,41 @@ getCXFORMWITHALPHA
                                            cXFORMWITHALPHA_alphaAddTerm))
        _cXFORMWITHALPHA_padding <- byteAlign
        return (CXFORMWITHALPHA{..})
+putCXFORMWITHALPHA CXFORMWITHALPHA{..}
+  = do let cXFORMWITHALPHA_hasAddTerms
+             = isJust cXFORMWITHALPHA_addTerm
+       let cXFORMWITHALPHA_hasMultTerms = isJust cXFORMWITHALPHA_multTerm
+       putUB 4 cXFORMWITHALPHA_nbits
+       case cXFORMWITHALPHA_multTerm of
+           Just x -> case x of
+                         (cXFORMWITHALPHA_redMultTerm, cXFORMWITHALPHA_greenMultTerm,
+                          cXFORMWITHALPHA_blueMultTerm,
+                          cXFORMWITHALPHA_alphaMultTerm) -> do putSB cXFORMWITHALPHA_nbits
+                                                                 cXFORMWITHALPHA_redMultTerm
+                                                               putSB cXFORMWITHALPHA_nbits
+                                                                 cXFORMWITHALPHA_greenMultTerm
+                                                               putSB cXFORMWITHALPHA_nbits
+                                                                 cXFORMWITHALPHA_blueMultTerm
+                                                               putSB cXFORMWITHALPHA_nbits
+                                                                 cXFORMWITHALPHA_alphaMultTerm
+                                                               return ()
+           Nothing -> return ()
+       case cXFORMWITHALPHA_addTerm of
+           Just x -> case x of
+                         (cXFORMWITHALPHA_redAddTerm, cXFORMWITHALPHA_greenAddTerm,
+                          cXFORMWITHALPHA_blueAddTerm,
+                          cXFORMWITHALPHA_alphaAddTerm) -> do putSB cXFORMWITHALPHA_nbits
+                                                                cXFORMWITHALPHA_redAddTerm
+                                                              putSB cXFORMWITHALPHA_nbits
+                                                                cXFORMWITHALPHA_greenAddTerm
+                                                              putSB cXFORMWITHALPHA_nbits
+                                                                cXFORMWITHALPHA_blueAddTerm
+                                                              putSB cXFORMWITHALPHA_nbits
+                                                                cXFORMWITHALPHA_alphaAddTerm
+                                                              return ()
+           Nothing -> return ()
+       let _cXFORMWITHALPHA_padding = 0
+       return ()
 
 \end{code}
 
@@ -885,8 +1003,8 @@ putRECORD (RECORD{..}) = do
 \end{code}
 
 \begin{code}
-generatedTagGetters tagType
-  = case tagType of
+generatedTagGetters tag
+  = case tag of
         4 -> Just getPlaceObject
         26 -> Just getPlaceObject2
         70 -> Just getPlaceObject3
@@ -951,6 +1069,73 @@ generatedTagGetters tagType
         61 -> Just getStreamID
         87 -> Just getDefineBinaryData
         _ -> Nothing
+generatedTagPutters tag
+  = case tag of
+        PlaceObject{..} -> Just putPlaceObject
+        PlaceObject2{..} -> Just putPlaceObject2
+        PlaceObject3{..} -> Just putPlaceObject3
+        RemoveObject{..} -> Just putRemoveObject
+        RemoveObject2{..} -> Just putRemoveObject2
+        ShowFrame{..} -> Just putShowFrame
+        SetBackgroundColor{..} -> Just putSetBackgroundColor
+        FrameLabel{..} -> Just putFrameLabel
+        Protect{..} -> Just putProtect
+        End{..} -> Just putEnd
+        ExportAssets{..} -> Just putExportAssets
+        ImportAssets{..} -> Just putImportAssets
+        EnableDebugger{..} -> Just putEnableDebugger
+        EnableDebugger2{..} -> Just putEnableDebugger2
+        ScriptLimits{..} -> Just putScriptLimits
+        SetTabIndex{..} -> Just putSetTabIndex
+        FileAttributes{..} -> Just putFileAttributes
+        ImportAssets2{..} -> Just putImportAssets2
+        SymbolClass{..} -> Just putSymbolClass
+        Metadata{..} -> Just putMetadata
+        DefineScalingGrid{..} -> Just putDefineScalingGrid
+        DefineSceneAndFrameLabelData{..} -> Just
+                                              putDefineSceneAndFrameLabelData
+        DoAction{..} -> Just putDoAction
+        DoInitAction{..} -> Just putDoInitAction
+        DoABC{..} -> Just putDoABC
+        DefineShape{..} -> Just putDefineShape
+        DefineShape2{..} -> Just putDefineShape2
+        DefineShape3{..} -> Just putDefineShape3
+        DefineShape4{..} -> Just putDefineShape4
+        DefineBits{..} -> Just putDefineBits
+        JPEGTables{..} -> Just putJPEGTables
+        DefineBitsJPEG2{..} -> Just putDefineBitsJPEG2
+        DefineBitsJPEG3{..} -> Just putDefineBitsJPEG3
+        DefineBitsLossless{..} -> Just putDefineBitsLossless
+        DefineBitsLossless2{..} -> Just putDefineBitsLossless2
+        DefineBitsJPEG4{..} -> Just putDefineBitsJPEG4
+        DefineMorphShape{..} -> Just putDefineMorphShape
+        DefineMorphShape2{..} -> Just putDefineMorphShape2
+        DefineFontInfo{..} -> Just putDefineFontInfo
+        DefineFontInfo2{..} -> Just putDefineFontInfo2
+        DefineFont2{..} -> Just putDefineFont2
+        DefineFont3{..} -> Just putDefineFont3
+        DefineFontAlignZones{..} -> Just putDefineFontAlignZones
+        DefineFontName{..} -> Just putDefineFontName
+        DefineText{..} -> Just putDefineText
+        DefineText2{..} -> Just putDefineText2
+        DefineEditText{..} -> Just putDefineEditText
+        CSMTextSettings{..} -> Just putCSMTextSettings
+        DefineFont4{..} -> Just putDefineFont4
+        DefineSound{..} -> Just putDefineSound
+        StartSound{..} -> Just putStartSound
+        StartSound2{..} -> Just putStartSound2
+        SoundStreamHead{..} -> Just putSoundStreamHead
+        SoundStreamHead2{..} -> Just putSoundStreamHead2
+        SoundStreamBlock{..} -> Just putSoundStreamBlock
+        DefineButton{..} -> Just putDefineButton
+        DefineButton2{..} -> Just putDefineButton2
+        DefineButtonCxform{..} -> Just putDefineButtonCxform
+        DefineButtonSound{..} -> Just putDefineButtonSound
+        DefineSprite{..} -> Just putDefineSprite
+        DefineVideoStream{..} -> Just putDefineVideoStream
+        StreamID{..} -> Just putStreamID
+        DefineBinaryData{..} -> Just putDefineBinaryData
+        _ -> Nothing
 
 \end{code}
 
@@ -963,6 +1148,14 @@ getPlaceObject
        placeObject_colorTransform <- maybeHasM (fmap not isEmpty)
                                        getCXFORM
        return (PlaceObject{..})
+putPlaceObject PlaceObject{..}
+  = do putUI16 placeObject_characterId
+       putUI16 placeObject_depth
+       putMATRIX placeObject_matrix
+       case placeObject_colorTransform of
+           Just x -> putCXFORM x
+           Nothing -> return ()
+       return ()
 
 \end{code}
 
@@ -997,6 +1190,42 @@ getPlaceObject2
                                      placeObject2_placeFlagHasClipActions
                                      getCLIPACTIONS
        return (PlaceObject2{..})
+putPlaceObject2 PlaceObject2{..}
+  = do let placeObject2_placeFlagHasClipActions
+             = isJust placeObject2_clipActions
+       let placeObject2_placeFlagHasClipDepth
+             = isJust placeObject2_clipDepth
+       let placeObject2_placeFlagHasName = isJust placeObject2_name
+       let placeObject2_placeFlagHasRatio = isJust placeObject2_ratio
+       let placeObject2_placeFlagHasColorTransform
+             = isJust placeObject2_colorTransform
+       let placeObject2_placeFlagHasMatrix = isJust placeObject2_matrix
+       let placeObject2_placeFlagHasCharacter
+             = isJust placeObject2_characterId
+       putFlag placeObject2_placeFlagMove
+       putUI16 placeObject2_depth
+       case placeObject2_characterId of
+           Just x -> putUI16 x
+           Nothing -> return ()
+       case placeObject2_matrix of
+           Just x -> putMATRIX x
+           Nothing -> return ()
+       case placeObject2_colorTransform of
+           Just x -> putCXFORMWITHALPHA x
+           Nothing -> return ()
+       case placeObject2_ratio of
+           Just x -> putUI16 x
+           Nothing -> return ()
+       case placeObject2_name of
+           Just x -> putSTRING x
+           Nothing -> return ()
+       case placeObject2_clipDepth of
+           Just x -> putUI16 x
+           Nothing -> return ()
+       case placeObject2_clipActions of
+           Just x -> putCLIPACTIONS x
+           Nothing -> return ()
+       return ()
 
 \end{code}
 
@@ -1011,6 +1240,11 @@ getCLIPACTIONS
        cLIPACTIONS_allEventFlags <- getCLIPEVENTFLAGS
        cLIPACTIONS_clipActionRecords <- getCLIPACTIONRECORDS
        return (CLIPACTIONS{..})
+putCLIPACTIONS CLIPACTIONS{..}
+  = do let _cLIPACTIONS_reserved = 0
+       putCLIPEVENTFLAGS cLIPACTIONS_allEventFlags
+       putCLIPACTIONRECORDS cLIPACTIONS_clipActionRecords
+       return ()
 
 \end{code}
 
@@ -1108,6 +1342,63 @@ getPlaceObject3
                                      placeObject3_placeFlagHasClipActions
                                      getCLIPACTIONS
        return (PlaceObject3{..})
+putPlaceObject3 PlaceObject3{..}
+  = do let placeObject3_placeFlagHasClipActions
+             = isJust placeObject3_clipActions
+       let placeObject3_placeFlagHasClipDepth
+             = isJust placeObject3_clipDepth
+       let placeObject3_placeFlagHasName = isJust placeObject3_name
+       let placeObject3_placeFlagHasRatio = isJust placeObject3_ratio
+       let placeObject3_placeFlagHasColorTransform
+             = isJust placeObject3_colorTransform
+       let placeObject3_placeFlagHasMatrix = isJust placeObject3_matrix
+       let placeObject3_placeFlagHasCharacter
+             = isJust placeObject3_characterId
+       putFlag placeObject3_placeFlagMove
+       let _placeObject3_reserved = 0
+       putFlag placeObject3_placeFlagHasImage
+       putFlag placeObject3_placeFlagHasClassName
+       let placeObject3_placeFlagHasCacheAsBitmap
+             = isJust placeObject3_bitmapCache
+       let placeObject3_placeFlagHasBlendMode
+             = isJust placeObject3_blendMode
+       let placeObject3_placeFlagHasFilterList
+             = isJust placeObject3_surfaceFilterList
+       putUI16 placeObject3_depth
+       case placeObject3_className of
+           Just x -> putSTRING x
+           Nothing -> return ()
+       case placeObject3_characterId of
+           Just x -> putUI16 x
+           Nothing -> return ()
+       case placeObject3_matrix of
+           Just x -> putMATRIX x
+           Nothing -> return ()
+       case placeObject3_colorTransform of
+           Just x -> putCXFORMWITHALPHA x
+           Nothing -> return ()
+       case placeObject3_ratio of
+           Just x -> putUI16 x
+           Nothing -> return ()
+       case placeObject3_name of
+           Just x -> putSTRING x
+           Nothing -> return ()
+       case placeObject3_clipDepth of
+           Just x -> putUI16 x
+           Nothing -> return ()
+       case placeObject3_surfaceFilterList of
+           Just x -> putFILTERLIST x
+           Nothing -> return ()
+       case placeObject3_blendMode of
+           Just x -> putBlendMode x
+           Nothing -> return ()
+       case placeObject3_bitmapCache of
+           Just x -> putUI8 x
+           Nothing -> return ()
+       case placeObject3_clipActions of
+           Just x -> putCLIPACTIONS x
+           Nothing -> return ()
+       return ()
 
 \end{code}
 
@@ -1197,6 +1488,9 @@ data COLORMATRIXFILTER = COLORMATRIXFILTER{cOLORMATRIXFILTER_matrix
 getCOLORMATRIXFILTER
   = do cOLORMATRIXFILTER_matrix <- genericReplicateM 20 getFLOAT
        return (COLORMATRIXFILTER{..})
+putCOLORMATRIXFILTER COLORMATRIXFILTER{..}
+  = do mapM_ (\ x -> putFLOAT x) cOLORMATRIXFILTER_matrix
+       return ()
 
 \end{code}
 
@@ -1226,6 +1520,17 @@ getCONVOLUTIONFILTER
        cONVOLUTIONFILTER_clamp <- getFlag
        cONVOLUTIONFILTER_preserveAlpha <- getFlag
        return (CONVOLUTIONFILTER{..})
+putCONVOLUTIONFILTER CONVOLUTIONFILTER{..}
+  = do putUI8 cONVOLUTIONFILTER_matrixX
+       putUI8 cONVOLUTIONFILTER_matrixY
+       putFLOAT cONVOLUTIONFILTER_divisor
+       putFLOAT cONVOLUTIONFILTER_bias
+       mapM_ (\ x -> putFLOAT x) cONVOLUTIONFILTER_matrix
+       putRGBA cONVOLUTIONFILTER_defaultColor
+       let _cONVOLUTIONFILTER_reserved = 0
+       putFlag cONVOLUTIONFILTER_clamp
+       putFlag cONVOLUTIONFILTER_preserveAlpha
+       return ()
 
 \end{code}
 
@@ -1241,6 +1546,12 @@ getBLURFILTER
        bLURFILTER_passes <- getUB 5
        _bLURFILTER_reserved <- getUB 3
        return (BLURFILTER{..})
+putBLURFILTER BLURFILTER{..}
+  = do putFIXED bLURFILTER_blurX
+       putFIXED bLURFILTER_blurY
+       putUB 5 bLURFILTER_passes
+       let _bLURFILTER_reserved = 0
+       return ()
 
 \end{code}
 
@@ -1271,6 +1582,18 @@ getDROPSHADOWFILTER
        dROPSHADOWFILTER_compositeSource <- getFlag
        dROPSHADOWFILTER_passes <- getUB 5
        return (DROPSHADOWFILTER{..})
+putDROPSHADOWFILTER DROPSHADOWFILTER{..}
+  = do putRGBA dROPSHADOWFILTER_dropShadowColor
+       putFIXED dROPSHADOWFILTER_blurX
+       putFIXED dROPSHADOWFILTER_blurY
+       putFIXED dROPSHADOWFILTER_angle
+       putFIXED dROPSHADOWFILTER_distance
+       putFIXED8 dROPSHADOWFILTER_strength
+       putFlag dROPSHADOWFILTER_innerShadow
+       putFlag dROPSHADOWFILTER_knockout
+       putFlag dROPSHADOWFILTER_compositeSource
+       putUB 5 dROPSHADOWFILTER_passes
+       return ()
 
 \end{code}
 
@@ -1293,6 +1616,16 @@ getGLOWFILTER
        gLOWFILTER_compositeSource <- getFlag
        gLOWFILTER_passes <- getUB 5
        return (GLOWFILTER{..})
+putGLOWFILTER GLOWFILTER{..}
+  = do putRGBA gLOWFILTER_glowColor
+       putFIXED gLOWFILTER_blurX
+       putFIXED gLOWFILTER_blurY
+       putFIXED8 gLOWFILTER_strength
+       putFlag gLOWFILTER_innerGlow
+       putFlag gLOWFILTER_knockout
+       putFlag gLOWFILTER_compositeSource
+       putUB 5 gLOWFILTER_passes
+       return ()
 
 \end{code}
 
@@ -1321,6 +1654,20 @@ getBEVELFILTER
        bEVELFILTER_onTop <- getFlag
        bEVELFILTER_passes <- getUB 4
        return (BEVELFILTER{..})
+putBEVELFILTER BEVELFILTER{..}
+  = do putRGBA bEVELFILTER_shadowColor
+       putRGBA bEVELFILTER_highlightColor
+       putFIXED bEVELFILTER_blurX
+       putFIXED bEVELFILTER_blurY
+       putFIXED bEVELFILTER_angle
+       putFIXED bEVELFILTER_distance
+       putFIXED8 bEVELFILTER_strength
+       putFlag bEVELFILTER_innerShadow
+       putFlag bEVELFILTER_knockout
+       putFlag bEVELFILTER_compositeSource
+       putFlag bEVELFILTER_onTop
+       putUB 4 bEVELFILTER_passes
+       return ()
 
 \end{code}
 
@@ -1361,6 +1708,21 @@ getGRADIENTGLOWFILTER
        gRADIENTGLOWFILTER_onTop <- getFlag
        gRADIENTGLOWFILTER_passes <- getUB 4
        return (GRADIENTGLOWFILTER{..})
+putGRADIENTGLOWFILTER GRADIENTGLOWFILTER{..}
+  = do putUI8 gRADIENTGLOWFILTER_numColors
+       mapM_ (\ x -> putRGBA x) gRADIENTGLOWFILTER_gradientColors
+       mapM_ (\ x -> putUI8 x) gRADIENTGLOWFILTER_gradientRatio
+       putFIXED gRADIENTGLOWFILTER_blurX
+       putFIXED gRADIENTGLOWFILTER_blurY
+       putFIXED gRADIENTGLOWFILTER_angle
+       putFIXED gRADIENTGLOWFILTER_distance
+       putFIXED8 gRADIENTGLOWFILTER_strength
+       putFlag gRADIENTGLOWFILTER_innerShadow
+       putFlag gRADIENTGLOWFILTER_knockout
+       putFlag gRADIENTGLOWFILTER_compositeSource
+       putFlag gRADIENTGLOWFILTER_onTop
+       putUB 4 gRADIENTGLOWFILTER_passes
+       return ()
 
 \end{code}
 
@@ -1400,6 +1762,21 @@ getGRADIENTBEVELFILTER
        gRADIENTBEVELFILTER_onTop <- getFlag
        gRADIENTBEVELFILTER_passes <- getUB 4
        return (GRADIENTBEVELFILTER{..})
+putGRADIENTBEVELFILTER GRADIENTBEVELFILTER{..}
+  = do putUI8 gRADIENTBEVELFILTER_numColors
+       mapM_ (\ x -> putRGBA x) gRADIENTBEVELFILTER_gradientColors
+       mapM_ (\ x -> putUI8 x) gRADIENTBEVELFILTER_gradientRatio
+       putFIXED gRADIENTBEVELFILTER_blurX
+       putFIXED gRADIENTBEVELFILTER_blurY
+       putFIXED gRADIENTBEVELFILTER_angle
+       putFIXED gRADIENTBEVELFILTER_distance
+       putFIXED8 gRADIENTBEVELFILTER_strength
+       putFlag gRADIENTBEVELFILTER_innerShadow
+       putFlag gRADIENTBEVELFILTER_knockout
+       putFlag gRADIENTBEVELFILTER_compositeSource
+       putFlag gRADIENTBEVELFILTER_onTop
+       putUB 4 gRADIENTBEVELFILTER_passes
+       return ()
 
 \end{code}
 
@@ -1459,6 +1836,10 @@ getRemoveObject
   = do removeObject_characterId <- getUI16
        removeObject_depth <- getUI16
        return (RemoveObject{..})
+putRemoveObject RemoveObject{..}
+  = do putUI16 removeObject_characterId
+       putUI16 removeObject_depth
+       return ()
 
 \end{code}
 
@@ -1467,12 +1848,16 @@ p52: RemoveObject2
 getRemoveObject2
   = do removeObject2_depth <- getUI16
        return (RemoveObject2{..})
+putRemoveObject2 RemoveObject2{..}
+  = do putUI16 removeObject2_depth
+       return ()
 
 \end{code}
 
 p52: ShowFrame
 \begin{code}
 getShowFrame = do return (ShowFrame{..})
+putShowFrame ShowFrame{..} = do return ()
 
 \end{code}
 
@@ -1485,6 +1870,9 @@ p53: SetBackgroundColor
 getSetBackgroundColor
   = do setBackgroundColor_backgroundColor <- getRGB
        return (SetBackgroundColor{..})
+putSetBackgroundColor SetBackgroundColor{..}
+  = do putRGB setBackgroundColor_backgroundColor
+       return ()
 
 \end{code}
 
@@ -1494,18 +1882,26 @@ getFrameLabel
   = do frameLabel_name <- getSTRING
        frameLabel_namedAnchorFlag <- maybeHasM (fmap not isEmpty) getUI8
        return (FrameLabel{..})
+putFrameLabel FrameLabel{..}
+  = do putSTRING frameLabel_name
+       case frameLabel_namedAnchorFlag of
+           Just x -> putUI8 x
+           Nothing -> return ()
+       return ()
 
 \end{code}
 
 p54: Protect
 \begin{code}
 getProtect = do return (Protect{..})
+putProtect Protect{..} = do return ()
 
 \end{code}
 
 p55: End
 \begin{code}
 getEnd = do return (End{..})
+putEnd End{..} = do return ()
 
 \end{code}
 
@@ -1518,6 +1914,13 @@ getExportAssets
        exportAssets_tagN <- getUI16
        exportAssets_nameN <- getSTRING
        return (ExportAssets{..})
+putExportAssets ExportAssets{..}
+  = do putUI16 exportAssets_count
+       putUI16 exportAssets_tag1
+       putSTRING exportAssets_name1
+       putUI16 exportAssets_tagN
+       putSTRING exportAssets_nameN
+       return ()
 
 \end{code}
 
@@ -1531,6 +1934,14 @@ getImportAssets
        importAssets_tagN <- getUI16
        importAssets_nameN <- getSTRING
        return (ImportAssets{..})
+putImportAssets ImportAssets{..}
+  = do putSTRING importAssets_uRL
+       putUI16 importAssets_count
+       putUI16 importAssets_tag1
+       putSTRING importAssets_name1
+       putUI16 importAssets_tagN
+       putSTRING importAssets_nameN
+       return ()
 
 \end{code}
 
@@ -1539,6 +1950,9 @@ p57: EnableDebugger
 getEnableDebugger
   = do enableDebugger_password <- getSTRING
        return (EnableDebugger{..})
+putEnableDebugger EnableDebugger{..}
+  = do putSTRING enableDebugger_password
+       return ()
 
 \end{code}
 
@@ -1548,6 +1962,10 @@ getEnableDebugger2
   = do _enableDebugger2_reserved <- getUI16
        enableDebugger2_password <- getSTRING
        return (EnableDebugger2{..})
+putEnableDebugger2 EnableDebugger2{..}
+  = do let _enableDebugger2_reserved = 0
+       putSTRING enableDebugger2_password
+       return ()
 
 \end{code}
 
@@ -1557,6 +1975,10 @@ getScriptLimits
   = do scriptLimits_maxRecursionDepth <- getUI16
        scriptLimits_scriptTimeoutSeconds <- getUI16
        return (ScriptLimits{..})
+putScriptLimits ScriptLimits{..}
+  = do putUI16 scriptLimits_maxRecursionDepth
+       putUI16 scriptLimits_scriptTimeoutSeconds
+       return ()
 
 \end{code}
 
@@ -1566,6 +1988,10 @@ getSetTabIndex
   = do setTabIndex_depth <- getUI16
        setTabIndex_tabIndex <- getUI16
        return (SetTabIndex{..})
+putSetTabIndex SetTabIndex{..}
+  = do putUI16 setTabIndex_depth
+       putUI16 setTabIndex_tabIndex
+       return ()
 
 \end{code}
 
@@ -1581,6 +2007,16 @@ getFileAttributes
        fileAttributes_useNetwork <- getFlag
        _fileAttributes_reserved <- getUB 24
        return (FileAttributes{..})
+putFileAttributes FileAttributes{..}
+  = do let _fileAttributes_reserved = 0
+       putFlag fileAttributes_useDirectBlit
+       putFlag fileAttributes_useGPU
+       putFlag fileAttributes_hasMetadata
+       putFlag fileAttributes_actionScript3
+       let _fileAttributes_reserved = 0
+       putFlag fileAttributes_useNetwork
+       let _fileAttributes_reserved = 0
+       return ()
 
 \end{code}
 
@@ -1596,6 +2032,16 @@ getImportAssets2
        importAssets2_tagN <- getUI16
        importAssets2_nameN <- getSTRING
        return (ImportAssets2{..})
+putImportAssets2 ImportAssets2{..}
+  = do putSTRING importAssets2_uRL
+       let _importAssets2_reserved = 0
+       let _importAssets2_reserved = 0
+       putUI16 importAssets2_count
+       putUI16 importAssets2_tag1
+       putSTRING importAssets2_name1
+       putUI16 importAssets2_tagN
+       putSTRING importAssets2_nameN
+       return ()
 
 \end{code}
 
@@ -1606,6 +2052,16 @@ getSymbolClass
        symbolClass_tagsNames <- genericReplicateM symbolClass_numSymbols
                                   (liftM2 (,) getUI16 getSTRING)
        return (SymbolClass{..})
+putSymbolClass SymbolClass{..}
+  = do let symbolClass_numSymbols
+             = genericLength symbolClass_tagsNames
+       mapM_
+         (\ x ->
+            case x of
+                (x1, x2) -> do putUI16 x1
+                               putSTRING x2)
+         symbolClass_tagsNames
+       return ()
 
 \end{code}
 
@@ -1614,6 +2070,9 @@ p64: Metadata
 getMetadata
   = do metadata_metadata <- getSTRING
        return (Metadata{..})
+putMetadata Metadata{..}
+  = do putSTRING metadata_metadata
+       return ()
 
 \end{code}
 
@@ -1623,6 +2082,10 @@ getDefineScalingGrid
   = do defineScalingGrid_characterId <- getUI16
        defineScalingGrid_splitter <- getRECT
        return (DefineScalingGrid{..})
+putDefineScalingGrid DefineScalingGrid{..}
+  = do putUI16 defineScalingGrid_characterId
+       putRECT defineScalingGrid_splitter
+       return ()
 
 \end{code}
 
@@ -1638,6 +2101,24 @@ getDefineSceneAndFrameLabelData
                                                         defineSceneAndFrameLabelData_frameLabelCount
                                                         (liftM2 (,) getEncodedU32 getSTRING)
        return (DefineSceneAndFrameLabelData{..})
+putDefineSceneAndFrameLabelData DefineSceneAndFrameLabelData{..}
+  = do let defineSceneAndFrameLabelData_sceneCount
+             = genericLength defineSceneAndFrameLabelData_offsetNames
+       mapM_
+         (\ x ->
+            case x of
+                (x1, x2) -> do putEncodedU32 x1
+                               putSTRING x2)
+         defineSceneAndFrameLabelData_offsetNames
+       let defineSceneAndFrameLabelData_frameLabelCount
+             = genericLength defineSceneAndFrameLabelData_frameNumLabels
+       mapM_
+         (\ x ->
+            case x of
+                (x1, x2) -> do putEncodedU32 x1
+                               putSTRING x2)
+         defineSceneAndFrameLabelData_frameNumLabels
+       return ()
 
 \end{code}
 
@@ -1650,6 +2131,9 @@ p68: DoAction
 getDoAction
   = do doAction_actions <- getACTIONRECORDS
        return (DoAction{..})
+putDoAction DoAction{..}
+  = do putACTIONRECORDS doAction_actions
+       return ()
 
 \end{code}
 
@@ -1844,8 +2328,8 @@ putACTIONRECORD (ACTIONRECORD {..}) = do
 \end{code}
 
 \begin{code}
-generatedActionGetters actionCode
-  = case actionCode of
+generatedActionGetters action
+  = case action of
         129 -> Just getActionGotoFrame
         131 -> Just getActionGetURL
         4 -> Just getActionNextFrame
@@ -1945,6 +2429,107 @@ generatedActionGetters actionCode
         143 -> Just getActionTry
         42 -> Just getActionThrow
         _ -> Nothing
+generatedActionPutters action
+  = case action of
+        ActionGotoFrame{..} -> Just putActionGotoFrame
+        ActionGetURL{..} -> Just putActionGetURL
+        ActionNextFrame{..} -> Just putActionNextFrame
+        ActionPreviousFrame{..} -> Just putActionPreviousFrame
+        ActionPlay{..} -> Just putActionPlay
+        ActionStop{..} -> Just putActionStop
+        ActionToggleQuality{..} -> Just putActionToggleQuality
+        ActionStopSounds{..} -> Just putActionStopSounds
+        ActionWaitForFrame{..} -> Just putActionWaitForFrame
+        ActionSetTarget{..} -> Just putActionSetTarget
+        ActionGoToLabel{..} -> Just putActionGoToLabel
+        ActionPop{..} -> Just putActionPop
+        ActionAdd{..} -> Just putActionAdd
+        ActionSubtract{..} -> Just putActionSubtract
+        ActionMultiply{..} -> Just putActionMultiply
+        ActionDivide{..} -> Just putActionDivide
+        ActionEquals{..} -> Just putActionEquals
+        ActionLess{..} -> Just putActionLess
+        ActionAnd{..} -> Just putActionAnd
+        ActionOr{..} -> Just putActionOr
+        ActionNot{..} -> Just putActionNot
+        ActionStringEquals{..} -> Just putActionStringEquals
+        ActionStringLength{..} -> Just putActionStringLength
+        ActionStringAdd{..} -> Just putActionStringAdd
+        ActionStringExtract{..} -> Just putActionStringExtract
+        ActionStringLess{..} -> Just putActionStringLess
+        ActionMBStringLength{..} -> Just putActionMBStringLength
+        ActionMBStringExtract{..} -> Just putActionMBStringExtract
+        ActionToInteger{..} -> Just putActionToInteger
+        ActionCharToAscii{..} -> Just putActionCharToAscii
+        ActionAsciiToChar{..} -> Just putActionAsciiToChar
+        ActionMBCharToAscii{..} -> Just putActionMBCharToAscii
+        ActionMBAsciiToChar{..} -> Just putActionMBAsciiToChar
+        ActionJump{..} -> Just putActionJump
+        ActionIf{..} -> Just putActionIf
+        ActionCall{..} -> Just putActionCall
+        ActionGetVariable{..} -> Just putActionGetVariable
+        ActionSetVariable{..} -> Just putActionSetVariable
+        ActionGetURL2{..} -> Just putActionGetURL2
+        ActionGotoFrame2{..} -> Just putActionGotoFrame2
+        ActionSetTarget2{..} -> Just putActionSetTarget2
+        ActionGetProperty{..} -> Just putActionGetProperty
+        ActionSetProperty{..} -> Just putActionSetProperty
+        ActionCloneSprite{..} -> Just putActionCloneSprite
+        ActionRemoveSprite{..} -> Just putActionRemoveSprite
+        ActionStartDrag{..} -> Just putActionStartDrag
+        ActionEndDrag{..} -> Just putActionEndDrag
+        ActionWaitForFrame2{..} -> Just putActionWaitForFrame2
+        ActionTrace{..} -> Just putActionTrace
+        ActionGetTime{..} -> Just putActionGetTime
+        ActionRandomNumber{..} -> Just putActionRandomNumber
+        ActionCallFunction{..} -> Just putActionCallFunction
+        ActionCallMethod{..} -> Just putActionCallMethod
+        ActionConstantPool{..} -> Just putActionConstantPool
+        ActionDefineFunction{..} -> Just putActionDefineFunction
+        ActionDefineLocal{..} -> Just putActionDefineLocal
+        ActionDefineLocal2{..} -> Just putActionDefineLocal2
+        ActionDelete{..} -> Just putActionDelete
+        ActionDelete2{..} -> Just putActionDelete2
+        ActionEnumerate{..} -> Just putActionEnumerate
+        ActionEquals2{..} -> Just putActionEquals2
+        ActionGetMember{..} -> Just putActionGetMember
+        ActionInitArray{..} -> Just putActionInitArray
+        ActionInitObject{..} -> Just putActionInitObject
+        ActionNewMethod{..} -> Just putActionNewMethod
+        ActionNewObject{..} -> Just putActionNewObject
+        ActionSetMember{..} -> Just putActionSetMember
+        ActionTargetPath{..} -> Just putActionTargetPath
+        ActionWith{..} -> Just putActionWith
+        ActionToNumber{..} -> Just putActionToNumber
+        ActionToString{..} -> Just putActionToString
+        ActionTypeOf{..} -> Just putActionTypeOf
+        ActionAdd2{..} -> Just putActionAdd2
+        ActionLess2{..} -> Just putActionLess2
+        ActionModulo{..} -> Just putActionModulo
+        ActionBitAnd{..} -> Just putActionBitAnd
+        ActionBitLShift{..} -> Just putActionBitLShift
+        ActionBitOr{..} -> Just putActionBitOr
+        ActionBitRShift{..} -> Just putActionBitRShift
+        ActionBitURShift{..} -> Just putActionBitURShift
+        ActionBitXor{..} -> Just putActionBitXor
+        ActionDecrement{..} -> Just putActionDecrement
+        ActionIncrement{..} -> Just putActionIncrement
+        ActionPushDuplicate{..} -> Just putActionPushDuplicate
+        ActionReturn{..} -> Just putActionReturn
+        ActionStackSwap{..} -> Just putActionStackSwap
+        ActionStoreRegister{..} -> Just putActionStoreRegister
+        ActionInstanceOf{..} -> Just putActionInstanceOf
+        ActionEnumerate2{..} -> Just putActionEnumerate2
+        ActionStrictEquals{..} -> Just putActionStrictEquals
+        ActionGreater{..} -> Just putActionGreater
+        ActionStringGreater{..} -> Just putActionStringGreater
+        ActionDefineFunction2{..} -> Just putActionDefineFunction2
+        ActionExtends{..} -> Just putActionExtends
+        ActionCastOp{..} -> Just putActionCastOp
+        ActionImplementsOp{..} -> Just putActionImplementsOp
+        ActionTry{..} -> Just putActionTry
+        ActionThrow{..} -> Just putActionThrow
+        _ -> Nothing
 
 \end{code}
 
@@ -1953,6 +2538,9 @@ p69: ActionGotoFrame
 getActionGotoFrame
   = do actionGotoFrame_frame <- getUI16
        return (ActionGotoFrame{..})
+putActionGotoFrame ActionGotoFrame{..}
+  = do putUI16 actionGotoFrame_frame
+       return ()
 
 \end{code}
 
@@ -1962,42 +2550,52 @@ getActionGetURL
   = do actionGetURL_urlString <- getSTRING
        actionGetURL_targetString <- getSTRING
        return (ActionGetURL{..})
+putActionGetURL ActionGetURL{..}
+  = do putSTRING actionGetURL_urlString
+       putSTRING actionGetURL_targetString
+       return ()
 
 \end{code}
 
 p69: ActionNextFrame
 \begin{code}
 getActionNextFrame = do return (ActionNextFrame{..})
+putActionNextFrame ActionNextFrame{..} = do return ()
 
 \end{code}
 
 p70: ActionPreviousFrame
 \begin{code}
 getActionPreviousFrame = do return (ActionPreviousFrame{..})
+putActionPreviousFrame ActionPreviousFrame{..} = do return ()
 
 \end{code}
 
 p70: ActionPlay
 \begin{code}
 getActionPlay = do return (ActionPlay{..})
+putActionPlay ActionPlay{..} = do return ()
 
 \end{code}
 
 p70: ActionStop
 \begin{code}
 getActionStop = do return (ActionStop{..})
+putActionStop ActionStop{..} = do return ()
 
 \end{code}
 
 p70: ActionToggleQuality
 \begin{code}
 getActionToggleQuality = do return (ActionToggleQuality{..})
+putActionToggleQuality ActionToggleQuality{..} = do return ()
 
 \end{code}
 
 p70: ActionStopSounds
 \begin{code}
 getActionStopSounds = do return (ActionStopSounds{..})
+putActionStopSounds ActionStopSounds{..} = do return ()
 
 \end{code}
 
@@ -2007,6 +2605,10 @@ getActionWaitForFrame
   = do actionWaitForFrame_frame <- getUI16
        actionWaitForFrame_skipCount <- getUI8
        return (ActionWaitForFrame{..})
+putActionWaitForFrame ActionWaitForFrame{..}
+  = do putUI16 actionWaitForFrame_frame
+       putUI8 actionWaitForFrame_skipCount
+       return ()
 
 \end{code}
 
@@ -2015,6 +2617,9 @@ p71: ActionSetTarget
 getActionSetTarget
   = do actionSetTarget_targetName <- getSTRING
        return (ActionSetTarget{..})
+putActionSetTarget ActionSetTarget{..}
+  = do putSTRING actionSetTarget_targetName
+       return ()
 
 \end{code}
 
@@ -2023,6 +2628,9 @@ p71: ActionGoToLabel
 getActionGoToLabel
   = do actionGoToLabel_label <- getSTRING
        return (ActionGoToLabel{..})
+putActionGoToLabel ActionGoToLabel{..}
+  = do putSTRING actionGoToLabel_label
+       return ()
 
 \end{code}
 
@@ -2067,132 +2675,154 @@ putActionPush (ActionPush lit) = case lit of
 p75: ActionPop
 \begin{code}
 getActionPop = do return (ActionPop{..})
+putActionPop ActionPop{..} = do return ()
 
 \end{code}
 
 p76: ActionAdd
 \begin{code}
 getActionAdd = do return (ActionAdd{..})
+putActionAdd ActionAdd{..} = do return ()
 
 \end{code}
 
 p76: ActionSubtract
 \begin{code}
 getActionSubtract = do return (ActionSubtract{..})
+putActionSubtract ActionSubtract{..} = do return ()
 
 \end{code}
 
 p76: ActionMultiply
 \begin{code}
 getActionMultiply = do return (ActionMultiply{..})
+putActionMultiply ActionMultiply{..} = do return ()
 
 \end{code}
 
 p77: ActionDivide
 \begin{code}
 getActionDivide = do return (ActionDivide{..})
+putActionDivide ActionDivide{..} = do return ()
 
 \end{code}
 
 p77: ActionEquals
 \begin{code}
 getActionEquals = do return (ActionEquals{..})
+putActionEquals ActionEquals{..} = do return ()
 
 \end{code}
 
 p78: ActionLess
 \begin{code}
 getActionLess = do return (ActionLess{..})
+putActionLess ActionLess{..} = do return ()
 
 \end{code}
 
 p78: ActionAnd
 \begin{code}
 getActionAnd = do return (ActionAnd{..})
+putActionAnd ActionAnd{..} = do return ()
 
 \end{code}
 
 p79: ActionOr
 \begin{code}
 getActionOr = do return (ActionOr{..})
+putActionOr ActionOr{..} = do return ()
 
 \end{code}
 
 p79: ActionNot
 \begin{code}
 getActionNot = do return (ActionNot{..})
+putActionNot ActionNot{..} = do return ()
 
 \end{code}
 
 p80: ActionStringEquals
 \begin{code}
 getActionStringEquals = do return (ActionStringEquals{..})
+putActionStringEquals ActionStringEquals{..} = do return ()
 
 \end{code}
 
 p80: ActionStringLength
 \begin{code}
 getActionStringLength = do return (ActionStringLength{..})
+putActionStringLength ActionStringLength{..} = do return ()
 
 \end{code}
 
 p80: ActionStringAdd
 \begin{code}
 getActionStringAdd = do return (ActionStringAdd{..})
+putActionStringAdd ActionStringAdd{..} = do return ()
 
 \end{code}
 
 p81: ActionStringExtract
 \begin{code}
 getActionStringExtract = do return (ActionStringExtract{..})
+putActionStringExtract ActionStringExtract{..} = do return ()
 
 \end{code}
 
 p81: ActionStringLess
 \begin{code}
 getActionStringLess = do return (ActionStringLess{..})
+putActionStringLess ActionStringLess{..} = do return ()
 
 \end{code}
 
 p81: ActionMBStringLength
 \begin{code}
 getActionMBStringLength = do return (ActionMBStringLength{..})
+putActionMBStringLength ActionMBStringLength{..} = do return ()
 
 \end{code}
 
 p82: ActionMBStringExtract
 \begin{code}
 getActionMBStringExtract = do return (ActionMBStringExtract{..})
+putActionMBStringExtract ActionMBStringExtract{..} = do return ()
 
 \end{code}
 
 p82: ActionToInteger
 \begin{code}
 getActionToInteger = do return (ActionToInteger{..})
+putActionToInteger ActionToInteger{..} = do return ()
 
 \end{code}
 
 p83: ActionCharToAscii
 \begin{code}
 getActionCharToAscii = do return (ActionCharToAscii{..})
+putActionCharToAscii ActionCharToAscii{..} = do return ()
 
 \end{code}
 
 p83: ActionAsciiToChar
 \begin{code}
 getActionAsciiToChar = do return (ActionAsciiToChar{..})
+putActionAsciiToChar ActionAsciiToChar{..} = do return ()
 
 \end{code}
 
 p83: ActionMBCharToAscii
 \begin{code}
 getActionMBCharToAscii = do return (ActionMBCharToAscii{..})
+putActionMBCharToAscii ActionMBCharToAscii{..} = do return ()
 
 \end{code}
 
 p84: ActionMBAsciiToChar
 \begin{code}
 getActionMBAsciiToChar = do return (ActionMBAsciiToChar{..})
+putActionMBAsciiToChar ActionMBAsciiToChar{..} = do return ()
 
 \end{code}
 
@@ -2201,6 +2831,9 @@ p84: ActionJump
 getActionJump
   = do actionJump_branchOffset <- getSI16
        return (ActionJump{..})
+putActionJump ActionJump{..}
+  = do putSI16 actionJump_branchOffset
+       return ()
 
 \end{code}
 
@@ -2209,24 +2842,30 @@ p84: ActionIf
 getActionIf
   = do actionIf_branchOffset <- getSI16
        return (ActionIf{..})
+putActionIf ActionIf{..}
+  = do putSI16 actionIf_branchOffset
+       return ()
 
 \end{code}
 
 p85: ActionCall
 \begin{code}
 getActionCall = do return (ActionCall{..})
+putActionCall ActionCall{..} = do return ()
 
 \end{code}
 
 p86: ActionGetVariable
 \begin{code}
 getActionGetVariable = do return (ActionGetVariable{..})
+putActionGetVariable ActionGetVariable{..} = do return ()
 
 \end{code}
 
 p86: ActionSetVariable
 \begin{code}
 getActionSetVariable = do return (ActionSetVariable{..})
+putActionSetVariable ActionSetVariable{..} = do return ()
 
 \end{code}
 
@@ -2238,6 +2877,12 @@ getActionGetURL2
        actionGetURL2_loadTargetFlag <- getFlag
        actionGetURL2_loadVariablesFlag <- getFlag
        return (ActionGetURL2{..})
+putActionGetURL2 ActionGetURL2{..}
+  = do putUB 2 actionGetURL2_sendVarsMethod
+       let _actionGetURL2_reserved = 0
+       putFlag actionGetURL2_loadTargetFlag
+       putFlag actionGetURL2_loadVariablesFlag
+       return ()
 
 \end{code}
 
@@ -2251,48 +2896,64 @@ getActionGotoFrame2
                                        actionGotoFrame2_sceneBiasFlag
                                        getUI16
        return (ActionGotoFrame2{..})
+putActionGotoFrame2 ActionGotoFrame2{..}
+  = do let _actionGotoFrame2_reserved = 0
+       let actionGotoFrame2_sceneBiasFlag
+             = isJust actionGotoFrame2_sceneBias
+       putFlag actionGotoFrame2_playFlag
+       case actionGotoFrame2_sceneBias of
+           Just x -> putUI16 x
+           Nothing -> return ()
+       return ()
 
 \end{code}
 
 p89: ActionSetTarget2
 \begin{code}
 getActionSetTarget2 = do return (ActionSetTarget2{..})
+putActionSetTarget2 ActionSetTarget2{..} = do return ()
 
 \end{code}
 
 p89: ActionGetProperty
 \begin{code}
 getActionGetProperty = do return (ActionGetProperty{..})
+putActionGetProperty ActionGetProperty{..} = do return ()
 
 \end{code}
 
 p90: ActionSetProperty
 \begin{code}
 getActionSetProperty = do return (ActionSetProperty{..})
+putActionSetProperty ActionSetProperty{..} = do return ()
 
 \end{code}
 
 p90: ActionCloneSprite
 \begin{code}
 getActionCloneSprite = do return (ActionCloneSprite{..})
+putActionCloneSprite ActionCloneSprite{..} = do return ()
 
 \end{code}
 
 p91: ActionRemoveSprite
 \begin{code}
 getActionRemoveSprite = do return (ActionRemoveSprite{..})
+putActionRemoveSprite ActionRemoveSprite{..} = do return ()
 
 \end{code}
 
 p91: ActionStartDrag
 \begin{code}
 getActionStartDrag = do return (ActionStartDrag{..})
+putActionStartDrag ActionStartDrag{..} = do return ()
 
 \end{code}
 
 p92: ActionEndDrag
 \begin{code}
 getActionEndDrag = do return (ActionEndDrag{..})
+putActionEndDrag ActionEndDrag{..} = do return ()
 
 \end{code}
 
@@ -2301,36 +2962,44 @@ p92: ActionWaitForFrame2
 getActionWaitForFrame2
   = do actionWaitForFrame2_skipCount <- getUI8
        return (ActionWaitForFrame2{..})
+putActionWaitForFrame2 ActionWaitForFrame2{..}
+  = do putUI8 actionWaitForFrame2_skipCount
+       return ()
 
 \end{code}
 
 p92: ActionTrace
 \begin{code}
 getActionTrace = do return (ActionTrace{..})
+putActionTrace ActionTrace{..} = do return ()
 
 \end{code}
 
 p93: ActionGetTime
 \begin{code}
 getActionGetTime = do return (ActionGetTime{..})
+putActionGetTime ActionGetTime{..} = do return ()
 
 \end{code}
 
 p93: ActionRandomNumber
 \begin{code}
 getActionRandomNumber = do return (ActionRandomNumber{..})
+putActionRandomNumber ActionRandomNumber{..} = do return ()
 
 \end{code}
 
 p95: ActionCallFunction
 \begin{code}
 getActionCallFunction = do return (ActionCallFunction{..})
+putActionCallFunction ActionCallFunction{..} = do return ()
 
 \end{code}
 
 p95: ActionCallMethod
 \begin{code}
 getActionCallMethod = do return (ActionCallMethod{..})
+putActionCallMethod ActionCallMethod{..} = do return ()
 
 \end{code}
 
@@ -2342,6 +3011,11 @@ getActionConstantPool
                                             actionConstantPool_count
                                             getSTRING
        return (ActionConstantPool{..})
+putActionConstantPool ActionConstantPool{..}
+  = do let actionConstantPool_count
+             = genericLength actionConstantPool_constantPool
+       mapM_ (\ x -> putSTRING x) actionConstantPool_constantPool
+       return ()
 
 \end{code}
 
@@ -2355,84 +3029,104 @@ getActionDefineFunction
                                         getSTRING
        actionDefineFunction_codeSize <- getUI16
        return (ActionDefineFunction{..})
+putActionDefineFunction ActionDefineFunction{..}
+  = do putSTRING actionDefineFunction_functionName
+       let actionDefineFunction_numParams
+             = genericLength actionDefineFunction_params
+       mapM_ (\ x -> putSTRING x) actionDefineFunction_params
+       putUI16 actionDefineFunction_codeSize
+       return ()
 
 \end{code}
 
 p98: ActionDefineLocal
 \begin{code}
 getActionDefineLocal = do return (ActionDefineLocal{..})
+putActionDefineLocal ActionDefineLocal{..} = do return ()
 
 \end{code}
 
 p98: ActionDefineLocal2
 \begin{code}
 getActionDefineLocal2 = do return (ActionDefineLocal2{..})
+putActionDefineLocal2 ActionDefineLocal2{..} = do return ()
 
 \end{code}
 
 p98: ActionDelete
 \begin{code}
 getActionDelete = do return (ActionDelete{..})
+putActionDelete ActionDelete{..} = do return ()
 
 \end{code}
 
 p99: ActionDelete2
 \begin{code}
 getActionDelete2 = do return (ActionDelete2{..})
+putActionDelete2 ActionDelete2{..} = do return ()
 
 \end{code}
 
 p99: ActionEnumerate
 \begin{code}
 getActionEnumerate = do return (ActionEnumerate{..})
+putActionEnumerate ActionEnumerate{..} = do return ()
 
 \end{code}
 
 p99: ActionEquals2
 \begin{code}
 getActionEquals2 = do return (ActionEquals2{..})
+putActionEquals2 ActionEquals2{..} = do return ()
 
 \end{code}
 
 p100: ActionGetMember
 \begin{code}
 getActionGetMember = do return (ActionGetMember{..})
+putActionGetMember ActionGetMember{..} = do return ()
 
 \end{code}
 
 p101: ActionInitArray
 \begin{code}
 getActionInitArray = do return (ActionInitArray{..})
+putActionInitArray ActionInitArray{..} = do return ()
 
 \end{code}
 
 p101: ActionInitObject
 \begin{code}
 getActionInitObject = do return (ActionInitObject{..})
+putActionInitObject ActionInitObject{..} = do return ()
 
 \end{code}
 
 p102: ActionNewMethod
 \begin{code}
 getActionNewMethod = do return (ActionNewMethod{..})
+putActionNewMethod ActionNewMethod{..} = do return ()
 
 \end{code}
 
 p103: ActionNewObject
 \begin{code}
 getActionNewObject = do return (ActionNewObject{..})
+putActionNewObject ActionNewObject{..} = do return ()
 
 \end{code}
 
 p103: ActionSetMember
 \begin{code}
 getActionSetMember = do return (ActionSetMember{..})
+putActionSetMember ActionSetMember{..} = do return ()
 
 \end{code}
 
 p104: ActionTargetPath
 \begin{code}
 getActionTargetPath = do return (ActionTargetPath{..})
+putActionTargetPath ActionTargetPath{..} = do return ()
 
 \end{code}
 
@@ -2441,108 +3135,128 @@ p104: ActionWith
 getActionWith
   = do actionWith_size <- getUI16
        return (ActionWith{..})
+putActionWith ActionWith{..}
+  = do putUI16 actionWith_size
+       return ()
 
 \end{code}
 
 p105: ActionToNumber
 \begin{code}
 getActionToNumber = do return (ActionToNumber{..})
+putActionToNumber ActionToNumber{..} = do return ()
 
 \end{code}
 
 p105: ActionToString
 \begin{code}
 getActionToString = do return (ActionToString{..})
+putActionToString ActionToString{..} = do return ()
 
 \end{code}
 
 p106: ActionTypeOf
 \begin{code}
 getActionTypeOf = do return (ActionTypeOf{..})
+putActionTypeOf ActionTypeOf{..} = do return ()
 
 \end{code}
 
 p106: ActionAdd2
 \begin{code}
 getActionAdd2 = do return (ActionAdd2{..})
+putActionAdd2 ActionAdd2{..} = do return ()
 
 \end{code}
 
 p107: ActionLess2
 \begin{code}
 getActionLess2 = do return (ActionLess2{..})
+putActionLess2 ActionLess2{..} = do return ()
 
 \end{code}
 
 p107: ActionModulo
 \begin{code}
 getActionModulo = do return (ActionModulo{..})
+putActionModulo ActionModulo{..} = do return ()
 
 \end{code}
 
 p107: ActionBitAnd
 \begin{code}
 getActionBitAnd = do return (ActionBitAnd{..})
+putActionBitAnd ActionBitAnd{..} = do return ()
 
 \end{code}
 
 p108: ActionBitLShift
 \begin{code}
 getActionBitLShift = do return (ActionBitLShift{..})
+putActionBitLShift ActionBitLShift{..} = do return ()
 
 \end{code}
 
 p108: ActionBitOr
 \begin{code}
 getActionBitOr = do return (ActionBitOr{..})
+putActionBitOr ActionBitOr{..} = do return ()
 
 \end{code}
 
 p109: ActionBitRShift
 \begin{code}
 getActionBitRShift = do return (ActionBitRShift{..})
+putActionBitRShift ActionBitRShift{..} = do return ()
 
 \end{code}
 
 p109: ActionBitURShift
 \begin{code}
 getActionBitURShift = do return (ActionBitURShift{..})
+putActionBitURShift ActionBitURShift{..} = do return ()
 
 \end{code}
 
 p110: ActionBitXor
 \begin{code}
 getActionBitXor = do return (ActionBitXor{..})
+putActionBitXor ActionBitXor{..} = do return ()
 
 \end{code}
 
 p110: ActionDecrement
 \begin{code}
 getActionDecrement = do return (ActionDecrement{..})
+putActionDecrement ActionDecrement{..} = do return ()
 
 \end{code}
 
 p110: ActionIncrement
 \begin{code}
 getActionIncrement = do return (ActionIncrement{..})
+putActionIncrement ActionIncrement{..} = do return ()
 
 \end{code}
 
 p111: ActionPushDuplicate
 \begin{code}
 getActionPushDuplicate = do return (ActionPushDuplicate{..})
+putActionPushDuplicate ActionPushDuplicate{..} = do return ()
 
 \end{code}
 
 p111: ActionReturn
 \begin{code}
 getActionReturn = do return (ActionReturn{..})
+putActionReturn ActionReturn{..} = do return ()
 
 \end{code}
 
 p111: ActionStackSwap
 \begin{code}
 getActionStackSwap = do return (ActionStackSwap{..})
+putActionStackSwap ActionStackSwap{..} = do return ()
 
 \end{code}
 
@@ -2551,6 +3265,9 @@ p111: ActionStoreRegister
 getActionStoreRegister
   = do actionStoreRegister_registerNumber <- getUI8
        return (ActionStoreRegister{..})
+putActionStoreRegister ActionStoreRegister{..}
+  = do putUI8 actionStoreRegister_registerNumber
+       return ()
 
 \end{code}
 
@@ -2560,36 +3277,45 @@ getDoInitAction
   = do doInitAction_spriteID <- getUI16
        doInitAction_actions <- getACTIONRECORDS
        return (DoInitAction{..})
+putDoInitAction DoInitAction{..}
+  = do putUI16 doInitAction_spriteID
+       putACTIONRECORDS doInitAction_actions
+       return ()
 
 \end{code}
 
 p113: ActionInstanceOf
 \begin{code}
 getActionInstanceOf = do return (ActionInstanceOf{..})
+putActionInstanceOf ActionInstanceOf{..} = do return ()
 
 \end{code}
 
 p113: ActionEnumerate2
 \begin{code}
 getActionEnumerate2 = do return (ActionEnumerate2{..})
+putActionEnumerate2 ActionEnumerate2{..} = do return ()
 
 \end{code}
 
 p114: ActionStrictEquals
 \begin{code}
 getActionStrictEquals = do return (ActionStrictEquals{..})
+putActionStrictEquals ActionStrictEquals{..} = do return ()
 
 \end{code}
 
 p114: ActionGreater
 \begin{code}
 getActionGreater = do return (ActionGreater{..})
+putActionGreater ActionGreater{..} = do return ()
 
 \end{code}
 
 p115: ActionStringGreater
 \begin{code}
 getActionStringGreater = do return (ActionStringGreater{..})
+putActionStringGreater ActionStringGreater{..} = do return ()
 
 \end{code}
 
@@ -2614,6 +3340,24 @@ getActionDefineFunction2
                                              getREGISTERPARAM
        actionDefineFunction2_codeSize <- getUI16
        return (ActionDefineFunction2{..})
+putActionDefineFunction2 ActionDefineFunction2{..}
+  = do putSTRING actionDefineFunction2_functionName
+       let actionDefineFunction2_numParams
+             = genericLength actionDefineFunction2_parameters
+       putUI8 actionDefineFunction2_registerCount
+       putFlag actionDefineFunction2_preloadParentFlag
+       putFlag actionDefineFunction2_preloadRootFlag
+       putFlag actionDefineFunction2_suppressSuperFlag
+       putFlag actionDefineFunction2_preloadSuperFlag
+       putFlag actionDefineFunction2_suppressArgumentsFlag
+       putFlag actionDefineFunction2_preloadArgumentsFlag
+       putFlag actionDefineFunction2_suppressThisFlag
+       putFlag actionDefineFunction2_preloadThisFlag
+       let _actionDefineFunction2_reserved = 0
+       putFlag actionDefineFunction2_preloadGlobalFlag
+       mapM_ (\ x -> putREGISTERPARAM x) actionDefineFunction2_parameters
+       putUI16 actionDefineFunction2_codeSize
+       return ()
 
 \end{code}
 
@@ -2626,24 +3370,31 @@ getREGISTERPARAM
   = do rEGISTERPARAM_register <- getUI8
        rEGISTERPARAM_paramName <- getSTRING
        return (REGISTERPARAM{..})
+putREGISTERPARAM REGISTERPARAM{..}
+  = do putUI8 rEGISTERPARAM_register
+       putSTRING rEGISTERPARAM_paramName
+       return ()
 
 \end{code}
 
 p119: ActionExtends
 \begin{code}
 getActionExtends = do return (ActionExtends{..})
+putActionExtends ActionExtends{..} = do return ()
 
 \end{code}
 
 p119: ActionCastOp
 \begin{code}
 getActionCastOp = do return (ActionCastOp{..})
+putActionCastOp ActionCastOp{..} = do return ()
 
 \end{code}
 
 p120: ActionImplementsOp
 \begin{code}
 getActionImplementsOp = do return (ActionImplementsOp{..})
+putActionImplementsOp ActionImplementsOp{..} = do return ()
 
 \end{code}
 
@@ -2666,12 +3417,31 @@ getActionTry
        actionTry_finallyBody <- genericReplicateM actionTry_finallySize
                                   getUI8
        return (ActionTry{..})
+putActionTry ActionTry{..}
+  = do let _actionTry_reserved = 0
+       let actionTry_catchInRegisterFlag = isJust actionTry_catchRegister
+       putFlag actionTry_finallyBlockFlag
+       putFlag actionTry_catchBlockFlag
+       let actionTry_trySize = genericLength actionTry_tryBody
+       let actionTry_catchSize = genericLength actionTry_catchBody
+       let actionTry_finallySize = genericLength actionTry_finallyBody
+       case actionTry_catchName of
+           Just x -> putSTRING x
+           Nothing -> return ()
+       case actionTry_catchRegister of
+           Just x -> putUI8 x
+           Nothing -> return ()
+       mapM_ (\ x -> putUI8 x) actionTry_tryBody
+       mapM_ (\ x -> putUI8 x) actionTry_catchBody
+       mapM_ (\ x -> putUI8 x) actionTry_finallyBody
+       return ()
 
 \end{code}
 
 p122: ActionThrow
 \begin{code}
 getActionThrow = do return (ActionThrow{..})
+putActionThrow ActionThrow{..} = do return ()
 
 \end{code}
 
@@ -2682,6 +3452,11 @@ getDoABC
        doABC_name <- getSTRING
        doABC_aBCData <- getRemainingLazyByteString
        return (DoABC{..})
+putDoABC DoABC{..}
+  = do putUI32 doABC_flags
+       putSTRING doABC_name
+       putLazyByteString doABC_aBCData
+       return ()
 
 \end{code}
 
@@ -2821,6 +3596,27 @@ getLINESTYLE2
        lINESTYLE2_fillType <- maybeHas lINESTYLE2_hasFillFlag
                                 (getFILLSTYLE 4)
        return (LINESTYLE2{..})
+putLINESTYLE2 LINESTYLE2{..}
+  = do putUI16 lINESTYLE2_width
+       putUB 2 lINESTYLE2_startCapStyle
+       putUB 2 lINESTYLE2_joinStyle
+       let lINESTYLE2_hasFillFlag = isJust lINESTYLE2_fillType
+       putFlag lINESTYLE2_noHScaleFlag
+       putFlag lINESTYLE2_noVScaleFlag
+       putFlag lINESTYLE2_pixelHintingFlag
+       let _lINESTYLE2_reserved = 0
+       putFlag lINESTYLE2_noClose
+       putUB 2 lINESTYLE2_endCapStyle
+       case lINESTYLE2_miterLimitFactor of
+           Just x -> putUI16 x
+           Nothing -> return ()
+       case lINESTYLE2_color of
+           Just x -> putRGBA x
+           Nothing -> return ()
+       case lINESTYLE2_fillType of
+           Just x -> putFILLSTYLE 4 x
+           Nothing -> return ()
+       return ()
 
 \end{code}
 
@@ -2837,6 +3633,12 @@ getSHAPE sHAPE_shapeVer
                                sHAPE_numFillBits
                                sHAPE_numLineBits
        return (SHAPE{..})
+putSHAPE sHAPE_shapeVer SHAPE{..}
+  = do putUB 4 sHAPE_numFillBits
+       putUB 4 sHAPE_numLineBits
+       putSHAPERECORDS sHAPE_shapeVer sHAPE_numFillBits sHAPE_numLineBits
+         sHAPE_shapeRecords
+       return ()
 
 \end{code}
 
@@ -2861,6 +3663,16 @@ getSHAPEWITHSTYLE sHAPEWITHSTYLE_shapeVer
                                         sHAPEWITHSTYLE_numFillBits
                                         sHAPEWITHSTYLE_numLineBits
        return (SHAPEWITHSTYLE{..})
+putSHAPEWITHSTYLE sHAPEWITHSTYLE_shapeVer SHAPEWITHSTYLE{..}
+  = do putFILLSTYLEARRAY sHAPEWITHSTYLE_shapeVer
+         sHAPEWITHSTYLE_fillStyles
+       putLINESTYLEARRAY sHAPEWITHSTYLE_shapeVer sHAPEWITHSTYLE_lineStyles
+       putUB 4 sHAPEWITHSTYLE_numFillBits
+       putUB 4 sHAPEWITHSTYLE_numLineBits
+       putSHAPERECORDS sHAPEWITHSTYLE_shapeVer sHAPEWITHSTYLE_numFillBits
+         sHAPEWITHSTYLE_numLineBits
+         sHAPEWITHSTYLE_shapeRecords
+       return ()
 
 \end{code}
 
@@ -2967,6 +3779,55 @@ getSTYLECHANGERECORD sTYLECHANGERECORD_shapeVer
                                          sTYLECHANGERECORD_newNumFillBits,
                                          sTYLECHANGERECORD_newNumLineBits))
        return (STYLECHANGERECORD{..})
+putSTYLECHANGERECORD sTYLECHANGERECORD_shapeVer
+  sTYLECHANGERECORD_fillBits sTYLECHANGERECORD_lineBits
+  STYLECHANGERECORD{..}
+  = do let sTYLECHANGERECORD_stateNewStyles
+             = isJust sTYLECHANGERECORD_new
+       let sTYLECHANGERECORD_stateLineStyle
+             = isJust sTYLECHANGERECORD_lineStyle
+       let sTYLECHANGERECORD_stateFillStyle1
+             = isJust sTYLECHANGERECORD_fillStyle1
+       let sTYLECHANGERECORD_stateFillStyle0
+             = isJust sTYLECHANGERECORD_fillStyle0
+       let sTYLECHANGERECORD_stateMoveTo = isJust sTYLECHANGERECORD_move
+       case sTYLECHANGERECORD_move of
+           Just x -> case x of
+                         (sTYLECHANGERECORD_moveBits, sTYLECHANGERECORD_moveDeltaX,
+                          sTYLECHANGERECORD_moveDeltaY) -> do putUB 5
+                                                                sTYLECHANGERECORD_moveBits
+                                                              putSB sTYLECHANGERECORD_moveBits
+                                                                sTYLECHANGERECORD_moveDeltaX
+                                                              putSB sTYLECHANGERECORD_moveBits
+                                                                sTYLECHANGERECORD_moveDeltaY
+                                                              return ()
+           Nothing -> return ()
+       case sTYLECHANGERECORD_fillStyle0 of
+           Just x -> putUB sTYLECHANGERECORD_fillBits x
+           Nothing -> return ()
+       case sTYLECHANGERECORD_fillStyle1 of
+           Just x -> putUB sTYLECHANGERECORD_fillBits x
+           Nothing -> return ()
+       case sTYLECHANGERECORD_lineStyle of
+           Just x -> putUB sTYLECHANGERECORD_lineBits x
+           Nothing -> return ()
+       case sTYLECHANGERECORD_new of
+           Just x -> case x of
+                         (sTYLECHANGERECORD_newFillStyles, sTYLECHANGERECORD_newLineStyles,
+                          sTYLECHANGERECORD_newNumFillBits,
+                          sTYLECHANGERECORD_newNumLineBits) -> do putFILLSTYLEARRAY
+                                                                    sTYLECHANGERECORD_shapeVer
+                                                                    sTYLECHANGERECORD_newFillStyles
+                                                                  putLINESTYLEARRAY
+                                                                    sTYLECHANGERECORD_shapeVer
+                                                                    sTYLECHANGERECORD_newLineStyles
+                                                                  putUB 4
+                                                                    sTYLECHANGERECORD_newNumFillBits
+                                                                  putUB 4
+                                                                    sTYLECHANGERECORD_newNumLineBits
+                                                                  return ()
+           Nothing -> return ()
+       return ()
 
 \end{code}
 
@@ -2976,6 +3837,11 @@ getSTRAIGHTEDGERECORD
        sTRAIGHTEDGERECORD_straightEdge <- getStraightEdge
                                             sTRAIGHTEDGERECORD_numBits
        return (STRAIGHTEDGERECORD{..})
+putSTRAIGHTEDGERECORD STRAIGHTEDGERECORD{..}
+  = do putUB 4 sTRAIGHTEDGERECORD_numBits
+       putStraightEdge sTRAIGHTEDGERECORD_numBits
+         sTRAIGHTEDGERECORD_straightEdge
+       return ()
 
 \end{code}
 
@@ -3013,6 +3879,13 @@ getCURVEDEDGERECORD
        cURVEDEDGERECORD_anchorDeltaY <- getSB
                                           (cURVEDEDGERECORD_numBits + 2)
        return (CURVEDEDGERECORD{..})
+putCURVEDEDGERECORD CURVEDEDGERECORD{..}
+  = do putUB 4 cURVEDEDGERECORD_numBits
+       putSB (cURVEDEDGERECORD_numBits + 2) cURVEDEDGERECORD_controlDeltaX
+       putSB (cURVEDEDGERECORD_numBits + 2) cURVEDEDGERECORD_controlDeltaY
+       putSB (cURVEDEDGERECORD_numBits + 2) cURVEDEDGERECORD_anchorDeltaX
+       putSB (cURVEDEDGERECORD_numBits + 2) cURVEDEDGERECORD_anchorDeltaY
+       return ()
 
 \end{code}
 
@@ -3023,6 +3896,11 @@ getDefineShape
        defineShape_shapeBounds <- getRECT
        defineShape_shapes <- getSHAPEWITHSTYLE 1
        return (DefineShape{..})
+putDefineShape DefineShape{..}
+  = do putUI16 defineShape_shapeId
+       putRECT defineShape_shapeBounds
+       putSHAPEWITHSTYLE 1 defineShape_shapes
+       return ()
 
 \end{code}
 
@@ -3033,6 +3911,11 @@ getDefineShape2
        defineShape2_shapeBounds <- getRECT
        defineShape2_shapes <- getSHAPEWITHSTYLE 2
        return (DefineShape2{..})
+putDefineShape2 DefineShape2{..}
+  = do putUI16 defineShape2_shapeId
+       putRECT defineShape2_shapeBounds
+       putSHAPEWITHSTYLE 2 defineShape2_shapes
+       return ()
 
 \end{code}
 
@@ -3043,6 +3926,11 @@ getDefineShape3
        defineShape3_shapeBounds <- getRECT
        defineShape3_shapes <- getSHAPEWITHSTYLE 3
        return (DefineShape3{..})
+putDefineShape3 DefineShape3{..}
+  = do putUI16 defineShape3_shapeId
+       putRECT defineShape3_shapeBounds
+       putSHAPEWITHSTYLE 3 defineShape3_shapes
+       return ()
 
 \end{code}
 
@@ -3058,6 +3946,16 @@ getDefineShape4
        defineShape4_usesScalingStrokes <- getFlag
        defineShape4_shapes <- getSHAPEWITHSTYLE 4
        return (DefineShape4{..})
+putDefineShape4 DefineShape4{..}
+  = do putUI16 defineShape4_shapeId
+       putRECT defineShape4_shapeBounds
+       putRECT defineShape4_edgeBounds
+       let _defineShape4_reserved = 0
+       putFlag defineShape4_usesFillWindingRule
+       putFlag defineShape4_usesNonScalingStrokes
+       putFlag defineShape4_usesScalingStrokes
+       putSHAPEWITHSTYLE 4 defineShape4_shapes
+       return ()
 
 \end{code}
 
@@ -3079,6 +3977,13 @@ getGRADIENT gRADIENT_shapeVer
        gRADIENT_gradientRecords <- genericReplicateM gRADIENT_numGradients
                                      (getGRADRECORD gRADIENT_shapeVer)
        return (GRADIENT{..})
+putGRADIENT gRADIENT_shapeVer GRADIENT{..}
+  = do putUB 2 gRADIENT_spreadMode
+       putUB 2 gRADIENT_interpolationMode
+       let gRADIENT_numGradients = genericLength gRADIENT_gradientRecords
+       mapM_ (\ x -> putGRADRECORD gRADIENT_shapeVer x)
+         gRADIENT_gradientRecords
+       return ()
 
 \end{code}
 
@@ -3099,6 +4004,15 @@ getFOCALGRADIENT fOCALGRADIENT_shapeVer
                                           (getGRADRECORD fOCALGRADIENT_shapeVer)
        fOCALGRADIENT_focalPoint <- getFIXED8
        return (FOCALGRADIENT{..})
+putFOCALGRADIENT fOCALGRADIENT_shapeVer FOCALGRADIENT{..}
+  = do putUB 2 fOCALGRADIENT_spreadMode
+       putUB 2 fOCALGRADIENT_interpolationMode
+       let fOCALGRADIENT_numGradients
+             = genericLength fOCALGRADIENT_gradientRecords
+       mapM_ (\ x -> putGRADRECORD fOCALGRADIENT_shapeVer x)
+         fOCALGRADIENT_gradientRecords
+       putFIXED8 fOCALGRADIENT_focalPoint
+       return ()
 
 \end{code}
 
@@ -3133,6 +4047,10 @@ getDefineBits
   = do defineBits_characterID <- getUI16
        defineBits_jPEGData <- getRemainingLazyByteString
        return (DefineBits{..})
+putDefineBits DefineBits{..}
+  = do putUI16 defineBits_characterID
+       putLazyByteString defineBits_jPEGData
+       return ()
 
 \end{code}
 
@@ -3141,6 +4059,9 @@ p148: JPEGTables
 getJPEGTables
   = do jPEGTables_jPEGData <- getRemainingLazyByteString
        return (JPEGTables{..})
+putJPEGTables JPEGTables{..}
+  = do putLazyByteString jPEGTables_jPEGData
+       return ()
 
 \end{code}
 
@@ -3150,6 +4071,10 @@ getDefineBitsJPEG2
   = do defineBitsJPEG2_characterID <- getUI16
        defineBitsJPEG2_imageData <- getRemainingLazyByteString
        return (DefineBitsJPEG2{..})
+putDefineBitsJPEG2 DefineBitsJPEG2{..}
+  = do putUI16 defineBitsJPEG2_characterID
+       putLazyByteString defineBitsJPEG2_imageData
+       return ()
 
 \end{code}
 
@@ -3163,6 +4088,13 @@ getDefineBitsJPEG3
                                       getUI8
        defineBitsJPEG3_bitmapAlphaData <- getRemainingLazyByteString
        return (DefineBitsJPEG3{..})
+putDefineBitsJPEG3 DefineBitsJPEG3{..}
+  = do putUI16 defineBitsJPEG3_characterID
+       let defineBitsJPEG3_alphaDataOffset
+             = genericLength defineBitsJPEG3_imageData
+       mapM_ (\ x -> putUI8 x) defineBitsJPEG3_imageData
+       putLazyByteString defineBitsJPEG3_bitmapAlphaData
+       return ()
 
 \end{code}
 
@@ -3178,6 +4110,16 @@ getDefineBitsLossless
                                                     getUI8
        defineBitsLossless_zlibBitmapData <- getRemainingLazyByteString
        return (DefineBitsLossless{..})
+putDefineBitsLossless DefineBitsLossless{..}
+  = do putUI16 defineBitsLossless_characterID
+       putUI8 defineBitsLossless_bitmapFormat
+       putUI16 defineBitsLossless_bitmapWidth
+       putUI16 defineBitsLossless_bitmapHeight
+       case defineBitsLossless_bitmapColorTableSize of
+           Just x -> putUI8 x
+           Nothing -> return ()
+       putLazyByteString defineBitsLossless_zlibBitmapData
+       return ()
 
 \end{code}
 
@@ -3193,6 +4135,16 @@ getDefineBitsLossless2
                                                      getUI8
        defineBitsLossless2_zlibBitmapData <- getRemainingLazyByteString
        return (DefineBitsLossless2{..})
+putDefineBitsLossless2 DefineBitsLossless2{..}
+  = do putUI16 defineBitsLossless2_characterID
+       putUI8 defineBitsLossless2_bitmapFormat
+       putUI16 defineBitsLossless2_bitmapWidth
+       putUI16 defineBitsLossless2_bitmapHeight
+       case defineBitsLossless2_bitmapColorTableSize of
+           Just x -> putUI8 x
+           Nothing -> return ()
+       putLazyByteString defineBitsLossless2_zlibBitmapData
+       return ()
 
 \end{code}
 
@@ -3207,6 +4159,14 @@ getDefineBitsJPEG4
                                       getUI8
        defineBitsJPEG4_bitmapAlphaData <- getRemainingLazyByteString
        return (DefineBitsJPEG4{..})
+putDefineBitsJPEG4 DefineBitsJPEG4{..}
+  = do putUI16 defineBitsJPEG4_characterID
+       let defineBitsJPEG4_alphaDataOffset
+             = genericLength defineBitsJPEG4_imageData
+       putUI16 defineBitsJPEG4_deblockParam
+       mapM_ (\ x -> putUI8 x) defineBitsJPEG4_imageData
+       putLazyByteString defineBitsJPEG4_bitmapAlphaData
+       return ()
 
 \end{code}
 
@@ -3226,6 +4186,16 @@ getDefineMorphShape
        defineMorphShape_startEdges <- getSHAPE 3
        defineMorphShape_endEdges <- getSHAPE 3
        return (DefineMorphShape{..})
+putDefineMorphShape DefineMorphShape{..}
+  = do putUI16 defineMorphShape_characterId
+       putRECT defineMorphShape_startBounds
+       putRECT defineMorphShape_endBounds
+       putUI32 defineMorphShape_offset
+       putMORPHFILLSTYLEARRAY defineMorphShape_morphFillStyles
+       putMORPHLINESTYLEARRAY 1 defineMorphShape_morphLineStyles
+       putSHAPE 3 defineMorphShape_startEdges
+       putSHAPE 3 defineMorphShape_endEdges
+       return ()
 
 \end{code}
 
@@ -3246,6 +4216,21 @@ getDefineMorphShape2
        defineMorphShape2_startEdges <- getSHAPE 3
        defineMorphShape2_endEdges <- getSHAPE 3
        return (DefineMorphShape2{..})
+putDefineMorphShape2 DefineMorphShape2{..}
+  = do putUI16 defineMorphShape2_characterId
+       putRECT defineMorphShape2_startBounds
+       putRECT defineMorphShape2_endBounds
+       putRECT defineMorphShape2_startEdgeBounds
+       putRECT defineMorphShape2_endEdgeBounds
+       let _defineMorphShape2_reserved = 0
+       putFlag defineMorphShape2_usesNonScalingStrokes
+       putFlag defineMorphShape2_usesScalingStrokes
+       putUI32 defineMorphShape2_offset
+       putMORPHFILLSTYLEARRAY defineMorphShape2_morphFillStyles
+       putMORPHLINESTYLEARRAY 2 defineMorphShape2_morphLineStyles
+       putSHAPE 3 defineMorphShape2_startEdges
+       putSHAPE 3 defineMorphShape2_endEdges
+       return ()
 
 \end{code}
 
@@ -3310,7 +4295,7 @@ getMORPHGRADIENT = do
 
 putMORPHGRADIENT ms = do
     putUI8 (genericLength ms)
-    mapM_ putMORPHGRADIENTRECORD ms
+    mapM_ putMORPHGRADRECORD ms
 
 \end{code}
 
@@ -3328,6 +4313,12 @@ getMORPHGRADRECORD
        mORPHGRADRECORD_endRatio <- getUI8
        mORPHGRADRECORD_endColor <- getRGBA
        return (MORPHGRADRECORD{..})
+putMORPHGRADRECORD MORPHGRADRECORD{..}
+  = do putUI8 mORPHGRADRECORD_startRatio
+       putRGBA mORPHGRADRECORD_startColor
+       putUI8 mORPHGRADRECORD_endRatio
+       putRGBA mORPHGRADRECORD_endColor
+       return ()
 
 \end{code}
 
@@ -3369,6 +4360,12 @@ getMORPHLINESTYLE
        mORPHLINESTYLE_startColor <- getRGBA
        mORPHLINESTYLE_endColor <- getRGBA
        return (MORPHLINESTYLE{..})
+putMORPHLINESTYLE MORPHLINESTYLE{..}
+  = do putUI16 mORPHLINESTYLE_startWidth
+       putUI16 mORPHLINESTYLE_endWidth
+       putRGBA mORPHLINESTYLE_startColor
+       putRGBA mORPHLINESTYLE_endColor
+       return ()
 
 \end{code}
 
@@ -3410,6 +4407,32 @@ getMORPHLINESTYLE2
        mORPHLINESTYLE2_fillType <- maybeHas mORPHLINESTYLE2_hasFillFlag
                                      getMORPHFILLSTYLE
        return (MORPHLINESTYLE2{..})
+putMORPHLINESTYLE2 MORPHLINESTYLE2{..}
+  = do putUI16 mORPHLINESTYLE2_startWidth
+       putUI16 mORPHLINESTYLE2_endWidth
+       putUB 2 mORPHLINESTYLE2_startCapStyle
+       putUB 2 mORPHLINESTYLE2_joinStyle
+       let mORPHLINESTYLE2_hasFillFlag = isJust mORPHLINESTYLE2_fillType
+       putFlag mORPHLINESTYLE2_noHScaleFlag
+       putFlag mORPHLINESTYLE2_noVScaleFlag
+       putFlag mORPHLINESTYLE2_pixelHintingFlag
+       let _mORPHLINESTYLE2_reserved = 0
+       putFlag mORPHLINESTYLE2_noClose
+       putUB 2 mORPHLINESTYLE2_endCapStyle
+       case mORPHLINESTYLE2_miterLimitFactor of
+           Just x -> putUI16 x
+           Nothing -> return ()
+       case mORPHLINESTYLE2_color of
+           Just x -> case x of
+                         (mORPHLINESTYLE2_startColor,
+                          mORPHLINESTYLE2_endColor) -> do putRGBA mORPHLINESTYLE2_startColor
+                                                          putRGBA mORPHLINESTYLE2_endColor
+                                                          return ()
+           Nothing -> return ()
+       case mORPHLINESTYLE2_fillType of
+           Just x -> putMORPHFILLSTYLE x
+           Nothing -> return ()
+       return ()
 
 \end{code}
 
@@ -3460,6 +4483,23 @@ getDefineFontInfo
                                      then fmap Left (getToEnd getUI16) else
                                      fmap Right (getToEnd getUI8)
        return (DefineFontInfo{..})
+putDefineFontInfo DefineFontInfo{..}
+  = do putUI16 defineFontInfo_fontID
+       let defineFontInfo_fontNameLen
+             = genericLength defineFontInfo_fontName
+       mapM_ (\ x -> putUI8 x) defineFontInfo_fontName
+       let _defineFontInfo_fontFlagsReserved = 0
+       putFlag defineFontInfo_fontFlagsSmallText
+       putFlag defineFontInfo_fontFlagsShiftJIS
+       putFlag defineFontInfo_fontFlagsANSI
+       putFlag defineFontInfo_fontFlagsItalic
+       putFlag defineFontInfo_fontFlagsBold
+       let defineFontInfo_fontFlagsWideCodes
+             = isJust defineFontInfo_codeTable
+       case defineFontInfo_codeTable of
+           Left x -> mapM_ (\ x -> putUI16 x) x
+           Right x -> mapM_ (\ x -> putUI8 x) x
+       return ()
 
 \end{code}
 
@@ -3481,6 +4521,21 @@ getDefineFontInfo2
        defineFontInfo2_languageCode <- getLANGCODE
        defineFontInfo2_codeTable <- getToEnd getUI16
        return (DefineFontInfo2{..})
+putDefineFontInfo2 DefineFontInfo2{..}
+  = do putUI16 defineFontInfo2_fontID
+       let defineFontInfo2_fontNameLen
+             = genericLength defineFontInfo2_fontName
+       mapM_ (\ x -> putUI8 x) defineFontInfo2_fontName
+       let _defineFontInfo2_fontFlagsReserved = 0
+       putFlag defineFontInfo2_fontFlagsSmallText
+       putFlag defineFontInfo2_fontFlagsShiftJIS
+       putFlag defineFontInfo2_fontFlagsANSI
+       putFlag defineFontInfo2_fontFlagsItalic
+       putFlag defineFontInfo2_fontFlagsBold
+       putFlag defineFontInfo2_fontFlagsWideCodes
+       putLANGCODE defineFontInfo2_languageCode
+       mapM_ (\ x -> putUI16 x) defineFontInfo2_codeTable
+       return ()
 
 \end{code}
 
@@ -3536,6 +4591,58 @@ getDefineFont2
                                           defineFont2_fontLayoutKerningCount,
                                           defineFont2_fontLayoutKerningTable))
        return (DefineFont2{..})
+putDefineFont2 DefineFont2{..}
+  = do putUI16 defineFont2_fontID
+       let defineFont2_fontFlagsHasLayout = isJust defineFont2_fontLayout
+       putFlag defineFont2_fontFlagsShiftJIS
+       putFlag defineFont2_fontFlagsSmallText
+       putFlag defineFont2_fontFlagsANSI
+       putFlag defineFont2_fontFlagsWideOffsets
+       let defineFont2_fontFlagsWideCodes = isJust defineFont2_codeTable
+       putFlag defineFont2_fontFlagsItalic
+       putFlag defineFont2_fontFlagsBold
+       putLANGCODE defineFont2_languageCode
+       let defineFont2_fontNameLen = genericLength defineFont2_fontName
+       mapM_ (\ x -> putUI8 x) defineFont2_fontName
+       let defineFont2_numGlyphs
+             = genericLength defineFont2_glyphShapeTable
+       case defineFont2_offsetTable of
+           Left x -> mapM_ (\ x -> putUI32 x) x
+           Right x -> mapM_ (\ x -> putUI16 x) x
+       case defineFont2_codeTableOffset of
+           Left x -> putUI32 x
+           Right x -> putUI16 x
+       mapM_ (\ x -> putSHAPE 3 x) defineFont2_glyphShapeTable
+       case defineFont2_codeTable of
+           Left x -> mapM_ (\ x -> putUI16 x) x
+           Right x -> mapM_ (\ x -> putUI8 x) x
+       case defineFont2_fontLayout of
+           Just x -> case x of
+                         (defineFont2_fontLayoutAscent, defineFont2_fontLayoutDescent,
+                          defineFont2_fontLayoutLeading, defineFont2_fontLayoutAdvanceTable,
+                          defineFont2_fontLayoutBoundsTable,
+                          defineFont2_fontLayoutKerningCount,
+                          defineFont2_fontLayoutKerningTable) -> do putSI16
+                                                                      defineFont2_fontLayoutAscent
+                                                                    putSI16
+                                                                      defineFont2_fontLayoutDescent
+                                                                    putSI16
+                                                                      defineFont2_fontLayoutLeading
+                                                                    mapM_ (\ x -> putSI16 x)
+                                                                      defineFont2_fontLayoutAdvanceTable
+                                                                    mapM_ (\ x -> putRECT x)
+                                                                      defineFont2_fontLayoutBoundsTable
+                                                                    putUI16
+                                                                      defineFont2_fontLayoutKerningCount
+                                                                    mapM_
+                                                                      (\ x ->
+                                                                         putKERNINGRECORD
+                                                                           defineFont2_fontFlagsWideCodes
+                                                                           x)
+                                                                      defineFont2_fontLayoutKerningTable
+                                                                    return ()
+           Nothing -> return ()
+       return ()
 
 \end{code}
 
@@ -3590,6 +4697,55 @@ getDefineFont3
                                           defineFont3_fontLayoutKerningCount,
                                           defineFont3_fontLayoutKerningTable))
        return (DefineFont3{..})
+putDefineFont3 DefineFont3{..}
+  = do putUI16 defineFont3_fontID
+       let defineFont3_fontFlagsHasLayout = isJust defineFont3_fontLayout
+       putFlag defineFont3_fontFlagsShiftJIS
+       putFlag defineFont3_fontFlagsSmallText
+       putFlag defineFont3_fontFlagsANSI
+       putFlag defineFont3_fontFlagsWideOffsets
+       putFlag defineFont3_fontFlagsWideCodes
+       putFlag defineFont3_fontFlagsItalic
+       putFlag defineFont3_fontFlagsBold
+       putLANGCODE defineFont3_languageCode
+       let defineFont3_fontNameLen = genericLength defineFont3_fontName
+       mapM_ (\ x -> putUI8 x) defineFont3_fontName
+       putUI16 defineFont3_numGlyphs
+       case defineFont3_offsetTable of
+           Left x -> mapM_ (\ x -> putUI32 x) x
+           Right x -> mapM_ (\ x -> putUI16 x) x
+       case defineFont3_codeTableOffset of
+           Left x -> putUI32 x
+           Right x -> putUI16 x
+       mapM_ (\ x -> putSHAPE 4 x) defineFont3_glyphShapeTable
+       mapM_ (\ x -> putUI16 x) defineFont3_codeTable
+       case defineFont3_fontLayout of
+           Just x -> case x of
+                         (defineFont3_fontLayoutAscent, defineFont3_fontLayoutDescent,
+                          defineFont3_fontLayoutLeading, defineFont3_fontLayoutAdvanceTable,
+                          defineFont3_fontLayoutBoundsTable,
+                          defineFont3_fontLayoutKerningCount,
+                          defineFont3_fontLayoutKerningTable) -> do putSI16
+                                                                      defineFont3_fontLayoutAscent
+                                                                    putSI16
+                                                                      defineFont3_fontLayoutDescent
+                                                                    putSI16
+                                                                      defineFont3_fontLayoutLeading
+                                                                    mapM_ (\ x -> putSI16 x)
+                                                                      defineFont3_fontLayoutAdvanceTable
+                                                                    mapM_ (\ x -> putRECT x)
+                                                                      defineFont3_fontLayoutBoundsTable
+                                                                    putUI16
+                                                                      defineFont3_fontLayoutKerningCount
+                                                                    mapM_
+                                                                      (\ x ->
+                                                                         putKERNINGRECORD
+                                                                           defineFont3_fontFlagsWideCodes
+                                                                           x)
+                                                                      defineFont3_fontLayoutKerningTable
+                                                                    return ()
+           Nothing -> return ()
+       return ()
 
 \end{code}
 
@@ -3601,6 +4757,12 @@ getDefineFontAlignZones
        _defineFontAlignZones_reserved <- getUB 6
        defineFontAlignZones_zoneTable <- getToEnd getZONERECORD
        return (DefineFontAlignZones{..})
+putDefineFontAlignZones DefineFontAlignZones{..}
+  = do putUI16 defineFontAlignZones_fontID
+       putUB 2 defineFontAlignZones_cSMTableHint
+       let _defineFontAlignZones_reserved = 0
+       mapM_ (\ x -> putZONERECORD x) defineFontAlignZones_zoneTable
+       return ()
 
 \end{code}
 
@@ -3617,6 +4779,13 @@ getZONERECORD
        zONERECORD_zoneMaskY <- getFlag
        zONERECORD_zoneMaskX <- getFlag
        return (ZONERECORD{..})
+putZONERECORD ZONERECORD{..}
+  = do let zONERECORD_numZoneData = genericLength zONERECORD_zoneData
+       mapM_ (\ x -> putZONEDATA x) zONERECORD_zoneData
+       let _zONERECORD_reserved = 0
+       putFlag zONERECORD_zoneMaskY
+       putFlag zONERECORD_zoneMaskX
+       return ()
 
 \end{code}
 
@@ -3629,6 +4798,10 @@ getZONEDATA
   = do zONEDATA_alignmentCoordinate <- getFLOAT16
        zONEDATA_range <- getFLOAT16
        return (ZONEDATA{..})
+putZONEDATA ZONEDATA{..}
+  = do putFLOAT16 zONEDATA_alignmentCoordinate
+       putFLOAT16 zONEDATA_range
+       return ()
 
 \end{code}
 
@@ -3646,6 +4819,16 @@ getKERNINGRECORD kERNINGRECORD_fontFlagsWideCodes
                                            fmap Right (liftM2 (,) getUI8 getUI8)
        kERNINGRECORD_fontKerningAdjustment <- getSI16
        return (KERNINGRECORD{..})
+putKERNINGRECORD kERNINGRECORD_fontFlagsWideCodes KERNINGRECORD{..}
+  = do case kERNINGRECORD_fontKerningCodes of
+           Left x -> case x of
+                         (x1, x2) -> do putUI16 x1
+                                        putUI16 x2
+           Right x -> case x of
+                          (x1, x2) -> do putUI8 x1
+                                         putUI8 x2
+       putSI16 kERNINGRECORD_fontKerningAdjustment
+       return ()
 
 \end{code}
 
@@ -3656,6 +4839,11 @@ getDefineFontName
        defineFontName_fontName <- getSTRING
        defineFontName_fontCopyright <- getSTRING
        return (DefineFontName{..})
+putDefineFontName DefineFontName{..}
+  = do putUI16 defineFontName_fontID
+       putSTRING defineFontName_fontName
+       putSTRING defineFontName_fontCopyright
+       return ()
 
 \end{code}
 
@@ -3670,6 +4858,15 @@ getDefineText
        defineText_textRecords <- getTEXTRECORDS 1 defineText_glyphBits
                                    defineText_advanceBits
        return (DefineText{..})
+putDefineText DefineText{..}
+  = do putUI16 defineText_characterID
+       putRECT defineText_textBounds
+       putMATRIX defineText_textMatrix
+       putUI8 defineText_glyphBits
+       putUI8 defineText_advanceBits
+       putTEXTRECORDS 1 defineText_glyphBits defineText_advanceBits
+         defineText_textRecords
+       return ()
 
 \end{code}
 
@@ -3731,6 +4928,38 @@ getTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
                                     (getGLYPHENTRY tEXTRECORD_glyphBits tEXTRECORD_advanceBits)
        _tEXTRECORD_padding <- byteAlign
        return (TEXTRECORD{..})
+putTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
+  tEXTRECORD_advanceBits TEXTRECORD{..}
+  = do putFlag tEXTRECORD_textRecordType
+       let _tEXTRECORD_styleFlagsReserved = 0
+       putFlag tEXTRECORD_styleFlagsHasFont
+       let tEXTRECORD_styleFlagsHasColor = isJust tEXTRECORD_textColor
+       let tEXTRECORD_styleFlagsHasYOffset = isJust tEXTRECORD_yOffset
+       let tEXTRECORD_styleFlagsHasXOffset = isJust tEXTRECORD_xOffset
+       case tEXTRECORD_fontID of
+           Just x -> putUI16 x
+           Nothing -> return ()
+       case tEXTRECORD_textColor of
+           Just x -> case x of
+                         Left x -> putRGBA x
+                         Right x -> putRGB x
+           Nothing -> return ()
+       case tEXTRECORD_xOffset of
+           Just x -> putSI16 x
+           Nothing -> return ()
+       case tEXTRECORD_yOffset of
+           Just x -> putSI16 x
+           Nothing -> return ()
+       case tEXTRECORD_textHeight of
+           Just x -> putUI16 x
+           Nothing -> return ()
+       let tEXTRECORD_glyphCount = genericLength tEXTRECORD_glyphEntries
+       mapM_
+         (\ x ->
+            putGLYPHENTRY tEXTRECORD_glyphBits tEXTRECORD_advanceBits x)
+         tEXTRECORD_glyphEntries
+       let _tEXTRECORD_padding = 0
+       return ()
 
 \end{code}
 
@@ -3744,6 +4973,11 @@ getGLYPHENTRY gLYPHENTRY_glyphBits gLYPHENTRY_advanceBits
   = do gLYPHENTRY_glyphIndex <- getUB gLYPHENTRY_glyphBits
        gLYPHENTRY_glyphAdvance <- getSB gLYPHENTRY_advanceBits
        return (GLYPHENTRY{..})
+putGLYPHENTRY gLYPHENTRY_glyphBits gLYPHENTRY_advanceBits
+  GLYPHENTRY{..}
+  = do putUB gLYPHENTRY_glyphBits gLYPHENTRY_glyphIndex
+       putSB gLYPHENTRY_advanceBits gLYPHENTRY_glyphAdvance
+       return ()
 
 \end{code}
 
@@ -3758,6 +4992,15 @@ getDefineText2
        defineText2_textRecords <- getTEXTRECORDS 2 defineText2_glyphBits
                                     defineText2_advanceBits
        return (DefineText2{..})
+putDefineText2 DefineText2{..}
+  = do putUI16 defineText2_characterID
+       putRECT defineText2_textBounds
+       putMATRIX defineText2_textMatrix
+       putUI8 defineText2_glyphBits
+       putUI8 defineText2_advanceBits
+       putTEXTRECORDS 2 defineText2_glyphBits defineText2_advanceBits
+         defineText2_textRecords
+       return ()
 
 \end{code}
 
@@ -3806,6 +5049,59 @@ getDefineEditText
        defineEditText_initialText <- maybeHas defineEditText_hasText
                                        getSTRING
        return (DefineEditText{..})
+putDefineEditText DefineEditText{..}
+  = do putUI16 defineEditText_characterID
+       putRECT defineEditText_bounds
+       let defineEditText_hasText = isJust defineEditText_initialText
+       putFlag defineEditText_wordWrap
+       putFlag defineEditText_multiline
+       putFlag defineEditText_password
+       putFlag defineEditText_readOnly
+       let defineEditText_hasTextColor = isJust defineEditText_textColor
+       let defineEditText_hasMaxLength = isJust defineEditText_maxLength
+       putFlag defineEditText_hasFont
+       let defineEditText_hasFontClass = isJust defineEditText_fontClass
+       putFlag defineEditText_autoSize
+       let defineEditText_hasLayout = isJust defineEditText_layout
+       putFlag defineEditText_noSelect
+       putFlag defineEditText_border
+       putFlag defineEditText_wasStatic
+       putFlag defineEditText_hTML
+       putFlag defineEditText_useOutlines
+       case defineEditText_fontID of
+           Just x -> putUI16 x
+           Nothing -> return ()
+       case defineEditText_fontClass of
+           Just x -> putSTRING x
+           Nothing -> return ()
+       case defineEditText_fontHeight of
+           Just x -> putUI16 x
+           Nothing -> return ()
+       case defineEditText_textColor of
+           Just x -> putRGBA x
+           Nothing -> return ()
+       case defineEditText_maxLength of
+           Just x -> putUI16 x
+           Nothing -> return ()
+       case defineEditText_layout of
+           Just x -> case x of
+                         (defineEditText_layoutAlign, defineEditText_layoutLeftMargin,
+                          defineEditText_layoutRightMargin, defineEditText_layoutIndent,
+                          defineEditText_layoutLeading) -> do putUI8
+                                                                defineEditText_layoutAlign
+                                                              putUI16
+                                                                defineEditText_layoutLeftMargin
+                                                              putUI16
+                                                                defineEditText_layoutRightMargin
+                                                              putUI16 defineEditText_layoutIndent
+                                                              putSI16 defineEditText_layoutLeading
+                                                              return ()
+           Nothing -> return ()
+       putSTRING defineEditText_variableName
+       case defineEditText_initialText of
+           Just x -> putSTRING x
+           Nothing -> return ()
+       return ()
 
 \end{code}
 
@@ -3820,6 +5116,15 @@ getCSMTextSettings
        cSMTextSettings_sharpness <- getFLOAT
        _cSMTextSettings_reserved <- getUI8
        return (CSMTextSettings{..})
+putCSMTextSettings CSMTextSettings{..}
+  = do putUI16 cSMTextSettings_textID
+       putUB 2 cSMTextSettings_useFlashType
+       putUB 3 cSMTextSettings_gridFit
+       let _cSMTextSettings_reserved = 0
+       putFLOAT cSMTextSettings_thickness
+       putFLOAT cSMTextSettings_sharpness
+       let _cSMTextSettings_reserved = 0
+       return ()
 
 \end{code}
 
@@ -3834,6 +5139,15 @@ getDefineFont4
        defineFont4_fontName <- getSTRING
        defineFont4_fontData <- getRemainingLazyByteString
        return (DefineFont4{..})
+putDefineFont4 DefineFont4{..}
+  = do putUI16 defineFont4_fontID
+       let _defineFont4_fontFlagsReserved = 0
+       putFlag defineFont4_fontFlagsHasFontData
+       putFlag defineFont4_fontFlagsItalic
+       putFlag defineFont4_fontFlagsBold
+       putSTRING defineFont4_fontName
+       putLazyByteString defineFont4_fontData
+       return ()
 
 \end{code}
 
@@ -3852,6 +5166,15 @@ getDefineSound
        defineSound_soundSampleCount <- getUI32
        defineSound_soundData <- getRemainingLazyByteString
        return (DefineSound{..})
+putDefineSound DefineSound{..}
+  = do putUI16 defineSound_soundId
+       putUB 4 defineSound_soundFormat
+       putUB 2 defineSound_soundRate
+       putFlag defineSound_soundSize
+       putFlag defineSound_soundType
+       putUI32 defineSound_soundSampleCount
+       putLazyByteString defineSound_soundData
+       return ()
 
 \end{code}
 
@@ -3861,6 +5184,10 @@ getStartSound
   = do startSound_soundId <- getUI16
        startSound_soundInfo <- getSOUNDINFO
        return (StartSound{..})
+putStartSound StartSound{..}
+  = do putUI16 startSound_soundId
+       putSOUNDINFO startSound_soundInfo
+       return ()
 
 \end{code}
 
@@ -3870,6 +5197,10 @@ getStartSound2
   = do startSound2_soundClassName <- getSTRING
        startSound2_soundInfo <- getSOUNDINFO
        return (StartSound2{..})
+putStartSound2 StartSound2{..}
+  = do putSTRING startSound2_soundClassName
+       putSOUNDINFO startSound2_soundInfo
+       return ()
 
 \end{code}
 
@@ -3899,6 +5230,35 @@ getSOUNDINFO
                                                              getSOUNDENVELOPE
                               return (sOUNDINFO_envPoints, sOUNDINFO_envelopeRecords))
        return (SOUNDINFO{..})
+putSOUNDINFO SOUNDINFO{..}
+  = do let _sOUNDINFO_reserved = 0
+       putFlag sOUNDINFO_syncStop
+       putFlag sOUNDINFO_syncNoMultiple
+       let sOUNDINFO_hasEnvelope = isJust sOUNDINFO_env
+       let sOUNDINFO_hasLoops = isJust sOUNDINFO_loopCount
+       let sOUNDINFO_hasOutPoint = isJust sOUNDINFO_outPoint
+       let sOUNDINFO_hasInPoint = isJust sOUNDINFO_inPoint
+       case sOUNDINFO_inPoint of
+           Just x -> putUI32 x
+           Nothing -> return ()
+       case sOUNDINFO_outPoint of
+           Just x -> putUI32 x
+           Nothing -> return ()
+       case sOUNDINFO_loopCount of
+           Just x -> putUI16 x
+           Nothing -> return ()
+       case sOUNDINFO_env of
+           Just x -> case x of
+                         (sOUNDINFO_envPoints, sOUNDINFO_envelopeRecords) -> do putUI8
+                                                                                  sOUNDINFO_envPoints
+                                                                                mapM_
+                                                                                  (\ x ->
+                                                                                     putSOUNDENVELOPE
+                                                                                       x)
+                                                                                  sOUNDINFO_envelopeRecords
+                                                                                return ()
+           Nothing -> return ()
+       return ()
 
 \end{code}
 
@@ -3914,6 +5274,11 @@ getSOUNDENVELOPE
        sOUNDENVELOPE_leftLevel <- getUI16
        sOUNDENVELOPE_rightLevel <- getUI16
        return (SOUNDENVELOPE{..})
+putSOUNDENVELOPE SOUNDENVELOPE{..}
+  = do putUI32 sOUNDENVELOPE_pos44
+       putUI16 sOUNDENVELOPE_leftLevel
+       putUI16 sOUNDENVELOPE_rightLevel
+       return ()
 
 \end{code}
 
@@ -3933,6 +5298,20 @@ getSoundStreamHead
                                         (soundStreamHead_streamSoundCompression == 2)
                                         getSI16
        return (SoundStreamHead{..})
+putSoundStreamHead SoundStreamHead{..}
+  = do let _soundStreamHead_reserved = 0
+       putUB 2 soundStreamHead_playbackSoundRate
+       putFlag soundStreamHead_playbackSoundSize
+       putFlag soundStreamHead_playbackSoundType
+       putUB 4 soundStreamHead_streamSoundCompression
+       putUB 2 soundStreamHead_streamSoundRate
+       putFlag soundStreamHead_streamSoundSize
+       putFlag soundStreamHead_streamSoundType
+       putUI16 soundStreamHead_streamSoundSampleCount
+       case soundStreamHead_latencySeek of
+           Just x -> putSI16 x
+           Nothing -> return ()
+       return ()
 
 \end{code}
 
@@ -3952,6 +5331,20 @@ getSoundStreamHead2
                                          (soundStreamHead2_streamSoundCompression == 2)
                                          getSI16
        return (SoundStreamHead2{..})
+putSoundStreamHead2 SoundStreamHead2{..}
+  = do let _soundStreamHead2_reserved = 0
+       putUB 2 soundStreamHead2_playbackSoundRate
+       putFlag soundStreamHead2_playbackSoundSize
+       putFlag soundStreamHead2_playbackSoundType
+       putUB 4 soundStreamHead2_streamSoundCompression
+       putUB 2 soundStreamHead2_streamSoundRate
+       putFlag soundStreamHead2_streamSoundSize
+       putFlag soundStreamHead2_streamSoundType
+       putUI16 soundStreamHead2_streamSoundSampleCount
+       case soundStreamHead2_latencySeek of
+           Just x -> putSI16 x
+           Nothing -> return ()
+       return ()
 
 \end{code}
 
@@ -3960,6 +5353,9 @@ p210: SoundStreamBlock
 getSoundStreamBlock
   = do soundStreamBlock_streamSoundData <- getRemainingLazyByteString
        return (SoundStreamBlock{..})
+putSoundStreamBlock SoundStreamBlock{..}
+  = do putLazyByteString soundStreamBlock_streamSoundData
+       return ()
 
 \end{code}
 
@@ -4027,6 +5423,36 @@ getBUTTONRECORD bUTTONRECORD_buttonVer
                                               bUTTONRECORD_buttonDisplayFilterList,
                                               bUTTONRECORD_buttonDisplayBlendMode))
        return (BUTTONRECORD{..})
+putBUTTONRECORD bUTTONRECORD_buttonVer BUTTONRECORD{..}
+  = do let _bUTTONRECORD_buttonReserved = 0
+       putFlag bUTTONRECORD_buttonHasBlendMode
+       putFlag bUTTONRECORD_buttonHasFilterList
+       putFlag bUTTONRECORD_buttonStateHitTest
+       putFlag bUTTONRECORD_buttonStateDown
+       putFlag bUTTONRECORD_buttonStateOver
+       putFlag bUTTONRECORD_buttonStateUp
+       putUI16 bUTTONRECORD_characterID
+       putUI16 bUTTONRECORD_placeDepth
+       putMATRIX bUTTONRECORD_placeMatrix
+       case bUTTONRECORD_buttonDisplay of
+           Just x -> case x of
+                         (bUTTONRECORD_buttonDisplayColorTransform,
+                          bUTTONRECORD_buttonDisplayFilterList,
+                          bUTTONRECORD_buttonDisplayBlendMode) -> do putCXFORMWITHALPHA
+                                                                       bUTTONRECORD_buttonDisplayColorTransform
+                                                                     case
+                                                                       bUTTONRECORD_buttonDisplayFilterList
+                                                                       of
+                                                                         Just x -> putFILTERLIST x
+                                                                         Nothing -> return ()
+                                                                     case
+                                                                       bUTTONRECORD_buttonDisplayBlendMode
+                                                                       of
+                                                                         Just x -> putUI8 x
+                                                                         Nothing -> return ()
+                                                                     return ()
+           Nothing -> return ()
+       return ()
 
 \end{code}
 
@@ -4037,6 +5463,11 @@ getDefineButton
        defineButton_characters <- getBUTTONRECORDS 1
        defineButton_actions <- getACTIONRECORDS
        return (DefineButton{..})
+putDefineButton DefineButton{..}
+  = do putUI16 defineButton_buttonId
+       putBUTTONRECORDS 1 defineButton_characters
+       putACTIONRECORDS defineButton_actions
+       return ()
 
 \end{code}
 
@@ -4051,6 +5482,15 @@ getDefineButton2
        defineButton2_characterEndFlag <- getUI8
        defineButton2_actions <- getBUTTONCONDACTIONS
        return (DefineButton2{..})
+putDefineButton2 DefineButton2{..}
+  = do putUI16 defineButton2_buttonId
+       let _defineButton2_reservedFlags = 0
+       putFlag defineButton2_trackAsMenu
+       putUI16 defineButton2_actionOffset
+       putBUTTONRECORDS 2 defineButton2_characters
+       putUI8 defineButton2_characterEndFlag
+       putBUTTONCONDACTIONS defineButton2_actions
+       return ()
 
 \end{code}
 
@@ -4082,6 +5522,19 @@ getBUTTONCONDACTION
        bUTTONCONDACTION_condOverDownToIdle <- getFlag
        bUTTONCONDACTION_actions <- getACTIONRECORDS
        return (BUTTONCONDACTION{..})
+putBUTTONCONDACTION BUTTONCONDACTION{..}
+  = do putFlag bUTTONCONDACTION_condIdleToOverDown
+       putFlag bUTTONCONDACTION_condOutDownToIdle
+       putFlag bUTTONCONDACTION_condOutDownToOverDown
+       putFlag bUTTONCONDACTION_condOverDownToOutDown
+       putFlag bUTTONCONDACTION_condOverDownToOverUp
+       putFlag bUTTONCONDACTION_condOverUpToOverDown
+       putFlag bUTTONCONDACTION_condOverUpToIdle
+       putFlag bUTTONCONDACTION_condIdleToOverUp
+       putUB 7 bUTTONCONDACTION_condKeyPress
+       putFlag bUTTONCONDACTION_condOverDownToIdle
+       putACTIONRECORDS bUTTONCONDACTION_actions
+       return ()
 
 \end{code}
 
@@ -4117,6 +5570,10 @@ getDefineButtonCxform
   = do defineButtonCxform_buttonId <- getUI16
        defineButtonCxform_buttonColorTransform <- getCXFORM
        return (DefineButtonCxform{..})
+putDefineButtonCxform DefineButtonCxform{..}
+  = do putUI16 defineButtonCxform_buttonId
+       putCXFORM defineButtonCxform_buttonColorTransform
+       return ()
 
 \end{code}
 
@@ -4141,6 +5598,25 @@ getDefineButtonSound
                                                (defineButtonSound_buttonSoundChar3 /= 0)
                                                getSOUNDINFO
        return (DefineButtonSound{..})
+putDefineButtonSound DefineButtonSound{..}
+  = do putUI16 defineButtonSound_buttonId
+       putUI16 defineButtonSound_buttonSoundChar0
+       case defineButtonSound_buttonSoundInfo0 of
+           Just x -> putSOUNDINFO x
+           Nothing -> return ()
+       putUI16 defineButtonSound_buttonSoundChar1
+       case defineButtonSound_buttonSoundInfo1 of
+           Just x -> putSOUNDINFO x
+           Nothing -> return ()
+       putUI16 defineButtonSound_buttonSoundChar2
+       case defineButtonSound_buttonSoundInfo2 of
+           Just x -> putSOUNDINFO x
+           Nothing -> return ()
+       putUI16 defineButtonSound_buttonSoundChar3
+       case defineButtonSound_buttonSoundInfo3 of
+           Just x -> putSOUNDINFO x
+           Nothing -> return ()
+       return ()
 
 \end{code}
 
@@ -4155,6 +5631,11 @@ getDefineSprite
        defineSprite_frameCount <- getUI16
        defineSprite_controlTags <- getToEnd getRECORD
        return (DefineSprite{..})
+putDefineSprite DefineSprite{..}
+  = do putUI16 defineSprite_spriteID
+       putUI16 defineSprite_frameCount
+       mapM_ (\ x -> putRECORD x) defineSprite_controlTags
+       return ()
 
 \end{code}
 
@@ -4174,6 +5655,16 @@ getDefineVideoStream
        defineVideoStream_videoFlagsSmoothing <- getFlag
        defineVideoStream_codecID <- getUI8
        return (DefineVideoStream{..})
+putDefineVideoStream DefineVideoStream{..}
+  = do putUI16 defineVideoStream_characterID
+       putUI16 defineVideoStream_numFrames
+       putUI16 defineVideoStream_width
+       putUI16 defineVideoStream_height
+       let _defineVideoStream_videoFlagsReserved = 0
+       putUB 3 defineVideoStream_videoFlagsDeblocking
+       putFlag defineVideoStream_videoFlagsSmoothing
+       putUI8 defineVideoStream_codecID
+       return ()
 
 \end{code}
 
@@ -4184,6 +5675,11 @@ getStreamID
        streamID_frameNum <- getUI16
        streamID_videoData <- getRemainingLazyByteString
        return (StreamID{..})
+putStreamID StreamID{..}
+  = do putUI16 streamID_streamID
+       putUI16 streamID_frameNum
+       putLazyByteString streamID_videoData
+       return ()
 
 \end{code}
 
@@ -4198,6 +5694,11 @@ getDefineBinaryData
        _defineBinaryData_reserved <- getUI32
        defineBinaryData_data <- getRemainingLazyByteString
        return (DefineBinaryData{..})
+putDefineBinaryData DefineBinaryData{..}
+  = do putUI16 defineBinaryData_tag
+       let _defineBinaryData_reserved = 0
+       putLazyByteString defineBinaryData_data
+       return ()
 
 \end{code}
 
