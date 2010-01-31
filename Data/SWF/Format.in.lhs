@@ -24,11 +24,25 @@ TODOS
 2) Expand some of those BYTE[] fields 
   * In particular, the zlib compressed fields in the image chapter
   * Perhaps also those embedding sound and video formats
-3) Tests, tests, tests!
-4) Implement the code generators for writing back out
-5) Reduce semantic junk - e.g. RECORDHEADER/ACTIONHEADER entries
-6) Asserts to validate safety of throwing away info like Reserved
-7) Asserts to validate semantic junk is in agreement with each other
+3) Reduce semantic junk
+  * RECORDHEADER/ACTIONHEADER entries
+  * NBits fields
+4) Asserts to validate safety of throwing away info like Reserved in custom and generated data types
+5) Asserts to validate semantic junk is in agreement with each other in all custom data types
+
+
+Roundtripping
+~~~~~~~~~~~~~
+
+We do *not* implement perfect roundtripping -- but we guarantee to
+roundtrip anything about the file that affects how it plays back.
+The things preventing us from having perfect roundtripping are:
+1) Fields that control the number of bits used to encode other fields.
+   We discard this information and write back using the minimum number of bits.
+   (TODO: implement this)
+2) Long vs. short count fields. For example, the RECORDHEADER length field
+   can be coded using either a long or short count field if the length is less
+   than 0x3F. We always write back using the shortest possible representation.
 
 
 Chapter 1: Basic Data Types
@@ -534,14 +548,14 @@ data RECORDHEADER = RECORDHEADER { rECORDHEADER_tagType :: UI16, rECORDHEADER_ta
 getRECORDHEADER :: SwfGet RECORDHEADER
 getRECORDHEADER = do
     tagCodeAndLength <- getUI16
-    let tagCode = (tagCodeAndLength `shiftR` 6) .&. 0x3FF
-        tagLength = tagCodeAndLength .&. 0x3F
-    tagLength <- if tagLength == 0x3F then getUI32 else return (fromIntegral tagLength)
-    return $ RECORDHEADER tagCode tagLength
+    let tagLength = tagCodeAndLength .&. 0x3F
+        rECORDHEADER_tagType = (tagCodeAndLength `shiftR` 6) .&. 0x3FF
+    rECORDHEADER_tagLength <- if tagLength == 0x3F then getUI32 else return (fromIntegral tagLength)
+    return $ RECORDHEADER {..}
 
 putRECORDHEADER :: RECORDHEADER -> SwfPut
 putRECORDHEADER (RECORDHEADER{..}) = do
-    putUI16 ((rECORDHEADER_tagType `shiftL` 6) .|. (fromIntegral $ rECORDHEADER_tagLength `max` 0x3F))
+    putUI16 ((rECORDHEADER_tagType `shiftL` 6) .|. (fromIntegral $ rECORDHEADER_tagLength `min` 0x3F))
     when (rECORDHEADER_tagLength >= 0x3F) $ putUI32 rECORDHEADER_tagLength
 
 \end{code}
@@ -2034,7 +2048,7 @@ getFILLSTYLEARRAY shapeVer = do
 
 putFILLSTYLEARRAY shapeVer fs = do
     let count = length fs
-    putUI8 (fromIntegral $ count `max` 0xFF)
+    putUI8 (fromIntegral $ count `min` 0xFF)
     when (count >= 0xFF) $ putUI16 (fromIntegral count)
     mapM_ (putFILLSTYLE shapeVer) fs
 
@@ -2099,7 +2113,7 @@ getLINESTYLEARRAY shapeVer = do
 
 putLINESTYLEARRAY shapeVer ei_ls_ls2 = do
     let count = either length length ei_ls_ls2
-    putUI8 (fromIntegral $ count `max` 0xFF)
+    putUI8 (fromIntegral $ count `min` 0xFF)
     when (count >= 0xFF) $ putUI16 (fromIntegral count)
     case ei_ls_ls2 of
         Left ls   | shapeVer <= 3 -> mapM_ (putLINESTYLE shapeVer) ls
@@ -2499,7 +2513,7 @@ getMORPHFILLSTYLEARRAY = do
 
 putMORPHFILLSTYLEARRAY mfs = do
     let count = length mfs
-    putUI8 (fromIntegral $ count `max` 0xFF)
+    putUI8 (fromIntegral $ count `min` 0xFF)
     when (count >= 0xFF) $ putUI16 (fromIntegral count)
     mapM_ putMORPHFILLSTYLE mfs
 
@@ -2575,7 +2589,7 @@ getMORPHLINESTYLEARRAY morphVersion = do
 
 putMORPHLINESTYLEARRAY morphVersion ei_mls_mls2 = do
     let count = either genericLength genericLength ei_mls_mls2
-    putUI8 (fromIntegral $ count `max` 0xFF)
+    putUI8 (fromIntegral $ count `min` 0xFF)
     when (count >= 0xFF) $ putUI16 count
     case ei_mls_mls2 of
         Left mls | morphVersion == 1   -> mapM_ putMORPHLINESTYLE mls

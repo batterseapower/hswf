@@ -101,9 +101,6 @@ flushed what = do { x <- what; flushBits; return x }
 readFileWords :: FilePath -> IO [Word8]
 readFileWords = fmap BS.unpack . BS.readFile
 
-readFileBS :: FilePath -> IO ByteString
-readFileBS = BS.readFile
-
 runGet :: [Word8] -> SwfGet a -> a
 runGet = runSwfGet emptySwfEnv . BS.pack
 

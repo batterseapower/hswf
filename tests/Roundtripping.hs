@@ -4,6 +4,7 @@ import TestUtilities
 
 import Control.Monad
 
+import qualified Data.ByteString.Lazy as BS
 import Data.List
 
 import System.Directory
@@ -58,9 +59,17 @@ findFiles p dir = do
 roundtripFiles :: IO ()
 roundtripFiles = do
     files <- findFiles (".swf" `isSuffixOf`) "examples"
-    forM_ files $ \file -> do
-        bs <- readFileBS file
-        let swf = getSwf bs
-            bs' = putSwf swf
-            swf' = getSwf bs'
-        unless (bs == bs') $ sayNotEqual ["In " ++ file] swf' swf
+    mapM_ roundtripFile files
+
+roundtripFile :: FilePath -> IO ()
+roundtripFile file = do
+    bs <- BS.readFile file
+    let swf = getSwf bs
+        bs' = putSwf swf
+        swf' = getSwf bs'
+    -- NB: do NOT test bs == bs', because we don't guarantee to preserve
+    -- absolutely everything about the SWF -- only the "semantic" information.
+    unless (swf == swf') $ do
+        tmp_file <- fmap (</> "roundtrip.swf") getTemporaryDirectory
+        BS.writeFile tmp_file bs'
+        sayNotEqual ["In " ++ file ++ " (vs. " ++ tmp_file ++ ")"] swf' swf

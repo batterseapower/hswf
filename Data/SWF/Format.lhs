@@ -744,14 +744,14 @@ data RECORDHEADER = RECORDHEADER { rECORDHEADER_tagType :: UI16, rECORDHEADER_ta
 getRECORDHEADER :: SwfGet RECORDHEADER
 getRECORDHEADER = do
     tagCodeAndLength <- getUI16
-    let tagCode = (tagCodeAndLength `shiftR` 6) .&. 0x3FF
-        tagLength = tagCodeAndLength .&. 0x3F
-    tagLength <- if tagLength == 0x3F then getUI32 else return (fromIntegral tagLength)
-    return $ RECORDHEADER tagCode tagLength
+    let tagLength = tagCodeAndLength .&. 0x3F
+        rECORDHEADER_tagType = (tagCodeAndLength `shiftR` 6) .&. 0x3FF
+    rECORDHEADER_tagLength <- if tagLength == 0x3F then getUI32 else return (fromIntegral tagLength)
+    return $ RECORDHEADER {..}
 
 putRECORDHEADER :: RECORDHEADER -> SwfPut
 putRECORDHEADER (RECORDHEADER{..}) = do
-    putUI16 ((rECORDHEADER_tagType `shiftL` 6) .|. (fromIntegral $ rECORDHEADER_tagLength `max` 0x3F))
+    putUI16 ((rECORDHEADER_tagType `shiftL` 6) .|. (fromIntegral $ rECORDHEADER_tagLength `min` 0x3F))
     when (rECORDHEADER_tagLength >= 0x3F) $ putUI32 rECORDHEADER_tagLength
 
 \end{code}
@@ -3677,7 +3677,7 @@ getFILLSTYLEARRAY shapeVer = do
 
 putFILLSTYLEARRAY shapeVer fs = do
     let count = length fs
-    putUI8 (fromIntegral $ count `max` 0xFF)
+    putUI8 (fromIntegral $ count `min` 0xFF)
     when (count >= 0xFF) $ putUI16 (fromIntegral count)
     mapM_ (putFILLSTYLE shapeVer) fs
 
@@ -3742,7 +3742,7 @@ getLINESTYLEARRAY shapeVer = do
 
 putLINESTYLEARRAY shapeVer ei_ls_ls2 = do
     let count = either length length ei_ls_ls2
-    putUI8 (fromIntegral $ count `max` 0xFF)
+    putUI8 (fromIntegral $ count `min` 0xFF)
     when (count >= 0xFF) $ putUI16 (fromIntegral count)
     case ei_ls_ls2 of
         Left ls   | shapeVer <= 3 -> mapM_ (putLINESTYLE shapeVer) ls
@@ -4501,7 +4501,7 @@ getMORPHFILLSTYLEARRAY = do
 
 putMORPHFILLSTYLEARRAY mfs = do
     let count = length mfs
-    putUI8 (fromIntegral $ count `max` 0xFF)
+    putUI8 (fromIntegral $ count `min` 0xFF)
     when (count >= 0xFF) $ putUI16 (fromIntegral count)
     mapM_ putMORPHFILLSTYLE mfs
 
@@ -4591,7 +4591,7 @@ getMORPHLINESTYLEARRAY morphVersion = do
 
 putMORPHLINESTYLEARRAY morphVersion ei_mls_mls2 = do
     let count = either genericLength genericLength ei_mls_mls2
-    putUI8 (fromIntegral $ count `max` 0xFF)
+    putUI8 (fromIntegral $ count `min` 0xFF)
     when (count >= 0xFF) $ putUI16 count
     case ei_mls_mls2 of
         Left mls | morphVersion == 1   -> mapM_ putMORPHLINESTYLE mls
