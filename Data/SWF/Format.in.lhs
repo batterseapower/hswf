@@ -27,8 +27,8 @@ TODOS
 3) Reduce semantic junk
   * RECORDHEADER/ACTIONHEADER entries
   * NBits fields
-4) Asserts to validate safety of throwing away info like Reserved in custom and generated data types
-5) Asserts to validate semantic junk is in agreement with each other in all custom data types
+4) Asserts to validate semantic junk is in agreement with each other in all custom data types
+5) Simplify away generated consistency checks that are trivially true
 
 
 Roundtripping
@@ -43,6 +43,8 @@ The things preventing us from having perfect roundtripping are:
 2) Long vs. short count fields. For example, the RECORDHEADER length field
    can be coded using either a long or short count field if the length is less
    than 0x3F. We always write back using the shortest possible representation.
+3) ZLib (compress . decompress) may not be the identity (haven't observed this
+   in practice though)
 
 
 Chapter 1: Basic Data Types
@@ -504,14 +506,12 @@ data Swf = Swf { compressed :: Bool, version :: UI8, fileLength :: UI32 {- after
 
 getSwf :: ByteString -> Swf
 getSwf bs = runSwfGet emptySwfEnv bs $ do
-    signature_1 <- fmap fromIntegral getWord8
-    compressed <- case lookup signature_1 [(ord 'F', False), (ord 'C', True)] of
+    signature_1 <- getUI8
+    compressed <- case lookup (fromIntegral signature_1) [(ord 'F', False), (ord 'C', True)] of
         Just c  -> return c
         Nothing -> fail "SWF signature byte 1 unrecognised"
-    signature_2 <- fmap fromIntegral getWord8
-    assertM (signature_2 == ord 'W') "SWF signature byte 2 wrong"
-    signature_3 <- fmap fromIntegral getWord8
-    assertM (signature_3 == ord 'S') "SWF signature byte 3 wrong"
+    discardKnown (fromIntegral $ ord 'W') getUI8 -- "SWF signature byte 2 wrong"
+    discardKnown (fromIntegral $ ord 'S') getUI8 -- "SWF signature byte 3 wrong"
     version <- getUI8
     fileLength <- getUI32
     
@@ -942,9 +942,9 @@ type CLIPEVENTFLAGS = [CLIPEVENTFLAG]
       if (version <= 5)
        then return cefs
        else do
-          _reserved <- getUB 5
+          discardReserved $ getUB 5
           cefs <- foldM f cefs swf6_flags
-          _reserved <- getUB 8
+          discardReserved $ getUB 8
           return cefs
 
     putter flags = do
@@ -953,9 +953,9 @@ type CLIPEVENTFLAGS = [CLIPEVENTFLAG]
       
       version <- fmap swfVersion getSwfPutM
       when (version > 5) $ do
-          putUB 5 0
+          putUB 5 reservedDefault
           mapM_ f swf6_flags
-          putUB 8 0
+          putUB 8 reservedDefault
 
 \end{code}
 
@@ -2203,8 +2203,9 @@ type SHAPERECORDS = [SHAPERECORD]
               look <- lookAhead (getUB 5)
               if look == 0
                then do
+                 discardKnown 0 $ getUB 5
                  -- NB: align the SHAPERECORD array only at the end!
-                 getUB 5 >> byteAlign
+                 byteAlign
                  return []
                else do
                  x <- getSTYLECHANGERECORD shapeVer fillBits lineBits
@@ -2213,7 +2214,9 @@ type SHAPERECORDS = [SHAPERECORD]
     
     putter shapeVer = go
       where
-        go _ _ [] = putFlag False >> putUB 5 0
+        go _ _ [] = do
+          putFlag False
+          putUB 5 0
         go fillBits lineBits (r:rs) = do
           (fillBits, lineBits) <- case r of
             STRAIGHTEDGERECORD {} -> putFlag True >> putFlag True >> putSTRAIGHTEDGERECORD r >> return (fillBits, lineBits)
@@ -2823,7 +2826,9 @@ getTEXTRECORDS textVer glyphBits advanceBits = go
     go = do
       look <- lookAhead getUI8
       if look == 0
-       then getUI8 >> return []
+       then do
+         discardKnown 0 getUI8
+         return []
        else do
          x <- getTEXTRECORD textVer glyphBits advanceBits
          fmap (x:) go
@@ -3063,7 +3068,9 @@ getBUTTONRECORDS buttonVer = go
     go = do
       look <- lookAhead getUI8
       if look == 0
-        then getUI8 >> return []
+        then do
+          discardKnown 0 getUI8
+          return []
         else do
           x <- getBUTTONRECORD buttonVer
           fmap (x:) go

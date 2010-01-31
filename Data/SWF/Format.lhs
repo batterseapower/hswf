@@ -24,11 +24,28 @@ TODOS
 2) Expand some of those BYTE[] fields 
   * In particular, the zlib compressed fields in the image chapter
   * Perhaps also those embedding sound and video formats
-3) Tests, tests, tests!
-4) Implement the code generators for writing back out
-5) Reduce semantic junk - e.g. RECORDHEADER/ACTIONHEADER entries
-6) Asserts to validate safety of throwing away info like Reserved
-7) Asserts to validate semantic junk is in agreement with each other
+3) Reduce semantic junk
+  * RECORDHEADER/ACTIONHEADER entries
+  * NBits fields
+4) Asserts to validate safety of throwing away info like Reserved in custom data types
+5) Asserts to validate semantic junk is in agreement with each other in all custom data types
+6) Simplify away generated consistency checks that are trivially true
+
+
+Roundtripping
+~~~~~~~~~~~~~
+
+We do *not* implement perfect roundtripping -- but we guarantee to
+roundtrip anything about the file that affects how it plays back.
+The things preventing us from having perfect roundtripping are:
+1) Fields that control the number of bits used to encode other fields.
+   We discard this information and write back using the minimum number of bits.
+   (TODO: implement this)
+2) Long vs. short count fields. For example, the RECORDHEADER length field
+   can be coded using either a long or short count field if the length is less
+   than 0x3F. We always write back using the shortest possible representation.
+3) ZLib (compress . decompress) may not be the identity (haven't observed this
+   in practice though)
 
 
 Chapter 1: Basic Data Types
@@ -471,7 +488,7 @@ getRECT
        rECT_xmax <- getSB rECT_nbits
        rECT_ymin <- getSB rECT_nbits
        rECT_ymax <- getSB rECT_nbits
-       _rECT_padding <- byteAlign
+       discardReserved byteAlign
        return (RECT{..})
 putRECT RECT{..}
   = do putUB 5 rECT_nbits
@@ -479,8 +496,8 @@ putRECT RECT{..}
        putSB rECT_nbits rECT_xmax
        putSB rECT_nbits rECT_ymin
        putSB rECT_nbits rECT_ymax
-       let _rECT_padding = reservedDefault
-       const flushBits (_rECT_padding :: ())
+       let tmp = reservedDefault
+       const flushBits (tmp :: ())
        return ()
 
 \end{code}
@@ -509,7 +526,7 @@ getMATRIX
        mATRIX_translateBits <- getUB 5
        mATRIX_translateX <- getSB mATRIX_translateBits
        mATRIX_translateY <- getSB mATRIX_translateBits
-       _mATRIX_padding <- byteAlign
+       discardReserved byteAlign
        return (MATRIX{..})
 putMATRIX MATRIX{..}
   = do let mATRIX_hasScale = isJust mATRIX_scale
@@ -543,8 +560,8 @@ putMATRIX MATRIX{..}
        putUB 5 mATRIX_translateBits
        putSB mATRIX_translateBits mATRIX_translateX
        putSB mATRIX_translateBits mATRIX_translateY
-       let _mATRIX_padding = reservedDefault
-       const flushBits (_mATRIX_padding :: ())
+       let tmp = reservedDefault
+       const flushBits (tmp :: ())
        return ()
 
 \end{code}
@@ -572,7 +589,7 @@ getCXFORM
                                cXFORM_blueAddTerm <- getSB cXFORM_nbits
                                return
                                  (cXFORM_redAddTerm, cXFORM_greenAddTerm, cXFORM_blueAddTerm))
-       _cXFORM_padding <- byteAlign
+       discardReserved byteAlign
        return (CXFORM{..})
 putCXFORM CXFORM{..}
   = do let cXFORM_hasAddTerms = isJust cXFORM_addTerm
@@ -600,8 +617,8 @@ putCXFORM CXFORM{..}
                                                       return ()
            Nothing -> if False /= (cXFORM_hasAddTerms) then inconsistent else
                         return ()
-       let _cXFORM_padding = reservedDefault
-       const flushBits (_cXFORM_padding :: ())
+       let tmp = reservedDefault
+       const flushBits (tmp :: ())
        return ()
 
 \end{code}
@@ -639,7 +656,7 @@ getCXFORMWITHALPHA
                                           (cXFORMWITHALPHA_redAddTerm, cXFORMWITHALPHA_greenAddTerm,
                                            cXFORMWITHALPHA_blueAddTerm,
                                            cXFORMWITHALPHA_alphaAddTerm))
-       _cXFORMWITHALPHA_padding <- byteAlign
+       discardReserved byteAlign
        return (CXFORMWITHALPHA{..})
 putCXFORMWITHALPHA CXFORMWITHALPHA{..}
   = do let cXFORMWITHALPHA_hasAddTerms
@@ -682,8 +699,8 @@ putCXFORMWITHALPHA CXFORMWITHALPHA{..}
                                                                 return ()
            Nothing -> if False /= (cXFORMWITHALPHA_hasAddTerms) then
                         inconsistent else return ()
-       let _cXFORMWITHALPHA_padding = reservedDefault
-       const flushBits (_cXFORMWITHALPHA_padding :: ())
+       let tmp = reservedDefault
+       const flushBits (tmp :: ())
        return ()
 
 \end{code}
@@ -700,14 +717,12 @@ data Swf = Swf { compressed :: Bool, version :: UI8, fileLength :: UI32 {- after
 
 getSwf :: ByteString -> Swf
 getSwf bs = runSwfGet emptySwfEnv bs $ do
-    signature_1 <- fmap fromIntegral getWord8
-    compressed <- case lookup signature_1 [(ord 'F', False), (ord 'C', True)] of
+    signature_1 <- getUI8
+    compressed <- case lookup (fromIntegral signature_1) [(ord 'F', False), (ord 'C', True)] of
         Just c  -> return c
         Nothing -> fail "SWF signature byte 1 unrecognised"
-    signature_2 <- fmap fromIntegral getWord8
-    assertM (signature_2 == ord 'W') "SWF signature byte 2 wrong"
-    signature_3 <- fmap fromIntegral getWord8
-    assertM (signature_3 == ord 'S') "SWF signature byte 3 wrong"
+    discardKnown (fromIntegral $ ord 'W') getUI8 -- "SWF signature byte 2 wrong"
+    discardKnown (fromIntegral $ ord 'S') getUI8 -- "SWF signature byte 3 wrong"
     version <- getUI8
     fileLength <- getUI32
     
@@ -1317,13 +1332,13 @@ data CLIPACTIONS = CLIPACTIONS{cLIPACTIONS_allEventFlags ::
                                cLIPACTIONS_clipActionRecords :: CLIPACTIONRECORDS}
                  deriving (Eq, Show, Typeable, Data)
 getCLIPACTIONS
-  = do _cLIPACTIONS_reserved <- getUI16
+  = do discardReserved getUI16
        cLIPACTIONS_allEventFlags <- getCLIPEVENTFLAGS
        cLIPACTIONS_clipActionRecords <- getCLIPACTIONRECORDS
        return (CLIPACTIONS{..})
 putCLIPACTIONS CLIPACTIONS{..}
-  = do let _cLIPACTIONS_reserved = reservedDefault
-       putUI16 _cLIPACTIONS_reserved
+  = do let tmp = reservedDefault
+       putUI16 tmp
        putCLIPEVENTFLAGS cLIPACTIONS_allEventFlags
        putCLIPACTIONRECORDS cLIPACTIONS_clipActionRecords
        return ()
@@ -1384,7 +1399,7 @@ getPlaceObject3
        placeObject3_placeFlagHasMatrix <- getFlag
        placeObject3_placeFlagHasCharacter <- getFlag
        placeObject3_placeFlagMove <- getFlag
-       _placeObject3_reserved <- getUB 3
+       discardReserved (getUB 3)
        placeObject3_placeFlagHasImage <- getFlag
        placeObject3_placeFlagHasClassName <- getFlag
        placeObject3_placeFlagHasCacheAsBitmap <- getFlag
@@ -1444,8 +1459,8 @@ putPlaceObject3 PlaceObject3{..}
              = isJust placeObject3_characterId
        putFlag placeObject3_placeFlagHasCharacter
        putFlag placeObject3_placeFlagMove
-       let _placeObject3_reserved = reservedDefault
-       putUB 3 _placeObject3_reserved
+       let tmp = reservedDefault
+       putUB 3 tmp
        putFlag placeObject3_placeFlagHasImage
        putFlag placeObject3_placeFlagHasClassName
        let placeObject3_placeFlagHasCacheAsBitmap
@@ -1641,7 +1656,7 @@ getCONVOLUTIONFILTER
                                      (cONVOLUTIONFILTER_matrixX * cONVOLUTIONFILTER_matrixY)
                                      getFLOAT
        cONVOLUTIONFILTER_defaultColor <- getRGBA
-       _cONVOLUTIONFILTER_reserved <- getUB 6
+       discardReserved (getUB 6)
        cONVOLUTIONFILTER_clamp <- getFlag
        cONVOLUTIONFILTER_preserveAlpha <- getFlag
        return (CONVOLUTIONFILTER{..})
@@ -1656,8 +1671,8 @@ putCONVOLUTIONFILTER CONVOLUTIONFILTER{..}
          then inconsistent else
          mapM_ (\ x -> putFLOAT x) cONVOLUTIONFILTER_matrix
        putRGBA cONVOLUTIONFILTER_defaultColor
-       let _cONVOLUTIONFILTER_reserved = reservedDefault
-       putUB 6 _cONVOLUTIONFILTER_reserved
+       let tmp = reservedDefault
+       putUB 6 tmp
        putFlag cONVOLUTIONFILTER_clamp
        putFlag cONVOLUTIONFILTER_preserveAlpha
        return ()
@@ -1674,14 +1689,14 @@ getBLURFILTER
   = do bLURFILTER_blurX <- getFIXED
        bLURFILTER_blurY <- getFIXED
        bLURFILTER_passes <- getUB 5
-       _bLURFILTER_reserved <- getUB 3
+       discardReserved (getUB 3)
        return (BLURFILTER{..})
 putBLURFILTER BLURFILTER{..}
   = do putFIXED bLURFILTER_blurX
        putFIXED bLURFILTER_blurY
        putUB 5 bLURFILTER_passes
-       let _bLURFILTER_reserved = reservedDefault
-       putUB 3 _bLURFILTER_reserved
+       let tmp = reservedDefault
+       putUB 3 tmp
        return ()
 
 \end{code}
@@ -1962,9 +1977,9 @@ type CLIPEVENTFLAGS = [CLIPEVENTFLAG]
       if (version <= 5)
        then return cefs
        else do
-          _reserved <- getUB 5
+          discardReserved $ getUB 5
           cefs <- foldM f cefs swf6_flags
-          _reserved <- getUB 8
+          discardReserved $ getUB 8
           return cefs
 
     putter flags = do
@@ -1973,9 +1988,9 @@ type CLIPEVENTFLAGS = [CLIPEVENTFLAG]
       
       version <- fmap swfVersion getSwfPutM
       when (version > 5) $ do
-          putUB 5 0
+          putUB 5 reservedDefault
           mapM_ f swf6_flags
-          putUB 8 0
+          putUB 8 reservedDefault
 
 \end{code}
 
@@ -2108,12 +2123,12 @@ putEnableDebugger EnableDebugger{..}
 p57: EnableDebugger2
 \begin{code}
 getEnableDebugger2
-  = do _enableDebugger2_reserved <- getUI16
+  = do discardReserved getUI16
        enableDebugger2_password <- getSTRING
        return (EnableDebugger2{..})
 putEnableDebugger2 EnableDebugger2{..}
-  = do let _enableDebugger2_reserved = reservedDefault
-       putUI16 _enableDebugger2_reserved
+  = do let tmp = reservedDefault
+       putUI16 tmp
        putSTRING enableDebugger2_password
        return ()
 
@@ -2148,27 +2163,27 @@ putSetTabIndex SetTabIndex{..}
 p59: FileAttributes
 \begin{code}
 getFileAttributes
-  = do _fileAttributes_reserved <- getFlag
+  = do discardReserved getFlag
        fileAttributes_useDirectBlit <- getFlag
        fileAttributes_useGPU <- getFlag
        fileAttributes_hasMetadata <- getFlag
        fileAttributes_actionScript3 <- getFlag
-       _fileAttributes_reserved <- getUB 2
+       discardReserved (getUB 2)
        fileAttributes_useNetwork <- getFlag
-       _fileAttributes_reserved <- getUB 24
+       discardReserved (getUB 24)
        return (FileAttributes{..})
 putFileAttributes FileAttributes{..}
-  = do let _fileAttributes_reserved = reservedDefault
-       putFlag _fileAttributes_reserved
+  = do let tmp = reservedDefault
+       putFlag tmp
        putFlag fileAttributes_useDirectBlit
        putFlag fileAttributes_useGPU
        putFlag fileAttributes_hasMetadata
        putFlag fileAttributes_actionScript3
-       let _fileAttributes_reserved = reservedDefault
-       putUB 2 _fileAttributes_reserved
+       let tmp = reservedDefault
+       putUB 2 tmp
        putFlag fileAttributes_useNetwork
-       let _fileAttributes_reserved = reservedDefault
-       putUB 24 _fileAttributes_reserved
+       let tmp = reservedDefault
+       putUB 24 tmp
        return ()
 
 \end{code}
@@ -2177,8 +2192,8 @@ p60: ImportAssets2
 \begin{code}
 getImportAssets2
   = do importAssets2_uRL <- getSTRING
-       _importAssets2_reserved <- getUI8
-       _importAssets2_reserved <- getUI8
+       discardReserved getUI8
+       discardReserved getUI8
        importAssets2_count <- getUI16
        importAssets2_tag1 <- getUI16
        importAssets2_name1 <- getSTRING
@@ -2187,10 +2202,10 @@ getImportAssets2
        return (ImportAssets2{..})
 putImportAssets2 ImportAssets2{..}
   = do putSTRING importAssets2_uRL
-       let _importAssets2_reserved = reservedDefault
-       putUI8 _importAssets2_reserved
-       let _importAssets2_reserved = reservedDefault
-       putUI8 _importAssets2_reserved
+       let tmp = reservedDefault
+       putUI8 tmp
+       let tmp = reservedDefault
+       putUI8 tmp
        putUI16 importAssets2_count
        putUI16 importAssets2_tag1
        putSTRING importAssets2_name1
@@ -3040,14 +3055,14 @@ p87: ActionGetURL2
 \begin{code}
 getActionGetURL2
   = do actionGetURL2_sendVarsMethod <- getUB 2
-       _actionGetURL2_reserved <- getUB 4
+       discardReserved (getUB 4)
        actionGetURL2_loadTargetFlag <- getFlag
        actionGetURL2_loadVariablesFlag <- getFlag
        return (ActionGetURL2{..})
 putActionGetURL2 ActionGetURL2{..}
   = do putUB 2 actionGetURL2_sendVarsMethod
-       let _actionGetURL2_reserved = reservedDefault
-       putUB 4 _actionGetURL2_reserved
+       let tmp = reservedDefault
+       putUB 4 tmp
        putFlag actionGetURL2_loadTargetFlag
        putFlag actionGetURL2_loadVariablesFlag
        return ()
@@ -3057,7 +3072,7 @@ putActionGetURL2 ActionGetURL2{..}
 p88: ActionGotoFrame2
 \begin{code}
 getActionGotoFrame2
-  = do _actionGotoFrame2_reserved <- getUB 6
+  = do discardReserved (getUB 6)
        actionGotoFrame2_sceneBiasFlag <- getFlag
        actionGotoFrame2_playFlag <- getFlag
        actionGotoFrame2_sceneBias <- maybeHas
@@ -3065,8 +3080,8 @@ getActionGotoFrame2
                                        getUI16
        return (ActionGotoFrame2{..})
 putActionGotoFrame2 ActionGotoFrame2{..}
-  = do let _actionGotoFrame2_reserved = reservedDefault
-       putUB 6 _actionGotoFrame2_reserved
+  = do let tmp = reservedDefault
+       putUB 6 tmp
        let actionGotoFrame2_sceneBiasFlag
              = isJust actionGotoFrame2_sceneBias
        putFlag actionGotoFrame2_sceneBiasFlag
@@ -3515,7 +3530,7 @@ getActionDefineFunction2
        actionDefineFunction2_preloadArgumentsFlag <- getFlag
        actionDefineFunction2_suppressThisFlag <- getFlag
        actionDefineFunction2_preloadThisFlag <- getFlag
-       _actionDefineFunction2_reserved <- getUB 7
+       discardReserved (getUB 7)
        actionDefineFunction2_preloadGlobalFlag <- getFlag
        actionDefineFunction2_parameters <- genericReplicateM
                                              actionDefineFunction2_numParams
@@ -3536,8 +3551,8 @@ putActionDefineFunction2 ActionDefineFunction2{..}
        putFlag actionDefineFunction2_preloadArgumentsFlag
        putFlag actionDefineFunction2_suppressThisFlag
        putFlag actionDefineFunction2_preloadThisFlag
-       let _actionDefineFunction2_reserved = reservedDefault
-       putUB 7 _actionDefineFunction2_reserved
+       let tmp = reservedDefault
+       putUB 7 tmp
        putFlag actionDefineFunction2_preloadGlobalFlag
        if
          genericLength actionDefineFunction2_parameters /=
@@ -3589,7 +3604,7 @@ putActionImplementsOp ActionImplementsOp{..} = do return ()
 p121: ActionTy
 \begin{code}
 getActionTry
-  = do _actionTry_reserved <- getUB 5
+  = do discardReserved (getUB 5)
        actionTry_catchInRegisterFlag <- getFlag
        actionTry_finallyBlockFlag <- getFlag
        actionTry_catchBlockFlag <- getFlag
@@ -3606,8 +3621,8 @@ getActionTry
                                   getUI8
        return (ActionTry{..})
 putActionTry ActionTry{..}
-  = do let _actionTry_reserved = reservedDefault
-       putUB 5 _actionTry_reserved
+  = do let tmp = reservedDefault
+       putUB 5 tmp
        let actionTry_catchInRegisterFlag = isJust actionTry_catchRegister
        putFlag actionTry_catchInRegisterFlag
        putFlag actionTry_finallyBlockFlag
@@ -3788,7 +3803,7 @@ getLINESTYLE2
        lINESTYLE2_noHScaleFlag <- getFlag
        lINESTYLE2_noVScaleFlag <- getFlag
        lINESTYLE2_pixelHintingFlag <- getFlag
-       _lINESTYLE2_reserved <- getUB 5
+       discardReserved (getUB 5)
        lINESTYLE2_noClose <- getFlag
        lINESTYLE2_endCapStyle <- getUB 2
        lINESTYLE2_miterLimitFactor <- maybeHas (lINESTYLE2_joinStyle == 2)
@@ -3806,8 +3821,8 @@ putLINESTYLE2 LINESTYLE2{..}
        putFlag lINESTYLE2_noHScaleFlag
        putFlag lINESTYLE2_noVScaleFlag
        putFlag lINESTYLE2_pixelHintingFlag
-       let _lINESTYLE2_reserved = reservedDefault
-       putUB 5 _lINESTYLE2_reserved
+       let tmp = reservedDefault
+       putUB 5 tmp
        putFlag lINESTYLE2_noClose
        putUB 2 lINESTYLE2_endCapStyle
        case lINESTYLE2_miterLimitFactor of
@@ -3911,8 +3926,9 @@ type SHAPERECORDS = [SHAPERECORD]
               look <- lookAhead (getUB 5)
               if look == 0
                then do
+                 discardKnown 0 $ getUB 5
                  -- NB: align the SHAPERECORD array only at the end!
-                 getUB 5 >> byteAlign
+                 byteAlign
                  return []
                else do
                  x <- getSTYLECHANGERECORD shapeVer fillBits lineBits
@@ -3921,7 +3937,9 @@ type SHAPERECORDS = [SHAPERECORD]
     
     putter shapeVer = go
       where
-        go _ _ [] = putFlag False >> putUB 5 0
+        go _ _ [] = do
+          putFlag False
+          putUB 5 0
         go fillBits lineBits (r:rs) = do
           (fillBits, lineBits) <- case r of
             STRAIGHTEDGERECORD {} -> putFlag True >> putFlag True >> putSTRAIGHTEDGERECORD r >> return (fillBits, lineBits)
@@ -4170,7 +4188,7 @@ getDefineShape4
   = do defineShape4_shapeId <- getUI16
        defineShape4_shapeBounds <- getRECT
        defineShape4_edgeBounds <- getRECT
-       _defineShape4_reserved <- getUB 5
+       discardReserved (getUB 5)
        defineShape4_usesFillWindingRule <- getFlag
        defineShape4_usesNonScalingStrokes <- getFlag
        defineShape4_usesScalingStrokes <- getFlag
@@ -4180,8 +4198,8 @@ putDefineShape4 DefineShape4{..}
   = do putUI16 defineShape4_shapeId
        putRECT defineShape4_shapeBounds
        putRECT defineShape4_edgeBounds
-       let _defineShape4_reserved = reservedDefault
-       putUB 5 _defineShape4_reserved
+       let tmp = reservedDefault
+       putUB 5 tmp
        putFlag defineShape4_usesFillWindingRule
        putFlag defineShape4_usesNonScalingStrokes
        putFlag defineShape4_usesScalingStrokes
@@ -4461,7 +4479,7 @@ getDefineMorphShape2
        defineMorphShape2_endBounds <- getRECT
        defineMorphShape2_startEdgeBounds <- getRECT
        defineMorphShape2_endEdgeBounds <- getRECT
-       _defineMorphShape2_reserved <- getUB 6
+       discardReserved (getUB 6)
        defineMorphShape2_usesNonScalingStrokes <- getFlag
        defineMorphShape2_usesScalingStrokes <- getFlag
        defineMorphShape2_offset <- getUI32
@@ -4476,8 +4494,8 @@ putDefineMorphShape2 DefineMorphShape2{..}
        putRECT defineMorphShape2_endBounds
        putRECT defineMorphShape2_startEdgeBounds
        putRECT defineMorphShape2_endEdgeBounds
-       let _defineMorphShape2_reserved = reservedDefault
-       putUB 6 _defineMorphShape2_reserved
+       let tmp = reservedDefault
+       putUB 6 tmp
        putFlag defineMorphShape2_usesNonScalingStrokes
        putFlag defineMorphShape2_usesScalingStrokes
        putUI32 defineMorphShape2_offset
@@ -4649,7 +4667,7 @@ getMORPHLINESTYLE2
        mORPHLINESTYLE2_noHScaleFlag <- getFlag
        mORPHLINESTYLE2_noVScaleFlag <- getFlag
        mORPHLINESTYLE2_pixelHintingFlag <- getFlag
-       _mORPHLINESTYLE2_reserved <- getUB 5
+       discardReserved (getUB 5)
        mORPHLINESTYLE2_noClose <- getFlag
        mORPHLINESTYLE2_endCapStyle <- getUB 2
        mORPHLINESTYLE2_miterLimitFactor <- maybeHas
@@ -4672,8 +4690,8 @@ putMORPHLINESTYLE2 MORPHLINESTYLE2{..}
        putFlag mORPHLINESTYLE2_noHScaleFlag
        putFlag mORPHLINESTYLE2_noVScaleFlag
        putFlag mORPHLINESTYLE2_pixelHintingFlag
-       let _mORPHLINESTYLE2_reserved = reservedDefault
-       putUB 5 _mORPHLINESTYLE2_reserved
+       let tmp = reservedDefault
+       putUB 5 tmp
        putFlag mORPHLINESTYLE2_noClose
        putUB 2 mORPHLINESTYLE2_endCapStyle
        case mORPHLINESTYLE2_miterLimitFactor of
@@ -4736,7 +4754,7 @@ getDefineFontInfo
        defineFontInfo_fontName <- genericReplicateM
                                     defineFontInfo_fontNameLen
                                     getUI8
-       _defineFontInfo_fontFlagsReserved <- getUB 2
+       discardReserved (getUB 2)
        defineFontInfo_fontFlagsSmallText <- getFlag
        defineFontInfo_fontFlagsShiftJIS <- getFlag
        defineFontInfo_fontFlagsANSI <- getFlag
@@ -4757,8 +4775,8 @@ putDefineFontInfo DefineFontInfo{..}
            (defineFontInfo_fontNameLen)
          then inconsistent else
          mapM_ (\ x -> putUI8 x) defineFontInfo_fontName
-       let _defineFontInfo_fontFlagsReserved = reservedDefault
-       putUB 2 _defineFontInfo_fontFlagsReserved
+       let tmp = reservedDefault
+       putUB 2 tmp
        putFlag defineFontInfo_fontFlagsSmallText
        putFlag defineFontInfo_fontFlagsShiftJIS
        putFlag defineFontInfo_fontFlagsANSI
@@ -4784,7 +4802,7 @@ getDefineFontInfo2
        defineFontInfo2_fontName <- genericReplicateM
                                      defineFontInfo2_fontNameLen
                                      getUI8
-       _defineFontInfo2_fontFlagsReserved <- getUB 2
+       discardReserved (getUB 2)
        defineFontInfo2_fontFlagsSmallText <- getFlag
        defineFontInfo2_fontFlagsShiftJIS <- getFlag
        defineFontInfo2_fontFlagsANSI <- getFlag
@@ -4804,8 +4822,8 @@ putDefineFontInfo2 DefineFontInfo2{..}
            (defineFontInfo2_fontNameLen)
          then inconsistent else
          mapM_ (\ x -> putUI8 x) defineFontInfo2_fontName
-       let _defineFontInfo2_fontFlagsReserved = reservedDefault
-       putUB 2 _defineFontInfo2_fontFlagsReserved
+       let tmp = reservedDefault
+       putUB 2 tmp
        putFlag defineFontInfo2_fontFlagsSmallText
        putFlag defineFontInfo2_fontFlagsShiftJIS
        putFlag defineFontInfo2_fontFlagsANSI
@@ -5117,14 +5135,14 @@ p186: DefineFontAlignZones
 getDefineFontAlignZones
   = do defineFontAlignZones_fontID <- getUI16
        defineFontAlignZones_cSMTableHint <- getUB 2
-       _defineFontAlignZones_reserved <- getUB 6
+       discardReserved (getUB 6)
        defineFontAlignZones_zoneTable <- getToEnd getZONERECORD
        return (DefineFontAlignZones{..})
 putDefineFontAlignZones DefineFontAlignZones{..}
   = do putUI16 defineFontAlignZones_fontID
        putUB 2 defineFontAlignZones_cSMTableHint
-       let _defineFontAlignZones_reserved = reservedDefault
-       putUB 6 _defineFontAlignZones_reserved
+       let tmp = reservedDefault
+       putUB 6 tmp
        mapM_ (\ x -> putZONERECORD x) defineFontAlignZones_zoneTable
        return ()
 
@@ -5139,7 +5157,7 @@ getZONERECORD
   = do zONERECORD_numZoneData <- getUI8
        zONERECORD_zoneData <- genericReplicateM zONERECORD_numZoneData
                                 getZONEDATA
-       _zONERECORD_reserved <- getUB 6
+       discardReserved (getUB 6)
        zONERECORD_zoneMaskY <- getFlag
        zONERECORD_zoneMaskX <- getFlag
        return (ZONERECORD{..})
@@ -5149,8 +5167,8 @@ putZONERECORD ZONERECORD{..}
        if genericLength zONERECORD_zoneData /= (zONERECORD_numZoneData)
          then inconsistent else
          mapM_ (\ x -> putZONEDATA x) zONERECORD_zoneData
-       let _zONERECORD_reserved = reservedDefault
-       putUB 6 _zONERECORD_reserved
+       let tmp = reservedDefault
+       putUB 6 tmp
        putFlag zONERECORD_zoneMaskY
        putFlag zONERECORD_zoneMaskX
        return ()
@@ -5251,7 +5269,9 @@ getTEXTRECORDS textVer glyphBits advanceBits = go
     go = do
       look <- lookAhead getUI8
       if look == 0
-       then getUI8 >> return []
+       then do
+         discardKnown 0 getUI8
+         return []
        else do
          x <- getTEXTRECORD textVer glyphBits advanceBits
          fmap (x:) go
@@ -5279,7 +5299,7 @@ data TEXTRECORD = TEXTRECORD{tEXTRECORD_textRecordType :: Bool,
 getTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
   tEXTRECORD_advanceBits
   = do tEXTRECORD_textRecordType <- getFlag
-       _tEXTRECORD_styleFlagsReserved <- getUB 3
+       discardReserved (getUB 3)
        tEXTRECORD_styleFlagsHasFont <- getFlag
        tEXTRECORD_styleFlagsHasColor <- getFlag
        tEXTRECORD_styleFlagsHasYOffset <- getFlag
@@ -5297,13 +5317,13 @@ getTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
        tEXTRECORD_glyphCount <- getUI8
        tEXTRECORD_glyphEntries <- genericReplicateM tEXTRECORD_glyphCount
                                     (getGLYPHENTRY tEXTRECORD_glyphBits tEXTRECORD_advanceBits)
-       _tEXTRECORD_padding <- byteAlign
+       discardReserved byteAlign
        return (TEXTRECORD{..})
 putTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
   tEXTRECORD_advanceBits TEXTRECORD{..}
   = do putFlag tEXTRECORD_textRecordType
-       let _tEXTRECORD_styleFlagsReserved = reservedDefault
-       putUB 3 _tEXTRECORD_styleFlagsReserved
+       let tmp = reservedDefault
+       putUB 3 tmp
        let tEXTRECORD_styleFlagsHasFont = isJust tEXTRECORD_fontID
        putFlag tEXTRECORD_styleFlagsHasFont
        let tEXTRECORD_styleFlagsHasColor = isJust tEXTRECORD_textColor
@@ -5350,8 +5370,8 @@ putTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
            (\ x ->
               putGLYPHENTRY tEXTRECORD_glyphBits tEXTRECORD_advanceBits x)
            tEXTRECORD_glyphEntries
-       let _tEXTRECORD_padding = reservedDefault
-       const flushBits (_tEXTRECORD_padding :: ())
+       let tmp = reservedDefault
+       const flushBits (tmp :: ())
        return ()
 
 \end{code}
@@ -5525,21 +5545,21 @@ getCSMTextSettings
   = do cSMTextSettings_textID <- getUI16
        cSMTextSettings_useFlashType <- getUB 2
        cSMTextSettings_gridFit <- getUB 3
-       _cSMTextSettings_reserved <- getUB 3
+       discardReserved (getUB 3)
        cSMTextSettings_thickness <- getFLOAT
        cSMTextSettings_sharpness <- getFLOAT
-       _cSMTextSettings_reserved <- getUI8
+       discardReserved getUI8
        return (CSMTextSettings{..})
 putCSMTextSettings CSMTextSettings{..}
   = do putUI16 cSMTextSettings_textID
        putUB 2 cSMTextSettings_useFlashType
        putUB 3 cSMTextSettings_gridFit
-       let _cSMTextSettings_reserved = reservedDefault
-       putUB 3 _cSMTextSettings_reserved
+       let tmp = reservedDefault
+       putUB 3 tmp
        putFLOAT cSMTextSettings_thickness
        putFLOAT cSMTextSettings_sharpness
-       let _cSMTextSettings_reserved = reservedDefault
-       putUI8 _cSMTextSettings_reserved
+       let tmp = reservedDefault
+       putUI8 tmp
        return ()
 
 \end{code}
@@ -5548,7 +5568,7 @@ p198: DefineFont4
 \begin{code}
 getDefineFont4
   = do defineFont4_fontID <- getUI16
-       _defineFont4_fontFlagsReserved <- getUB 5
+       discardReserved (getUB 5)
        defineFont4_fontFlagsHasFontData <- getFlag
        defineFont4_fontFlagsItalic <- getFlag
        defineFont4_fontFlagsBold <- getFlag
@@ -5557,8 +5577,8 @@ getDefineFont4
        return (DefineFont4{..})
 putDefineFont4 DefineFont4{..}
   = do putUI16 defineFont4_fontID
-       let _defineFont4_fontFlagsReserved = reservedDefault
-       putUB 5 _defineFont4_fontFlagsReserved
+       let tmp = reservedDefault
+       putUB 5 tmp
        putFlag defineFont4_fontFlagsHasFontData
        putFlag defineFont4_fontFlagsItalic
        putFlag defineFont4_fontFlagsBold
@@ -5631,7 +5651,7 @@ data SOUNDINFO = SOUNDINFO{sOUNDINFO_syncStop :: Bool,
                            sOUNDINFO_env :: Maybe (UI8, [SOUNDENVELOPE])}
                deriving (Eq, Show, Typeable, Data)
 getSOUNDINFO
-  = do _sOUNDINFO_reserved <- getUB 2
+  = do discardReserved (getUB 2)
        sOUNDINFO_syncStop <- getFlag
        sOUNDINFO_syncNoMultiple <- getFlag
        sOUNDINFO_hasEnvelope <- getFlag
@@ -5648,8 +5668,8 @@ getSOUNDINFO
                               return (sOUNDINFO_envPoints, sOUNDINFO_envelopeRecords))
        return (SOUNDINFO{..})
 putSOUNDINFO SOUNDINFO{..}
-  = do let _sOUNDINFO_reserved = reservedDefault
-       putUB 2 _sOUNDINFO_reserved
+  = do let tmp = reservedDefault
+       putUB 2 tmp
        putFlag sOUNDINFO_syncStop
        putFlag sOUNDINFO_syncNoMultiple
        let sOUNDINFO_hasEnvelope = isJust sOUNDINFO_env
@@ -5723,7 +5743,7 @@ putSOUNDENVELOPE SOUNDENVELOPE{..}
 p207: SoundStreamHead
 \begin{code}
 getSoundStreamHead
-  = do _soundStreamHead_reserved <- getUB 4
+  = do discardReserved (getUB 4)
        soundStreamHead_playbackSoundRate <- getUB 2
        soundStreamHead_playbackSoundSize <- getFlag
        soundStreamHead_playbackSoundType <- getFlag
@@ -5737,8 +5757,8 @@ getSoundStreamHead
                                         getSI16
        return (SoundStreamHead{..})
 putSoundStreamHead SoundStreamHead{..}
-  = do let _soundStreamHead_reserved = reservedDefault
-       putUB 4 _soundStreamHead_reserved
+  = do let tmp = reservedDefault
+       putUB 4 tmp
        putUB 2 soundStreamHead_playbackSoundRate
        putFlag soundStreamHead_playbackSoundSize
        putFlag soundStreamHead_playbackSoundType
@@ -5760,7 +5780,7 @@ putSoundStreamHead SoundStreamHead{..}
 p209: SoundStreamHead2
 \begin{code}
 getSoundStreamHead2
-  = do _soundStreamHead2_reserved <- getUB 4
+  = do discardReserved (getUB 4)
        soundStreamHead2_playbackSoundRate <- getUB 2
        soundStreamHead2_playbackSoundSize <- getFlag
        soundStreamHead2_playbackSoundType <- getFlag
@@ -5774,8 +5794,8 @@ getSoundStreamHead2
                                          getSI16
        return (SoundStreamHead2{..})
 putSoundStreamHead2 SoundStreamHead2{..}
-  = do let _soundStreamHead2_reserved = reservedDefault
-       putUB 4 _soundStreamHead2_reserved
+  = do let tmp = reservedDefault
+       putUB 4 tmp
        putUB 2 soundStreamHead2_playbackSoundRate
        putFlag soundStreamHead2_playbackSoundSize
        putFlag soundStreamHead2_playbackSoundType
@@ -5819,7 +5839,9 @@ getBUTTONRECORDS buttonVer = go
     go = do
       look <- lookAhead getUI8
       if look == 0
-        then getUI8 >> return []
+        then do
+          discardKnown 0 getUI8
+          return []
         else do
           x <- getBUTTONRECORD buttonVer
           fmap (x:) go
@@ -5845,7 +5867,7 @@ data BUTTONRECORD = BUTTONRECORD{bUTTONRECORD_buttonHasBlendMode ::
                                  Maybe (CXFORMWITHALPHA, Maybe FILTERLIST, Maybe UI8)}
                   deriving (Eq, Show, Typeable, Data)
 getBUTTONRECORD bUTTONRECORD_buttonVer
-  = do _bUTTONRECORD_buttonReserved <- getUB 2
+  = do discardReserved (getUB 2)
        bUTTONRECORD_buttonHasBlendMode <- getFlag
        bUTTONRECORD_buttonHasFilterList <- getFlag
        bUTTONRECORD_buttonStateHitTest <- getFlag
@@ -5870,8 +5892,8 @@ getBUTTONRECORD bUTTONRECORD_buttonVer
                                               bUTTONRECORD_buttonDisplayBlendMode))
        return (BUTTONRECORD{..})
 putBUTTONRECORD bUTTONRECORD_buttonVer BUTTONRECORD{..}
-  = do let _bUTTONRECORD_buttonReserved = reservedDefault
-       putUB 2 _bUTTONRECORD_buttonReserved
+  = do let tmp = reservedDefault
+       putUB 2 tmp
        putFlag bUTTONRECORD_buttonHasBlendMode
        putFlag bUTTONRECORD_buttonHasFilterList
        putFlag bUTTONRECORD_buttonStateHitTest
@@ -5949,7 +5971,7 @@ p226: DefineButton2
 \begin{code}
 getDefineButton2
   = do defineButton2_buttonId <- getUI16
-       _defineButton2_reservedFlags <- getUB 7
+       discardReserved (getUB 7)
        defineButton2_trackAsMenu <- getFlag
        defineButton2_actionOffset <- getUI16
        defineButton2_characters <- getBUTTONRECORDS 2
@@ -5958,8 +5980,8 @@ getDefineButton2
        return (DefineButton2{..})
 putDefineButton2 DefineButton2{..}
   = do putUI16 defineButton2_buttonId
-       let _defineButton2_reservedFlags = reservedDefault
-       putUB 7 _defineButton2_reservedFlags
+       let tmp = reservedDefault
+       putUB 7 tmp
        putFlag defineButton2_trackAsMenu
        putUI16 defineButton2_actionOffset
        putBUTTONRECORDS 2 defineButton2_characters
@@ -6133,7 +6155,7 @@ getDefineVideoStream
        defineVideoStream_numFrames <- getUI16
        defineVideoStream_width <- getUI16
        defineVideoStream_height <- getUI16
-       _defineVideoStream_videoFlagsReserved <- getUB 4
+       discardReserved (getUB 4)
        defineVideoStream_videoFlagsDeblocking <- getUB 3
        defineVideoStream_videoFlagsSmoothing <- getFlag
        defineVideoStream_codecID <- getUI8
@@ -6143,8 +6165,8 @@ putDefineVideoStream DefineVideoStream{..}
        putUI16 defineVideoStream_numFrames
        putUI16 defineVideoStream_width
        putUI16 defineVideoStream_height
-       let _defineVideoStream_videoFlagsReserved = reservedDefault
-       putUB 4 _defineVideoStream_videoFlagsReserved
+       let tmp = reservedDefault
+       putUB 4 tmp
        putUB 3 defineVideoStream_videoFlagsDeblocking
        putFlag defineVideoStream_videoFlagsSmoothing
        putUI8 defineVideoStream_codecID
@@ -6175,13 +6197,13 @@ p253: DefineBinaryData
 \begin{code}
 getDefineBinaryData
   = do defineBinaryData_tag <- getUI16
-       _defineBinaryData_reserved <- getUI32
+       discardReserved getUI32
        defineBinaryData_data <- getRemainingLazyByteString
        return (DefineBinaryData{..})
 putDefineBinaryData DefineBinaryData{..}
   = do putUI16 defineBinaryData_tag
-       let _defineBinaryData_reserved = reservedDefault
-       putUI32 _defineBinaryData_reserved
+       let tmp = reservedDefault
+       putUI32 tmp
        putLazyByteString defineBinaryData_data
        return ()
 

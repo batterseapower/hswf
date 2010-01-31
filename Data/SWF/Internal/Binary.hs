@@ -22,10 +22,10 @@ import Data.Int
 import Data.Word
 
 
-class ReservedDefault a where
+class Eq a => ReservedDefault a where
     reservedDefault :: a
 
-instance ReservedDefault () where reservedDefault = error "() default only intended for use with flushBits!"
+instance ReservedDefault () where reservedDefault = () -- Only intended for use with flushBits!
 instance ReservedDefault Bool where reservedDefault = False
 instance ReservedDefault Word8 where reservedDefault = 0
 instance ReservedDefault Word16 where reservedDefault = 0
@@ -89,6 +89,15 @@ nestSwfGet len = nestSwfGetBS (B.getLazyByteString len)
 decompressRemainder :: Int -> SwfGet a -> SwfGet a
 decompressRemainder size_hint = nestSwfGetBS (fmap decompress B.getRemainingLazyByteString)
   where decompress = decompressWith (defaultDecompressParams { decompressBufferSize = size_hint })
+
+
+discardReserved :: ReservedDefault a => SwfGet a -> SwfGet ()
+discardReserved = discardKnown reservedDefault
+
+discardKnown :: Eq a => a -> SwfGet a -> SwfGet ()
+discardKnown known mx = do
+     x <- mx
+     unless (x == known) inconsistent
 
 
 liftGet :: B.Get a -> SwfGet a

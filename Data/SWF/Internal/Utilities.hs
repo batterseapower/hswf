@@ -48,7 +48,6 @@ consistentWith _     _     = inconsistent
 inconsistent :: a
 inconsistent = error "Inconsistent state!"
 
-
 maybeHasM :: Monad m => m Bool -> m b -> m (Maybe b)
 maybeHasM ma mb = ma >>= \a -> maybeHas a mb
 
