@@ -482,16 +482,16 @@ typeToSyntax defuser typ = case typ of
 
     IfThenType condexpr typ
       -> (App (App (var "maybeHas") condexprsyn) getexp,
-          \e -> caseMaybe_ e (checkConsistency_ (con "True")  condexprsyn . putexp)
-                             (checkConsistency_ (con "False") condexprsyn $ App (var "return") (Tuple [])),
+          \e -> caseMaybeGuarded_ e (checkConsistencyAltsTrue_  condexprsyn . putexp)
+                                    (checkConsistencyAltsFalse_ condexprsyn $ App (var "return") (Tuple [])),
           maybeTy_ ty)
       where condexprsyn = fieldExprToSyntax defuser condexpr
             (getexp, putexp, ty) = typeToSyntax defuser typ
     
     IfThenElseType condexpr typt typf
       -> (If condexprsyn (fmap_ (con "Left") getexpt) (fmap_ (con "Right") getexpf),
-          \e -> caseEither_ e (checkConsistency_ (con "True")  condexprsyn . putexpt)
-                              (checkConsistency_ (con "False") condexprsyn . putexpf),
+          \e -> caseEitherGuarded_ e (checkConsistencyAltsTrue_  condexprsyn . putexpt)
+                                     (checkConsistencyAltsFalse_ condexprsyn . putexpf),
           eitherTy_ tyt tyf)
       where condexprsyn = fieldExprToSyntax defuser condexpr
             (getexpt, putexpt, tyt) = typeToSyntax defuser typt
@@ -555,13 +555,25 @@ reifyLambda oneputexp = Lambda noSrcLoc [PVar $ Ident "x"] (oneputexp $ var "x")
 checkConsistency_ ehave ecomputed eresult
   = If (InfixApp ehave (QVarOp $ UnQual $ Symbol "/=") (Paren ecomputed)) (var "inconsistent") eresult
 
-caseMaybe_ e e_just e_nothing
-  = Case e [Alt noSrcLoc (PApp (qname "Just") [PVar $ Ident "x"]) (UnGuardedAlt $ e_just (var "x")) (BDecls []),
-            Alt noSrcLoc (PApp (qname "Nothing") [])              (UnGuardedAlt e_nothing)          (BDecls [])]
+checkConsistencyAltsTrue_ ecomputed eresult
+  = GuardedAlts [GuardedAlt noSrcLoc [Qualifier ecomputed]         eresult,
+                 GuardedAlt noSrcLoc [Qualifier (var "otherwise")] (var "inconsistent")]
 
-caseEither_ e e_left e_right
-  = Case e [Alt noSrcLoc (PApp (qname "Left")  [PVar $ Ident "x"]) (UnGuardedAlt $ e_left (var "x"))  (BDecls []),
-            Alt noSrcLoc (PApp (qname "Right") [PVar $ Ident "x"]) (UnGuardedAlt $ e_right (var "x")) (BDecls [])]
+checkConsistencyAltsFalse_ ecomputed eresult
+  = GuardedAlts [GuardedAlt noSrcLoc [Qualifier ecomputed]         (var "inconsistent"),
+                 GuardedAlt noSrcLoc [Qualifier (var "otherwise")] eresult]
+
+caseMaybe_ e e_just e_nothing = caseMaybeGuarded_ e (UnGuardedAlt . e_just) (UnGuardedAlt e_nothing)
+
+caseMaybeGuarded_ e e_just e_nothing
+  = Case e [Alt noSrcLoc (PApp (qname "Just") [PVar $ Ident "x"]) (e_just (var "x")) (BDecls []),
+            Alt noSrcLoc (PApp (qname "Nothing") [])              (e_nothing)        (BDecls [])]
+
+caseEither_ e e_left e_right = caseEitherGuarded_ e (UnGuardedAlt . e_left) (UnGuardedAlt . e_right)
+
+caseEitherGuarded_ e e_left e_right
+  = Case e [Alt noSrcLoc (PApp (qname "Left")  [PVar $ Ident "x"]) (e_left (var "x"))  (BDecls []),
+            Alt noSrcLoc (PApp (qname "Right") [PVar $ Ident "x"]) (e_right (var "x")) (BDecls [])]
 
 caseTuple_ n e e_branch = caseTupleKnownNames_ xs e (e_branch xs)
   where xs = map (Ident . ("x" ++) . show) [1..n]

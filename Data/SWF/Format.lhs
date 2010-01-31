@@ -535,31 +535,33 @@ putMATRIX MATRIX{..}
   = do let mATRIX_hasScale = isJust mATRIX_scale
        putFlag mATRIX_hasScale
        case mATRIX_scale of
-           Just x -> if True /= (mATRIX_hasScale) then inconsistent else
-                       case x of
-                           (mATRIX_scaleBits, mATRIX_scaleX, mATRIX_scaleY) -> do putUB 5
-                                                                                    mATRIX_scaleBits
-                                                                                  putFB
-                                                                                    mATRIX_scaleBits
-                                                                                    mATRIX_scaleX
-                                                                                  putFB
-                                                                                    mATRIX_scaleBits
-                                                                                    mATRIX_scaleY
-                                                                                  return ()
-           Nothing -> if False /= (mATRIX_hasScale) then inconsistent else
-                        return ()
+           Just x | mATRIX_hasScale ->
+                    case x of
+                        (mATRIX_scaleBits, mATRIX_scaleX, mATRIX_scaleY) -> do putUB 5
+                                                                                 mATRIX_scaleBits
+                                                                               putFB
+                                                                                 mATRIX_scaleBits
+                                                                                 mATRIX_scaleX
+                                                                               putFB
+                                                                                 mATRIX_scaleBits
+                                                                                 mATRIX_scaleY
+                                                                               return ()
+                  | otherwise -> inconsistent
+           Nothing | mATRIX_hasScale -> inconsistent
+                   | otherwise -> return ()
        let mATRIX_hasRotate = isJust mATRIX_rotate
        putFlag mATRIX_hasRotate
        case mATRIX_rotate of
-           Just x -> if True /= (mATRIX_hasRotate) then inconsistent else
-                       case x of
-                           (mATRIX_rotateBits, mATRIX_rotateSkew0,
-                            mATRIX_rotateSkew1) -> do putUB 5 mATRIX_rotateBits
-                                                      putFB mATRIX_rotateBits mATRIX_rotateSkew0
-                                                      putFB mATRIX_rotateBits mATRIX_rotateSkew1
-                                                      return ()
-           Nothing -> if False /= (mATRIX_hasRotate) then inconsistent else
-                        return ()
+           Just x | mATRIX_hasRotate ->
+                    case x of
+                        (mATRIX_rotateBits, mATRIX_rotateSkew0,
+                         mATRIX_rotateSkew1) -> do putUB 5 mATRIX_rotateBits
+                                                   putFB mATRIX_rotateBits mATRIX_rotateSkew0
+                                                   putFB mATRIX_rotateBits mATRIX_rotateSkew1
+                                                   return ()
+                  | otherwise -> inconsistent
+           Nothing | mATRIX_hasRotate -> inconsistent
+                   | otherwise -> return ()
        putUB 5 mATRIX_translateBits
        putSB mATRIX_translateBits mATRIX_translateX
        putSB mATRIX_translateBits mATRIX_translateY
@@ -601,25 +603,27 @@ putCXFORM CXFORM{..}
        putFlag cXFORM_hasMultTerms
        putUB 4 cXFORM_nbits
        case cXFORM_multTerm of
-           Just x -> if True /= (cXFORM_hasMultTerms) then inconsistent else
-                       case x of
-                           (cXFORM_redMultTerm, cXFORM_greenMultTerm,
-                            cXFORM_blueMultTerm) -> do putSB cXFORM_nbits cXFORM_redMultTerm
-                                                       putSB cXFORM_nbits cXFORM_greenMultTerm
-                                                       putSB cXFORM_nbits cXFORM_blueMultTerm
-                                                       return ()
-           Nothing -> if False /= (cXFORM_hasMultTerms) then inconsistent else
-                        return ()
+           Just x | cXFORM_hasMultTerms ->
+                    case x of
+                        (cXFORM_redMultTerm, cXFORM_greenMultTerm,
+                         cXFORM_blueMultTerm) -> do putSB cXFORM_nbits cXFORM_redMultTerm
+                                                    putSB cXFORM_nbits cXFORM_greenMultTerm
+                                                    putSB cXFORM_nbits cXFORM_blueMultTerm
+                                                    return ()
+                  | otherwise -> inconsistent
+           Nothing | cXFORM_hasMultTerms -> inconsistent
+                   | otherwise -> return ()
        case cXFORM_addTerm of
-           Just x -> if True /= (cXFORM_hasAddTerms) then inconsistent else
-                       case x of
-                           (cXFORM_redAddTerm, cXFORM_greenAddTerm,
-                            cXFORM_blueAddTerm) -> do putSB cXFORM_nbits cXFORM_redAddTerm
-                                                      putSB cXFORM_nbits cXFORM_greenAddTerm
-                                                      putSB cXFORM_nbits cXFORM_blueAddTerm
-                                                      return ()
-           Nothing -> if False /= (cXFORM_hasAddTerms) then inconsistent else
-                        return ()
+           Just x | cXFORM_hasAddTerms ->
+                    case x of
+                        (cXFORM_redAddTerm, cXFORM_greenAddTerm,
+                         cXFORM_blueAddTerm) -> do putSB cXFORM_nbits cXFORM_redAddTerm
+                                                   putSB cXFORM_nbits cXFORM_greenAddTerm
+                                                   putSB cXFORM_nbits cXFORM_blueAddTerm
+                                                   return ()
+                  | otherwise -> inconsistent
+           Nothing | cXFORM_hasAddTerms -> inconsistent
+                   | otherwise -> return ()
        let cXFORM_padding = reservedDefault
        const flushBits (cXFORM_padding :: ())
        return ()
@@ -669,39 +673,39 @@ putCXFORMWITHALPHA CXFORMWITHALPHA{..}
        putFlag cXFORMWITHALPHA_hasMultTerms
        putUB 4 cXFORMWITHALPHA_nbits
        case cXFORMWITHALPHA_multTerm of
-           Just x -> if True /= (cXFORMWITHALPHA_hasMultTerms) then
-                       inconsistent else
-                       case x of
-                           (cXFORMWITHALPHA_redMultTerm, cXFORMWITHALPHA_greenMultTerm,
-                            cXFORMWITHALPHA_blueMultTerm,
-                            cXFORMWITHALPHA_alphaMultTerm) -> do putSB cXFORMWITHALPHA_nbits
-                                                                   cXFORMWITHALPHA_redMultTerm
-                                                                 putSB cXFORMWITHALPHA_nbits
-                                                                   cXFORMWITHALPHA_greenMultTerm
-                                                                 putSB cXFORMWITHALPHA_nbits
-                                                                   cXFORMWITHALPHA_blueMultTerm
-                                                                 putSB cXFORMWITHALPHA_nbits
-                                                                   cXFORMWITHALPHA_alphaMultTerm
-                                                                 return ()
-           Nothing -> if False /= (cXFORMWITHALPHA_hasMultTerms) then
-                        inconsistent else return ()
+           Just x | cXFORMWITHALPHA_hasMultTerms ->
+                    case x of
+                        (cXFORMWITHALPHA_redMultTerm, cXFORMWITHALPHA_greenMultTerm,
+                         cXFORMWITHALPHA_blueMultTerm,
+                         cXFORMWITHALPHA_alphaMultTerm) -> do putSB cXFORMWITHALPHA_nbits
+                                                                cXFORMWITHALPHA_redMultTerm
+                                                              putSB cXFORMWITHALPHA_nbits
+                                                                cXFORMWITHALPHA_greenMultTerm
+                                                              putSB cXFORMWITHALPHA_nbits
+                                                                cXFORMWITHALPHA_blueMultTerm
+                                                              putSB cXFORMWITHALPHA_nbits
+                                                                cXFORMWITHALPHA_alphaMultTerm
+                                                              return ()
+                  | otherwise -> inconsistent
+           Nothing | cXFORMWITHALPHA_hasMultTerms -> inconsistent
+                   | otherwise -> return ()
        case cXFORMWITHALPHA_addTerm of
-           Just x -> if True /= (cXFORMWITHALPHA_hasAddTerms) then
-                       inconsistent else
-                       case x of
-                           (cXFORMWITHALPHA_redAddTerm, cXFORMWITHALPHA_greenAddTerm,
-                            cXFORMWITHALPHA_blueAddTerm,
-                            cXFORMWITHALPHA_alphaAddTerm) -> do putSB cXFORMWITHALPHA_nbits
-                                                                  cXFORMWITHALPHA_redAddTerm
-                                                                putSB cXFORMWITHALPHA_nbits
-                                                                  cXFORMWITHALPHA_greenAddTerm
-                                                                putSB cXFORMWITHALPHA_nbits
-                                                                  cXFORMWITHALPHA_blueAddTerm
-                                                                putSB cXFORMWITHALPHA_nbits
-                                                                  cXFORMWITHALPHA_alphaAddTerm
-                                                                return ()
-           Nothing -> if False /= (cXFORMWITHALPHA_hasAddTerms) then
-                        inconsistent else return ()
+           Just x | cXFORMWITHALPHA_hasAddTerms ->
+                    case x of
+                        (cXFORMWITHALPHA_redAddTerm, cXFORMWITHALPHA_greenAddTerm,
+                         cXFORMWITHALPHA_blueAddTerm,
+                         cXFORMWITHALPHA_alphaAddTerm) -> do putSB cXFORMWITHALPHA_nbits
+                                                               cXFORMWITHALPHA_redAddTerm
+                                                             putSB cXFORMWITHALPHA_nbits
+                                                               cXFORMWITHALPHA_greenAddTerm
+                                                             putSB cXFORMWITHALPHA_nbits
+                                                               cXFORMWITHALPHA_blueAddTerm
+                                                             putSB cXFORMWITHALPHA_nbits
+                                                               cXFORMWITHALPHA_alphaAddTerm
+                                                             return ()
+                  | otherwise -> inconsistent
+           Nothing | cXFORMWITHALPHA_hasAddTerms -> inconsistent
+                   | otherwise -> return ()
        let cXFORMWITHALPHA_padding = reservedDefault
        const flushBits (cXFORMWITHALPHA_padding :: ())
        return ()
@@ -1358,40 +1362,41 @@ putPlaceObject2 PlaceObject2{..}
        putFlag placeObject2_placeFlagMove
        putUI16 placeObject2_depth
        case placeObject2_characterId of
-           Just x -> if True /= (placeObject2_placeFlagHasCharacter) then
-                       inconsistent else putUI16 x
-           Nothing -> if False /= (placeObject2_placeFlagHasCharacter) then
-                        inconsistent else return ()
+           Just x | placeObject2_placeFlagHasCharacter -> putUI16 x
+                  | otherwise -> inconsistent
+           Nothing | placeObject2_placeFlagHasCharacter -> inconsistent
+                   | otherwise -> return ()
        case placeObject2_matrix of
-           Just x -> if True /= (placeObject2_placeFlagHasMatrix) then
-                       inconsistent else putMATRIX x
-           Nothing -> if False /= (placeObject2_placeFlagHasMatrix) then
-                        inconsistent else return ()
+           Just x | placeObject2_placeFlagHasMatrix -> putMATRIX x
+                  | otherwise -> inconsistent
+           Nothing | placeObject2_placeFlagHasMatrix -> inconsistent
+                   | otherwise -> return ()
        case placeObject2_colorTransform of
-           Just x -> if True /= (placeObject2_placeFlagHasColorTransform) then
-                       inconsistent else putCXFORMWITHALPHA x
-           Nothing -> if False /= (placeObject2_placeFlagHasColorTransform)
-                        then inconsistent else return ()
+           Just x | placeObject2_placeFlagHasColorTransform ->
+                    putCXFORMWITHALPHA x
+                  | otherwise -> inconsistent
+           Nothing | placeObject2_placeFlagHasColorTransform -> inconsistent
+                   | otherwise -> return ()
        case placeObject2_ratio of
-           Just x -> if True /= (placeObject2_placeFlagHasRatio) then
-                       inconsistent else putUI16 x
-           Nothing -> if False /= (placeObject2_placeFlagHasRatio) then
-                        inconsistent else return ()
+           Just x | placeObject2_placeFlagHasRatio -> putUI16 x
+                  | otherwise -> inconsistent
+           Nothing | placeObject2_placeFlagHasRatio -> inconsistent
+                   | otherwise -> return ()
        case placeObject2_name of
-           Just x -> if True /= (placeObject2_placeFlagHasName) then
-                       inconsistent else putSTRING x
-           Nothing -> if False /= (placeObject2_placeFlagHasName) then
-                        inconsistent else return ()
+           Just x | placeObject2_placeFlagHasName -> putSTRING x
+                  | otherwise -> inconsistent
+           Nothing | placeObject2_placeFlagHasName -> inconsistent
+                   | otherwise -> return ()
        case placeObject2_clipDepth of
-           Just x -> if True /= (placeObject2_placeFlagHasClipDepth) then
-                       inconsistent else putUI16 x
-           Nothing -> if False /= (placeObject2_placeFlagHasClipDepth) then
-                        inconsistent else return ()
+           Just x | placeObject2_placeFlagHasClipDepth -> putUI16 x
+                  | otherwise -> inconsistent
+           Nothing | placeObject2_placeFlagHasClipDepth -> inconsistent
+                   | otherwise -> return ()
        case placeObject2_clipActions of
-           Just x -> if True /= (placeObject2_placeFlagHasClipActions) then
-                       inconsistent else putCLIPACTIONS x
-           Nothing -> if False /= (placeObject2_placeFlagHasClipActions) then
-                        inconsistent else return ()
+           Just x | placeObject2_placeFlagHasClipActions -> putCLIPACTIONS x
+                  | otherwise -> inconsistent
+           Nothing | placeObject2_placeFlagHasClipActions -> inconsistent
+                   | otherwise -> return ()
        return ()
 
 \end{code}
@@ -1545,68 +1550,69 @@ putPlaceObject3 PlaceObject3{..}
        putFlag placeObject3_placeFlagHasFilterList
        putUI16 placeObject3_depth
        case placeObject3_className of
-           Just x -> if
-                       True /=
-                         (placeObject3_placeFlagHasClassName ||
-                            placeObject3_placeFlagHasImage &&
-                              placeObject3_placeFlagHasCharacter)
-                       then inconsistent else putSTRING x
-           Nothing -> if
-                        False /=
-                          (placeObject3_placeFlagHasClassName ||
-                             placeObject3_placeFlagHasImage &&
-                               placeObject3_placeFlagHasCharacter)
-                        then inconsistent else return ()
+           Just x |
+                    placeObject3_placeFlagHasClassName ||
+                      placeObject3_placeFlagHasImage &&
+                        placeObject3_placeFlagHasCharacter
+                    -> putSTRING x
+                  | otherwise -> inconsistent
+           Nothing |
+                     placeObject3_placeFlagHasClassName ||
+                       placeObject3_placeFlagHasImage &&
+                         placeObject3_placeFlagHasCharacter
+                     -> inconsistent
+                   | otherwise -> return ()
        case placeObject3_characterId of
-           Just x -> if True /= (placeObject3_placeFlagHasCharacter) then
-                       inconsistent else putUI16 x
-           Nothing -> if False /= (placeObject3_placeFlagHasCharacter) then
-                        inconsistent else return ()
+           Just x | placeObject3_placeFlagHasCharacter -> putUI16 x
+                  | otherwise -> inconsistent
+           Nothing | placeObject3_placeFlagHasCharacter -> inconsistent
+                   | otherwise -> return ()
        case placeObject3_matrix of
-           Just x -> if True /= (placeObject3_placeFlagHasMatrix) then
-                       inconsistent else putMATRIX x
-           Nothing -> if False /= (placeObject3_placeFlagHasMatrix) then
-                        inconsistent else return ()
+           Just x | placeObject3_placeFlagHasMatrix -> putMATRIX x
+                  | otherwise -> inconsistent
+           Nothing | placeObject3_placeFlagHasMatrix -> inconsistent
+                   | otherwise -> return ()
        case placeObject3_colorTransform of
-           Just x -> if True /= (placeObject3_placeFlagHasColorTransform) then
-                       inconsistent else putCXFORMWITHALPHA x
-           Nothing -> if False /= (placeObject3_placeFlagHasColorTransform)
-                        then inconsistent else return ()
+           Just x | placeObject3_placeFlagHasColorTransform ->
+                    putCXFORMWITHALPHA x
+                  | otherwise -> inconsistent
+           Nothing | placeObject3_placeFlagHasColorTransform -> inconsistent
+                   | otherwise -> return ()
        case placeObject3_ratio of
-           Just x -> if True /= (placeObject3_placeFlagHasRatio) then
-                       inconsistent else putUI16 x
-           Nothing -> if False /= (placeObject3_placeFlagHasRatio) then
-                        inconsistent else return ()
+           Just x | placeObject3_placeFlagHasRatio -> putUI16 x
+                  | otherwise -> inconsistent
+           Nothing | placeObject3_placeFlagHasRatio -> inconsistent
+                   | otherwise -> return ()
        case placeObject3_name of
-           Just x -> if True /= (placeObject3_placeFlagHasName) then
-                       inconsistent else putSTRING x
-           Nothing -> if False /= (placeObject3_placeFlagHasName) then
-                        inconsistent else return ()
+           Just x | placeObject3_placeFlagHasName -> putSTRING x
+                  | otherwise -> inconsistent
+           Nothing | placeObject3_placeFlagHasName -> inconsistent
+                   | otherwise -> return ()
        case placeObject3_clipDepth of
-           Just x -> if True /= (placeObject3_placeFlagHasClipDepth) then
-                       inconsistent else putUI16 x
-           Nothing -> if False /= (placeObject3_placeFlagHasClipDepth) then
-                        inconsistent else return ()
+           Just x | placeObject3_placeFlagHasClipDepth -> putUI16 x
+                  | otherwise -> inconsistent
+           Nothing | placeObject3_placeFlagHasClipDepth -> inconsistent
+                   | otherwise -> return ()
        case placeObject3_surfaceFilterList of
-           Just x -> if True /= (placeObject3_placeFlagHasFilterList) then
-                       inconsistent else putFILTERLIST x
-           Nothing -> if False /= (placeObject3_placeFlagHasFilterList) then
-                        inconsistent else return ()
+           Just x | placeObject3_placeFlagHasFilterList -> putFILTERLIST x
+                  | otherwise -> inconsistent
+           Nothing | placeObject3_placeFlagHasFilterList -> inconsistent
+                   | otherwise -> return ()
        case placeObject3_blendMode of
-           Just x -> if True /= (placeObject3_placeFlagHasBlendMode) then
-                       inconsistent else putBlendMode x
-           Nothing -> if False /= (placeObject3_placeFlagHasBlendMode) then
-                        inconsistent else return ()
+           Just x | placeObject3_placeFlagHasBlendMode -> putBlendMode x
+                  | otherwise -> inconsistent
+           Nothing | placeObject3_placeFlagHasBlendMode -> inconsistent
+                   | otherwise -> return ()
        case placeObject3_bitmapCache of
-           Just x -> if True /= (placeObject3_placeFlagHasCacheAsBitmap) then
-                       inconsistent else putUI8 x
-           Nothing -> if False /= (placeObject3_placeFlagHasCacheAsBitmap)
-                        then inconsistent else return ()
+           Just x | placeObject3_placeFlagHasCacheAsBitmap -> putUI8 x
+                  | otherwise -> inconsistent
+           Nothing | placeObject3_placeFlagHasCacheAsBitmap -> inconsistent
+                   | otherwise -> return ()
        case placeObject3_clipActions of
-           Just x -> if True /= (placeObject3_placeFlagHasClipActions) then
-                       inconsistent else putCLIPACTIONS x
-           Nothing -> if False /= (placeObject3_placeFlagHasClipActions) then
-                        inconsistent else return ()
+           Just x | placeObject3_placeFlagHasClipActions -> putCLIPACTIONS x
+                  | otherwise -> inconsistent
+           Nothing | placeObject3_placeFlagHasClipActions -> inconsistent
+                   | otherwise -> return ()
        return ()
 
 \end{code}
@@ -3257,10 +3263,10 @@ putActionGotoFrame2 ActionGotoFrame2{..}
        putFlag actionGotoFrame2_sceneBiasFlag
        putFlag actionGotoFrame2_playFlag
        case actionGotoFrame2_sceneBias of
-           Just x -> if True /= (actionGotoFrame2_sceneBiasFlag) then
-                       inconsistent else putUI16 x
-           Nothing -> if False /= (actionGotoFrame2_sceneBiasFlag) then
-                        inconsistent else return ()
+           Just x | actionGotoFrame2_sceneBiasFlag -> putUI16 x
+                  | otherwise -> inconsistent
+           Nothing | actionGotoFrame2_sceneBiasFlag -> inconsistent
+                   | otherwise -> return ()
        return ()
 
 \end{code}
@@ -3804,15 +3810,15 @@ putActionTry ActionTry{..}
        let actionTry_finallySize = genericLength actionTry_finallyBody
        putUI16 actionTry_finallySize
        case actionTry_catchName of
-           Just x -> if True /= (not actionTry_catchInRegisterFlag) then
-                       inconsistent else putSTRING x
-           Nothing -> if False /= (not actionTry_catchInRegisterFlag) then
-                        inconsistent else return ()
+           Just x | not actionTry_catchInRegisterFlag -> putSTRING x
+                  | otherwise -> inconsistent
+           Nothing | not actionTry_catchInRegisterFlag -> inconsistent
+                   | otherwise -> return ()
        case actionTry_catchRegister of
-           Just x -> if True /= (actionTry_catchInRegisterFlag) then
-                       inconsistent else putUI8 x
-           Nothing -> if False /= (actionTry_catchInRegisterFlag) then
-                        inconsistent else return ()
+           Just x | actionTry_catchInRegisterFlag -> putUI8 x
+                  | otherwise -> inconsistent
+           Nothing | actionTry_catchInRegisterFlag -> inconsistent
+                   | otherwise -> return ()
        if genericLength actionTry_tryBody /= (actionTry_trySize) then
          inconsistent else mapM_ (\ x -> putUI8 x) actionTry_tryBody
        if genericLength actionTry_catchBody /= (actionTry_catchSize) then
@@ -3996,20 +4002,20 @@ putLINESTYLE2 LINESTYLE2{..}
        putFlag lINESTYLE2_noClose
        putUB 2 lINESTYLE2_endCapStyle
        case lINESTYLE2_miterLimitFactor of
-           Just x -> if True /= (lINESTYLE2_joinStyle == 2) then inconsistent
-                       else putUI16 x
-           Nothing -> if False /= (lINESTYLE2_joinStyle == 2) then
-                        inconsistent else return ()
+           Just x | lINESTYLE2_joinStyle == 2 -> putUI16 x
+                  | otherwise -> inconsistent
+           Nothing | lINESTYLE2_joinStyle == 2 -> inconsistent
+                   | otherwise -> return ()
        case lINESTYLE2_color of
-           Just x -> if True /= (not lINESTYLE2_hasFillFlag) then inconsistent
-                       else putRGBA x
-           Nothing -> if False /= (not lINESTYLE2_hasFillFlag) then
-                        inconsistent else return ()
+           Just x | not lINESTYLE2_hasFillFlag -> putRGBA x
+                  | otherwise -> inconsistent
+           Nothing | not lINESTYLE2_hasFillFlag -> inconsistent
+                   | otherwise -> return ()
        case lINESTYLE2_fillType of
-           Just x -> if True /= (lINESTYLE2_hasFillFlag) then inconsistent
-                       else putFILLSTYLE 4 x
-           Nothing -> if False /= (lINESTYLE2_hasFillFlag) then inconsistent
-                        else return ()
+           Just x | lINESTYLE2_hasFillFlag -> putFILLSTYLE 4 x
+                  | otherwise -> inconsistent
+           Nothing | lINESTYLE2_hasFillFlag -> inconsistent
+                   | otherwise -> return ()
        return ()
 
 \end{code}
@@ -4199,53 +4205,56 @@ putSTYLECHANGERECORD sTYLECHANGERECORD_shapeVer
        let sTYLECHANGERECORD_stateMoveTo = isJust sTYLECHANGERECORD_move
        putFlag sTYLECHANGERECORD_stateMoveTo
        case sTYLECHANGERECORD_move of
-           Just x -> if True /= (sTYLECHANGERECORD_stateMoveTo) then
-                       inconsistent else
-                       case x of
-                           (sTYLECHANGERECORD_moveBits, sTYLECHANGERECORD_moveDeltaX,
-                            sTYLECHANGERECORD_moveDeltaY) -> do putUB 5
-                                                                  sTYLECHANGERECORD_moveBits
-                                                                putSB sTYLECHANGERECORD_moveBits
-                                                                  sTYLECHANGERECORD_moveDeltaX
-                                                                putSB sTYLECHANGERECORD_moveBits
-                                                                  sTYLECHANGERECORD_moveDeltaY
-                                                                return ()
-           Nothing -> if False /= (sTYLECHANGERECORD_stateMoveTo) then
-                        inconsistent else return ()
+           Just x | sTYLECHANGERECORD_stateMoveTo ->
+                    case x of
+                        (sTYLECHANGERECORD_moveBits, sTYLECHANGERECORD_moveDeltaX,
+                         sTYLECHANGERECORD_moveDeltaY) -> do putUB 5
+                                                               sTYLECHANGERECORD_moveBits
+                                                             putSB sTYLECHANGERECORD_moveBits
+                                                               sTYLECHANGERECORD_moveDeltaX
+                                                             putSB sTYLECHANGERECORD_moveBits
+                                                               sTYLECHANGERECORD_moveDeltaY
+                                                             return ()
+                  | otherwise -> inconsistent
+           Nothing | sTYLECHANGERECORD_stateMoveTo -> inconsistent
+                   | otherwise -> return ()
        case sTYLECHANGERECORD_fillStyle0 of
-           Just x -> if True /= (sTYLECHANGERECORD_stateFillStyle0) then
-                       inconsistent else putUB sTYLECHANGERECORD_fillBits x
-           Nothing -> if False /= (sTYLECHANGERECORD_stateFillStyle0) then
-                        inconsistent else return ()
+           Just x | sTYLECHANGERECORD_stateFillStyle0 ->
+                    putUB sTYLECHANGERECORD_fillBits x
+                  | otherwise -> inconsistent
+           Nothing | sTYLECHANGERECORD_stateFillStyle0 -> inconsistent
+                   | otherwise -> return ()
        case sTYLECHANGERECORD_fillStyle1 of
-           Just x -> if True /= (sTYLECHANGERECORD_stateFillStyle1) then
-                       inconsistent else putUB sTYLECHANGERECORD_fillBits x
-           Nothing -> if False /= (sTYLECHANGERECORD_stateFillStyle1) then
-                        inconsistent else return ()
+           Just x | sTYLECHANGERECORD_stateFillStyle1 ->
+                    putUB sTYLECHANGERECORD_fillBits x
+                  | otherwise -> inconsistent
+           Nothing | sTYLECHANGERECORD_stateFillStyle1 -> inconsistent
+                   | otherwise -> return ()
        case sTYLECHANGERECORD_lineStyle of
-           Just x -> if True /= (sTYLECHANGERECORD_stateLineStyle) then
-                       inconsistent else putUB sTYLECHANGERECORD_lineBits x
-           Nothing -> if False /= (sTYLECHANGERECORD_stateLineStyle) then
-                        inconsistent else return ()
+           Just x | sTYLECHANGERECORD_stateLineStyle ->
+                    putUB sTYLECHANGERECORD_lineBits x
+                  | otherwise -> inconsistent
+           Nothing | sTYLECHANGERECORD_stateLineStyle -> inconsistent
+                   | otherwise -> return ()
        case sTYLECHANGERECORD_new of
-           Just x -> if True /= (sTYLECHANGERECORD_stateNewStyles) then
-                       inconsistent else
-                       case x of
-                           (sTYLECHANGERECORD_newFillStyles, sTYLECHANGERECORD_newLineStyles,
-                            sTYLECHANGERECORD_newNumFillBits,
-                            sTYLECHANGERECORD_newNumLineBits) -> do putFILLSTYLEARRAY
-                                                                      sTYLECHANGERECORD_shapeVer
-                                                                      sTYLECHANGERECORD_newFillStyles
-                                                                    putLINESTYLEARRAY
-                                                                      sTYLECHANGERECORD_shapeVer
-                                                                      sTYLECHANGERECORD_newLineStyles
-                                                                    putUB 4
-                                                                      sTYLECHANGERECORD_newNumFillBits
-                                                                    putUB 4
-                                                                      sTYLECHANGERECORD_newNumLineBits
-                                                                    return ()
-           Nothing -> if False /= (sTYLECHANGERECORD_stateNewStyles) then
-                        inconsistent else return ()
+           Just x | sTYLECHANGERECORD_stateNewStyles ->
+                    case x of
+                        (sTYLECHANGERECORD_newFillStyles, sTYLECHANGERECORD_newLineStyles,
+                         sTYLECHANGERECORD_newNumFillBits,
+                         sTYLECHANGERECORD_newNumLineBits) -> do putFILLSTYLEARRAY
+                                                                   sTYLECHANGERECORD_shapeVer
+                                                                   sTYLECHANGERECORD_newFillStyles
+                                                                 putLINESTYLEARRAY
+                                                                   sTYLECHANGERECORD_shapeVer
+                                                                   sTYLECHANGERECORD_newLineStyles
+                                                                 putUB 4
+                                                                   sTYLECHANGERECORD_newNumFillBits
+                                                                 putUB 4
+                                                                   sTYLECHANGERECORD_newNumLineBits
+                                                                 return ()
+                  | otherwise -> inconsistent
+           Nothing | sTYLECHANGERECORD_stateNewStyles -> inconsistent
+                   | otherwise -> return ()
        return ()
 
 \end{code}
@@ -4550,10 +4559,10 @@ putDefineBitsLossless DefineBitsLossless{..}
        putUI16 defineBitsLossless_bitmapWidth
        putUI16 defineBitsLossless_bitmapHeight
        case defineBitsLossless_bitmapColorTableSize of
-           Just x -> if True /= (defineBitsLossless_bitmapFormat == 3) then
-                       inconsistent else putUI8 x
-           Nothing -> if False /= (defineBitsLossless_bitmapFormat == 3) then
-                        inconsistent else return ()
+           Just x | defineBitsLossless_bitmapFormat == 3 -> putUI8 x
+                  | otherwise -> inconsistent
+           Nothing | defineBitsLossless_bitmapFormat == 3 -> inconsistent
+                   | otherwise -> return ()
        putLazyByteString defineBitsLossless_zlibBitmapData
        return ()
 
@@ -4577,10 +4586,10 @@ putDefineBitsLossless2 DefineBitsLossless2{..}
        putUI16 defineBitsLossless2_bitmapWidth
        putUI16 defineBitsLossless2_bitmapHeight
        case defineBitsLossless2_bitmapColorTableSize of
-           Just x -> if True /= (defineBitsLossless2_bitmapFormat == 3) then
-                       inconsistent else putUI8 x
-           Nothing -> if False /= (defineBitsLossless2_bitmapFormat == 3) then
-                        inconsistent else return ()
+           Just x | defineBitsLossless2_bitmapFormat == 3 -> putUI8 x
+                  | otherwise -> inconsistent
+           Nothing | defineBitsLossless2_bitmapFormat == 3 -> inconsistent
+                   | otherwise -> return ()
        putLazyByteString defineBitsLossless2_zlibBitmapData
        return ()
 
@@ -4866,25 +4875,25 @@ putMORPHLINESTYLE2 MORPHLINESTYLE2{..}
        putFlag mORPHLINESTYLE2_noClose
        putUB 2 mORPHLINESTYLE2_endCapStyle
        case mORPHLINESTYLE2_miterLimitFactor of
-           Just x -> if True /= (mORPHLINESTYLE2_joinStyle == 2) then
-                       inconsistent else putUI16 x
-           Nothing -> if False /= (mORPHLINESTYLE2_joinStyle == 2) then
-                        inconsistent else return ()
+           Just x | mORPHLINESTYLE2_joinStyle == 2 -> putUI16 x
+                  | otherwise -> inconsistent
+           Nothing | mORPHLINESTYLE2_joinStyle == 2 -> inconsistent
+                   | otherwise -> return ()
        case mORPHLINESTYLE2_color of
-           Just x -> if True /= (not mORPHLINESTYLE2_hasFillFlag) then
-                       inconsistent else
-                       case x of
-                           (mORPHLINESTYLE2_startColor,
-                            mORPHLINESTYLE2_endColor) -> do putRGBA mORPHLINESTYLE2_startColor
-                                                            putRGBA mORPHLINESTYLE2_endColor
-                                                            return ()
-           Nothing -> if False /= (not mORPHLINESTYLE2_hasFillFlag) then
-                        inconsistent else return ()
+           Just x | not mORPHLINESTYLE2_hasFillFlag ->
+                    case x of
+                        (mORPHLINESTYLE2_startColor,
+                         mORPHLINESTYLE2_endColor) -> do putRGBA mORPHLINESTYLE2_startColor
+                                                         putRGBA mORPHLINESTYLE2_endColor
+                                                         return ()
+                  | otherwise -> inconsistent
+           Nothing | not mORPHLINESTYLE2_hasFillFlag -> inconsistent
+                   | otherwise -> return ()
        case mORPHLINESTYLE2_fillType of
-           Just x -> if True /= (mORPHLINESTYLE2_hasFillFlag) then
-                       inconsistent else putMORPHFILLSTYLE x
-           Nothing -> if False /= (mORPHLINESTYLE2_hasFillFlag) then
-                        inconsistent else return ()
+           Just x | mORPHLINESTYLE2_hasFillFlag -> putMORPHFILLSTYLE x
+                  | otherwise -> inconsistent
+           Nothing | mORPHLINESTYLE2_hasFillFlag -> inconsistent
+                   | otherwise -> return ()
        return ()
 
 \end{code}
@@ -4957,10 +4966,11 @@ putDefineFontInfo DefineFontInfo{..}
              = isLeft defineFontInfo_codeTable
        putFlag defineFontInfo_fontFlagsWideCodes
        case defineFontInfo_codeTable of
-           Left x -> if True /= (defineFontInfo_fontFlagsWideCodes) then
-                       inconsistent else mapM_ (\ x -> putUI16 x) x
-           Right x -> if False /= (defineFontInfo_fontFlagsWideCodes) then
-                        inconsistent else mapM_ (\ x -> putUI8 x) x
+           Left x | defineFontInfo_fontFlagsWideCodes ->
+                    mapM_ (\ x -> putUI16 x) x
+                  | otherwise -> inconsistent
+           Right x | defineFontInfo_fontFlagsWideCodes -> inconsistent
+                   | otherwise -> mapM_ (\ x -> putUI8 x) x
        return ()
 
 \end{code}
@@ -5082,78 +5092,78 @@ putDefineFont2 DefineFont2{..}
              = genericLength defineFont2_glyphShapeTable
        putUI16 defineFont2_numGlyphs
        case defineFont2_offsetTable of
-           Left x -> if True /= (defineFont2_fontFlagsWideOffsets) then
-                       inconsistent else
-                       if genericLength x /= (defineFont2_numGlyphs) then inconsistent
-                         else mapM_ (\ x -> putUI32 x) x
-           Right x -> if False /= (defineFont2_fontFlagsWideOffsets) then
-                        inconsistent else
-                        if genericLength x /= (defineFont2_numGlyphs) then inconsistent
-                          else mapM_ (\ x -> putUI16 x) x
+           Left x | defineFont2_fontFlagsWideOffsets ->
+                    if genericLength x /= (defineFont2_numGlyphs) then inconsistent
+                      else mapM_ (\ x -> putUI32 x) x
+                  | otherwise -> inconsistent
+           Right x | defineFont2_fontFlagsWideOffsets -> inconsistent
+                   | otherwise ->
+                     if genericLength x /= (defineFont2_numGlyphs) then inconsistent
+                       else mapM_ (\ x -> putUI16 x) x
        case defineFont2_codeTableOffset of
-           Left x -> if True /= (defineFont2_fontFlagsWideOffsets) then
-                       inconsistent else putUI32 x
-           Right x -> if False /= (defineFont2_fontFlagsWideOffsets) then
-                        inconsistent else putUI16 x
+           Left x | defineFont2_fontFlagsWideOffsets -> putUI32 x
+                  | otherwise -> inconsistent
+           Right x | defineFont2_fontFlagsWideOffsets -> inconsistent
+                   | otherwise -> putUI16 x
        if
          genericLength defineFont2_glyphShapeTable /=
            (defineFont2_numGlyphs)
          then inconsistent else
          mapM_ (\ x -> putSHAPE 3 x) defineFont2_glyphShapeTable
        case defineFont2_codeTable of
-           Left x -> if True /= (defineFont2_fontFlagsWideCodes) then
-                       inconsistent else
-                       if genericLength x /= (defineFont2_numGlyphs) then inconsistent
-                         else mapM_ (\ x -> putUI16 x) x
-           Right x -> if False /= (defineFont2_fontFlagsWideCodes) then
-                        inconsistent else
-                        if genericLength x /= (defineFont2_numGlyphs) then inconsistent
-                          else mapM_ (\ x -> putUI8 x) x
+           Left x | defineFont2_fontFlagsWideCodes ->
+                    if genericLength x /= (defineFont2_numGlyphs) then inconsistent
+                      else mapM_ (\ x -> putUI16 x) x
+                  | otherwise -> inconsistent
+           Right x | defineFont2_fontFlagsWideCodes -> inconsistent
+                   | otherwise ->
+                     if genericLength x /= (defineFont2_numGlyphs) then inconsistent
+                       else mapM_ (\ x -> putUI8 x) x
        case defineFont2_fontLayout of
-           Just x -> if True /= (defineFont2_fontFlagsHasLayout) then
-                       inconsistent else
-                       case x of
-                           (defineFont2_fontLayoutAscent, defineFont2_fontLayoutDescent,
-                            defineFont2_fontLayoutLeading, defineFont2_fontLayoutAdvanceTable,
-                            defineFont2_fontLayoutBoundsTable,
-                            defineFont2_fontLayoutKerningCount,
-                            defineFont2_fontLayoutKerningTable) -> do putSI16
-                                                                        defineFont2_fontLayoutAscent
-                                                                      putSI16
-                                                                        defineFont2_fontLayoutDescent
-                                                                      putSI16
-                                                                        defineFont2_fontLayoutLeading
-                                                                      if
-                                                                        genericLength
-                                                                          defineFont2_fontLayoutAdvanceTable
-                                                                          /= (defineFont2_numGlyphs)
-                                                                        then inconsistent else
-                                                                        mapM_ (\ x -> putSI16 x)
-                                                                          defineFont2_fontLayoutAdvanceTable
-                                                                      if
-                                                                        genericLength
-                                                                          defineFont2_fontLayoutBoundsTable
-                                                                          /= (defineFont2_numGlyphs)
-                                                                        then inconsistent else
-                                                                        mapM_ (\ x -> putRECT x)
-                                                                          defineFont2_fontLayoutBoundsTable
-                                                                      putUI16
-                                                                        defineFont2_fontLayoutKerningCount
-                                                                      if
-                                                                        genericLength
-                                                                          defineFont2_fontLayoutKerningTable
-                                                                          /=
-                                                                          (defineFont2_fontLayoutKerningCount)
-                                                                        then inconsistent else
-                                                                        mapM_
-                                                                          (\ x ->
-                                                                             putKERNINGRECORD
-                                                                               defineFont2_fontFlagsWideCodes
-                                                                               x)
-                                                                          defineFont2_fontLayoutKerningTable
-                                                                      return ()
-           Nothing -> if False /= (defineFont2_fontFlagsHasLayout) then
-                        inconsistent else return ()
+           Just x | defineFont2_fontFlagsHasLayout ->
+                    case x of
+                        (defineFont2_fontLayoutAscent, defineFont2_fontLayoutDescent,
+                         defineFont2_fontLayoutLeading, defineFont2_fontLayoutAdvanceTable,
+                         defineFont2_fontLayoutBoundsTable,
+                         defineFont2_fontLayoutKerningCount,
+                         defineFont2_fontLayoutKerningTable) -> do putSI16
+                                                                     defineFont2_fontLayoutAscent
+                                                                   putSI16
+                                                                     defineFont2_fontLayoutDescent
+                                                                   putSI16
+                                                                     defineFont2_fontLayoutLeading
+                                                                   if
+                                                                     genericLength
+                                                                       defineFont2_fontLayoutAdvanceTable
+                                                                       /= (defineFont2_numGlyphs)
+                                                                     then inconsistent else
+                                                                     mapM_ (\ x -> putSI16 x)
+                                                                       defineFont2_fontLayoutAdvanceTable
+                                                                   if
+                                                                     genericLength
+                                                                       defineFont2_fontLayoutBoundsTable
+                                                                       /= (defineFont2_numGlyphs)
+                                                                     then inconsistent else
+                                                                     mapM_ (\ x -> putRECT x)
+                                                                       defineFont2_fontLayoutBoundsTable
+                                                                   putUI16
+                                                                     defineFont2_fontLayoutKerningCount
+                                                                   if
+                                                                     genericLength
+                                                                       defineFont2_fontLayoutKerningTable
+                                                                       /=
+                                                                       (defineFont2_fontLayoutKerningCount)
+                                                                     then inconsistent else
+                                                                     mapM_
+                                                                       (\ x ->
+                                                                          putKERNINGRECORD
+                                                                            defineFont2_fontFlagsWideCodes
+                                                                            x)
+                                                                       defineFont2_fontLayoutKerningTable
+                                                                   return ()
+                  | otherwise -> inconsistent
+           Nothing | defineFont2_fontFlagsHasLayout -> inconsistent
+                   | otherwise -> return ()
        return ()
 
 \end{code}
@@ -5231,19 +5241,19 @@ putDefineFont3 DefineFont3{..}
              = genericLength defineFont3_glyphShapeTable
        putUI16 defineFont3_numGlyphs
        case defineFont3_offsetTable of
-           Left x -> if True /= (defineFont3_fontFlagsWideOffsets) then
-                       inconsistent else
-                       if genericLength x /= (defineFont3_numGlyphs) then inconsistent
-                         else mapM_ (\ x -> putUI32 x) x
-           Right x -> if False /= (defineFont3_fontFlagsWideOffsets) then
-                        inconsistent else
-                        if genericLength x /= (defineFont3_numGlyphs) then inconsistent
-                          else mapM_ (\ x -> putUI16 x) x
+           Left x | defineFont3_fontFlagsWideOffsets ->
+                    if genericLength x /= (defineFont3_numGlyphs) then inconsistent
+                      else mapM_ (\ x -> putUI32 x) x
+                  | otherwise -> inconsistent
+           Right x | defineFont3_fontFlagsWideOffsets -> inconsistent
+                   | otherwise ->
+                     if genericLength x /= (defineFont3_numGlyphs) then inconsistent
+                       else mapM_ (\ x -> putUI16 x) x
        case defineFont3_codeTableOffset of
-           Left x -> if True /= (defineFont3_fontFlagsWideOffsets) then
-                       inconsistent else putUI32 x
-           Right x -> if False /= (defineFont3_fontFlagsWideOffsets) then
-                        inconsistent else putUI16 x
+           Left x | defineFont3_fontFlagsWideOffsets -> putUI32 x
+                  | otherwise -> inconsistent
+           Right x | defineFont3_fontFlagsWideOffsets -> inconsistent
+                   | otherwise -> putUI16 x
        if
          genericLength defineFont3_glyphShapeTable /=
            (defineFont3_numGlyphs)
@@ -5253,50 +5263,50 @@ putDefineFont3 DefineFont3{..}
          then inconsistent else
          mapM_ (\ x -> putUI16 x) defineFont3_codeTable
        case defineFont3_fontLayout of
-           Just x -> if True /= (defineFont3_fontFlagsHasLayout) then
-                       inconsistent else
-                       case x of
-                           (defineFont3_fontLayoutAscent, defineFont3_fontLayoutDescent,
-                            defineFont3_fontLayoutLeading, defineFont3_fontLayoutAdvanceTable,
-                            defineFont3_fontLayoutBoundsTable,
-                            defineFont3_fontLayoutKerningCount,
-                            defineFont3_fontLayoutKerningTable) -> do putSI16
-                                                                        defineFont3_fontLayoutAscent
-                                                                      putSI16
-                                                                        defineFont3_fontLayoutDescent
-                                                                      putSI16
-                                                                        defineFont3_fontLayoutLeading
-                                                                      if
-                                                                        genericLength
-                                                                          defineFont3_fontLayoutAdvanceTable
-                                                                          /= (defineFont3_numGlyphs)
-                                                                        then inconsistent else
-                                                                        mapM_ (\ x -> putSI16 x)
-                                                                          defineFont3_fontLayoutAdvanceTable
-                                                                      if
-                                                                        genericLength
-                                                                          defineFont3_fontLayoutBoundsTable
-                                                                          /= (defineFont3_numGlyphs)
-                                                                        then inconsistent else
-                                                                        mapM_ (\ x -> putRECT x)
-                                                                          defineFont3_fontLayoutBoundsTable
-                                                                      putUI16
-                                                                        defineFont3_fontLayoutKerningCount
-                                                                      if
-                                                                        genericLength
-                                                                          defineFont3_fontLayoutKerningTable
-                                                                          /=
-                                                                          (defineFont3_fontLayoutKerningCount)
-                                                                        then inconsistent else
-                                                                        mapM_
-                                                                          (\ x ->
-                                                                             putKERNINGRECORD
-                                                                               defineFont3_fontFlagsWideCodes
-                                                                               x)
-                                                                          defineFont3_fontLayoutKerningTable
-                                                                      return ()
-           Nothing -> if False /= (defineFont3_fontFlagsHasLayout) then
-                        inconsistent else return ()
+           Just x | defineFont3_fontFlagsHasLayout ->
+                    case x of
+                        (defineFont3_fontLayoutAscent, defineFont3_fontLayoutDescent,
+                         defineFont3_fontLayoutLeading, defineFont3_fontLayoutAdvanceTable,
+                         defineFont3_fontLayoutBoundsTable,
+                         defineFont3_fontLayoutKerningCount,
+                         defineFont3_fontLayoutKerningTable) -> do putSI16
+                                                                     defineFont3_fontLayoutAscent
+                                                                   putSI16
+                                                                     defineFont3_fontLayoutDescent
+                                                                   putSI16
+                                                                     defineFont3_fontLayoutLeading
+                                                                   if
+                                                                     genericLength
+                                                                       defineFont3_fontLayoutAdvanceTable
+                                                                       /= (defineFont3_numGlyphs)
+                                                                     then inconsistent else
+                                                                     mapM_ (\ x -> putSI16 x)
+                                                                       defineFont3_fontLayoutAdvanceTable
+                                                                   if
+                                                                     genericLength
+                                                                       defineFont3_fontLayoutBoundsTable
+                                                                       /= (defineFont3_numGlyphs)
+                                                                     then inconsistent else
+                                                                     mapM_ (\ x -> putRECT x)
+                                                                       defineFont3_fontLayoutBoundsTable
+                                                                   putUI16
+                                                                     defineFont3_fontLayoutKerningCount
+                                                                   if
+                                                                     genericLength
+                                                                       defineFont3_fontLayoutKerningTable
+                                                                       /=
+                                                                       (defineFont3_fontLayoutKerningCount)
+                                                                     then inconsistent else
+                                                                     mapM_
+                                                                       (\ x ->
+                                                                          putKERNINGRECORD
+                                                                            defineFont3_fontFlagsWideCodes
+                                                                            x)
+                                                                       defineFont3_fontLayoutKerningTable
+                                                                   return ()
+                  | otherwise -> inconsistent
+           Nothing | defineFont3_fontFlagsHasLayout -> inconsistent
+                   | otherwise -> return ()
        return ()
 
 \end{code}
@@ -5378,16 +5388,16 @@ getKERNINGRECORD kERNINGRECORD_fontFlagsWideCodes
        return (KERNINGRECORD{..})
 putKERNINGRECORD kERNINGRECORD_fontFlagsWideCodes KERNINGRECORD{..}
   = do case kERNINGRECORD_fontKerningCodes of
-           Left x -> if True /= (kERNINGRECORD_fontFlagsWideCodes) then
-                       inconsistent else
-                       case x of
-                           (x1, x2) -> do putUI16 x1
-                                          putUI16 x2
-           Right x -> if False /= (kERNINGRECORD_fontFlagsWideCodes) then
-                        inconsistent else
-                        case x of
-                            (x1, x2) -> do putUI8 x1
-                                           putUI8 x2
+           Left x | kERNINGRECORD_fontFlagsWideCodes ->
+                    case x of
+                        (x1, x2) -> do putUI16 x1
+                                       putUI16 x2
+                  | otherwise -> inconsistent
+           Right x | kERNINGRECORD_fontFlagsWideCodes -> inconsistent
+                   | otherwise ->
+                     case x of
+                         (x1, x2) -> do putUI8 x1
+                                        putUI8 x2
        putSI16 kERNINGRECORD_fontKerningAdjustment
        return ()
 
@@ -5504,35 +5514,35 @@ putTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
        let tEXTRECORD_styleFlagsHasXOffset = isJust tEXTRECORD_xOffset
        putFlag tEXTRECORD_styleFlagsHasXOffset
        case tEXTRECORD_fontID of
-           Just x -> if True /= (tEXTRECORD_styleFlagsHasFont) then
-                       inconsistent else putUI16 x
-           Nothing -> if False /= (tEXTRECORD_styleFlagsHasFont) then
-                        inconsistent else return ()
+           Just x | tEXTRECORD_styleFlagsHasFont -> putUI16 x
+                  | otherwise -> inconsistent
+           Nothing | tEXTRECORD_styleFlagsHasFont -> inconsistent
+                   | otherwise -> return ()
        case tEXTRECORD_textColor of
-           Just x -> if True /= (tEXTRECORD_styleFlagsHasColor) then
-                       inconsistent else
-                       case x of
-                           Left x -> if True /= (tEXTRECORD_textVer == 2) then inconsistent
-                                       else putRGBA x
-                           Right x -> if False /= (tEXTRECORD_textVer == 2) then inconsistent
-                                        else putRGB x
-           Nothing -> if False /= (tEXTRECORD_styleFlagsHasColor) then
-                        inconsistent else return ()
+           Just x | tEXTRECORD_styleFlagsHasColor ->
+                    case x of
+                        Left x | tEXTRECORD_textVer == 2 -> putRGBA x
+                               | otherwise -> inconsistent
+                        Right x | tEXTRECORD_textVer == 2 -> inconsistent
+                                | otherwise -> putRGB x
+                  | otherwise -> inconsistent
+           Nothing | tEXTRECORD_styleFlagsHasColor -> inconsistent
+                   | otherwise -> return ()
        case tEXTRECORD_xOffset of
-           Just x -> if True /= (tEXTRECORD_styleFlagsHasXOffset) then
-                       inconsistent else putSI16 x
-           Nothing -> if False /= (tEXTRECORD_styleFlagsHasXOffset) then
-                        inconsistent else return ()
+           Just x | tEXTRECORD_styleFlagsHasXOffset -> putSI16 x
+                  | otherwise -> inconsistent
+           Nothing | tEXTRECORD_styleFlagsHasXOffset -> inconsistent
+                   | otherwise -> return ()
        case tEXTRECORD_yOffset of
-           Just x -> if True /= (tEXTRECORD_styleFlagsHasYOffset) then
-                       inconsistent else putSI16 x
-           Nothing -> if False /= (tEXTRECORD_styleFlagsHasYOffset) then
-                        inconsistent else return ()
+           Just x | tEXTRECORD_styleFlagsHasYOffset -> putSI16 x
+                  | otherwise -> inconsistent
+           Nothing | tEXTRECORD_styleFlagsHasYOffset -> inconsistent
+                   | otherwise -> return ()
        case tEXTRECORD_textHeight of
-           Just x -> if True /= (tEXTRECORD_styleFlagsHasFont) then
-                       inconsistent else putUI16 x
-           Nothing -> if False /= (tEXTRECORD_styleFlagsHasFont) then
-                        inconsistent else return ()
+           Just x | tEXTRECORD_styleFlagsHasFont -> putUI16 x
+                  | otherwise -> inconsistent
+           Nothing | tEXTRECORD_styleFlagsHasFont -> inconsistent
+                   | otherwise -> return ()
        let tEXTRECORD_glyphCount = genericLength tEXTRECORD_glyphEntries
        putUI8 tEXTRECORD_glyphCount
        if genericLength tEXTRECORD_glyphEntries /= (tEXTRECORD_glyphCount)
@@ -5659,53 +5669,52 @@ putDefineEditText DefineEditText{..}
        putFlag defineEditText_hTML
        putFlag defineEditText_useOutlines
        case defineEditText_fontID of
-           Just x -> if True /= (defineEditText_hasFont) then inconsistent
-                       else putUI16 x
-           Nothing -> if False /= (defineEditText_hasFont) then inconsistent
-                        else return ()
+           Just x | defineEditText_hasFont -> putUI16 x
+                  | otherwise -> inconsistent
+           Nothing | defineEditText_hasFont -> inconsistent
+                   | otherwise -> return ()
        case defineEditText_fontClass of
-           Just x -> if True /= (defineEditText_hasFontClass) then
-                       inconsistent else putSTRING x
-           Nothing -> if False /= (defineEditText_hasFontClass) then
-                        inconsistent else return ()
+           Just x | defineEditText_hasFontClass -> putSTRING x
+                  | otherwise -> inconsistent
+           Nothing | defineEditText_hasFontClass -> inconsistent
+                   | otherwise -> return ()
        case defineEditText_fontHeight of
-           Just x -> if True /= (defineEditText_hasFont) then inconsistent
-                       else putUI16 x
-           Nothing -> if False /= (defineEditText_hasFont) then inconsistent
-                        else return ()
+           Just x | defineEditText_hasFont -> putUI16 x
+                  | otherwise -> inconsistent
+           Nothing | defineEditText_hasFont -> inconsistent
+                   | otherwise -> return ()
        case defineEditText_textColor of
-           Just x -> if True /= (defineEditText_hasTextColor) then
-                       inconsistent else putRGBA x
-           Nothing -> if False /= (defineEditText_hasTextColor) then
-                        inconsistent else return ()
+           Just x | defineEditText_hasTextColor -> putRGBA x
+                  | otherwise -> inconsistent
+           Nothing | defineEditText_hasTextColor -> inconsistent
+                   | otherwise -> return ()
        case defineEditText_maxLength of
-           Just x -> if True /= (defineEditText_hasMaxLength) then
-                       inconsistent else putUI16 x
-           Nothing -> if False /= (defineEditText_hasMaxLength) then
-                        inconsistent else return ()
+           Just x | defineEditText_hasMaxLength -> putUI16 x
+                  | otherwise -> inconsistent
+           Nothing | defineEditText_hasMaxLength -> inconsistent
+                   | otherwise -> return ()
        case defineEditText_layout of
-           Just x -> if True /= (defineEditText_hasLayout) then inconsistent
-                       else
-                       case x of
-                           (defineEditText_layoutAlign, defineEditText_layoutLeftMargin,
-                            defineEditText_layoutRightMargin, defineEditText_layoutIndent,
-                            defineEditText_layoutLeading) -> do putUI8
-                                                                  defineEditText_layoutAlign
-                                                                putUI16
-                                                                  defineEditText_layoutLeftMargin
-                                                                putUI16
-                                                                  defineEditText_layoutRightMargin
-                                                                putUI16 defineEditText_layoutIndent
-                                                                putSI16 defineEditText_layoutLeading
-                                                                return ()
-           Nothing -> if False /= (defineEditText_hasLayout) then inconsistent
-                        else return ()
+           Just x | defineEditText_hasLayout ->
+                    case x of
+                        (defineEditText_layoutAlign, defineEditText_layoutLeftMargin,
+                         defineEditText_layoutRightMargin, defineEditText_layoutIndent,
+                         defineEditText_layoutLeading) -> do putUI8
+                                                               defineEditText_layoutAlign
+                                                             putUI16 defineEditText_layoutLeftMargin
+                                                             putUI16
+                                                               defineEditText_layoutRightMargin
+                                                             putUI16 defineEditText_layoutIndent
+                                                             putSI16 defineEditText_layoutLeading
+                                                             return ()
+                  | otherwise -> inconsistent
+           Nothing | defineEditText_hasLayout -> inconsistent
+                   | otherwise -> return ()
        putSTRING defineEditText_variableName
        case defineEditText_initialText of
-           Just x -> if True /= (defineEditText_hasText) then inconsistent
-                       else putSTRING x
-           Nothing -> if False /= (defineEditText_hasText) then inconsistent
-                        else return ()
+           Just x | defineEditText_hasText -> putSTRING x
+                  | otherwise -> inconsistent
+           Nothing | defineEditText_hasText -> inconsistent
+                   | otherwise -> return ()
        return ()
 
 \end{code}
@@ -5852,41 +5861,41 @@ putSOUNDINFO SOUNDINFO{..}
        let sOUNDINFO_hasInPoint = isJust sOUNDINFO_inPoint
        putFlag sOUNDINFO_hasInPoint
        case sOUNDINFO_inPoint of
-           Just x -> if True /= (sOUNDINFO_hasInPoint) then inconsistent else
-                       putUI32 x
-           Nothing -> if False /= (sOUNDINFO_hasInPoint) then inconsistent
-                        else return ()
+           Just x | sOUNDINFO_hasInPoint -> putUI32 x
+                  | otherwise -> inconsistent
+           Nothing | sOUNDINFO_hasInPoint -> inconsistent
+                   | otherwise -> return ()
        case sOUNDINFO_outPoint of
-           Just x -> if True /= (sOUNDINFO_hasOutPoint) then inconsistent else
-                       putUI32 x
-           Nothing -> if False /= (sOUNDINFO_hasOutPoint) then inconsistent
-                        else return ()
+           Just x | sOUNDINFO_hasOutPoint -> putUI32 x
+                  | otherwise -> inconsistent
+           Nothing | sOUNDINFO_hasOutPoint -> inconsistent
+                   | otherwise -> return ()
        case sOUNDINFO_loopCount of
-           Just x -> if True /= (sOUNDINFO_hasLoops) then inconsistent else
-                       putUI16 x
-           Nothing -> if False /= (sOUNDINFO_hasLoops) then inconsistent else
-                        return ()
+           Just x | sOUNDINFO_hasLoops -> putUI16 x
+                  | otherwise -> inconsistent
+           Nothing | sOUNDINFO_hasLoops -> inconsistent
+                   | otherwise -> return ()
        case sOUNDINFO_env of
-           Just x -> if True /= (sOUNDINFO_hasEnvelope) then inconsistent else
-                       case x of
-                           (sOUNDINFO_envPoints, sOUNDINFO_envelopeRecords) -> do putUI8
-                                                                                    sOUNDINFO_envPoints
-                                                                                  if
-                                                                                    genericLength
-                                                                                      sOUNDINFO_envelopeRecords
-                                                                                      /=
-                                                                                      (sOUNDINFO_envPoints)
-                                                                                    then
-                                                                                    inconsistent
-                                                                                    else
-                                                                                    mapM_
-                                                                                      (\ x ->
-                                                                                         putSOUNDENVELOPE
-                                                                                           x)
-                                                                                      sOUNDINFO_envelopeRecords
-                                                                                  return ()
-           Nothing -> if False /= (sOUNDINFO_hasEnvelope) then inconsistent
-                        else return ()
+           Just x | sOUNDINFO_hasEnvelope ->
+                    case x of
+                        (sOUNDINFO_envPoints, sOUNDINFO_envelopeRecords) -> do putUI8
+                                                                                 sOUNDINFO_envPoints
+                                                                               if
+                                                                                 genericLength
+                                                                                   sOUNDINFO_envelopeRecords
+                                                                                   /=
+                                                                                   (sOUNDINFO_envPoints)
+                                                                                 then inconsistent
+                                                                                 else
+                                                                                 mapM_
+                                                                                   (\ x ->
+                                                                                      putSOUNDENVELOPE
+                                                                                        x)
+                                                                                   sOUNDINFO_envelopeRecords
+                                                                               return ()
+                  | otherwise -> inconsistent
+           Nothing | sOUNDINFO_hasEnvelope -> inconsistent
+                   | otherwise -> return ()
        return ()
 
 \end{code}
@@ -5939,11 +5948,11 @@ putSoundStreamHead SoundStreamHead{..}
        putFlag soundStreamHead_streamSoundType
        putUI16 soundStreamHead_streamSoundSampleCount
        case soundStreamHead_latencySeek of
-           Just x -> if True /= (soundStreamHead_streamSoundCompression == 2)
-                       then inconsistent else putSI16 x
-           Nothing -> if
-                        False /= (soundStreamHead_streamSoundCompression == 2) then
-                        inconsistent else return ()
+           Just x | soundStreamHead_streamSoundCompression == 2 -> putSI16 x
+                  | otherwise -> inconsistent
+           Nothing | soundStreamHead_streamSoundCompression == 2 ->
+                     inconsistent
+                   | otherwise -> return ()
        return ()
 
 \end{code}
@@ -5976,11 +5985,11 @@ putSoundStreamHead2 SoundStreamHead2{..}
        putFlag soundStreamHead2_streamSoundType
        putUI16 soundStreamHead2_streamSoundSampleCount
        case soundStreamHead2_latencySeek of
-           Just x -> if True /= (soundStreamHead2_streamSoundCompression == 2)
-                       then inconsistent else putSI16 x
-           Nothing -> if
-                        False /= (soundStreamHead2_streamSoundCompression == 2) then
-                        inconsistent else return ()
+           Just x | soundStreamHead2_streamSoundCompression == 2 -> putSI16 x
+                  | otherwise -> inconsistent
+           Nothing | soundStreamHead2_streamSoundCompression == 2 ->
+                     inconsistent
+                   | otherwise -> return ()
        return ()
 
 \end{code}
@@ -6075,50 +6084,42 @@ putBUTTONRECORD bUTTONRECORD_buttonVer BUTTONRECORD{..}
        putUI16 bUTTONRECORD_placeDepth
        putMATRIX bUTTONRECORD_placeMatrix
        case bUTTONRECORD_buttonDisplay of
-           Just x -> if True /= (bUTTONRECORD_buttonVer == 2) then
-                       inconsistent else
-                       case x of
-                           (bUTTONRECORD_buttonDisplayColorTransform,
-                            bUTTONRECORD_buttonDisplayFilterList,
-                            bUTTONRECORD_buttonDisplayBlendMode) -> do putCXFORMWITHALPHA
-                                                                         bUTTONRECORD_buttonDisplayColorTransform
-                                                                       case
-                                                                         bUTTONRECORD_buttonDisplayFilterList
-                                                                         of
-                                                                           Just x -> if
-                                                                                       True /=
-                                                                                         (bUTTONRECORD_buttonHasFilterList)
-                                                                                       then
-                                                                                       inconsistent
-                                                                                       else
-                                                                                       putFILTERLIST
-                                                                                         x
-                                                                           Nothing -> if
-                                                                                        False /=
-                                                                                          (bUTTONRECORD_buttonHasFilterList)
-                                                                                        then
-                                                                                        inconsistent
-                                                                                        else
-                                                                                        return ()
-                                                                       case
-                                                                         bUTTONRECORD_buttonDisplayBlendMode
-                                                                         of
-                                                                           Just x -> if
-                                                                                       True /=
-                                                                                         (bUTTONRECORD_buttonHasBlendMode)
-                                                                                       then
-                                                                                       inconsistent
-                                                                                       else putUI8 x
-                                                                           Nothing -> if
-                                                                                        False /=
-                                                                                          (bUTTONRECORD_buttonHasBlendMode)
-                                                                                        then
-                                                                                        inconsistent
-                                                                                        else
-                                                                                        return ()
-                                                                       return ()
-           Nothing -> if False /= (bUTTONRECORD_buttonVer == 2) then
-                        inconsistent else return ()
+           Just x | bUTTONRECORD_buttonVer == 2 ->
+                    case x of
+                        (bUTTONRECORD_buttonDisplayColorTransform,
+                         bUTTONRECORD_buttonDisplayFilterList,
+                         bUTTONRECORD_buttonDisplayBlendMode) -> do putCXFORMWITHALPHA
+                                                                      bUTTONRECORD_buttonDisplayColorTransform
+                                                                    case
+                                                                      bUTTONRECORD_buttonDisplayFilterList
+                                                                      of
+                                                                        Just x |
+                                                                                 bUTTONRECORD_buttonHasFilterList
+                                                                                 -> putFILTERLIST x
+                                                                               | otherwise ->
+                                                                                 inconsistent
+                                                                        Nothing |
+                                                                                  bUTTONRECORD_buttonHasFilterList
+                                                                                  -> inconsistent
+                                                                                | otherwise ->
+                                                                                  return ()
+                                                                    case
+                                                                      bUTTONRECORD_buttonDisplayBlendMode
+                                                                      of
+                                                                        Just x |
+                                                                                 bUTTONRECORD_buttonHasBlendMode
+                                                                                 -> putUI8 x
+                                                                               | otherwise ->
+                                                                                 inconsistent
+                                                                        Nothing |
+                                                                                  bUTTONRECORD_buttonHasBlendMode
+                                                                                  -> inconsistent
+                                                                                | otherwise ->
+                                                                                  return ()
+                                                                    return ()
+                  | otherwise -> inconsistent
+           Nothing | bUTTONRECORD_buttonVer == 2 -> inconsistent
+                   | otherwise -> return ()
        return ()
 
 \end{code}
@@ -6270,28 +6271,28 @@ putDefineButtonSound DefineButtonSound{..}
   = do putUI16 defineButtonSound_buttonId
        putUI16 defineButtonSound_buttonSoundChar0
        case defineButtonSound_buttonSoundInfo0 of
-           Just x -> if True /= (defineButtonSound_buttonSoundChar0 /= 0) then
-                       inconsistent else putSOUNDINFO x
-           Nothing -> if False /= (defineButtonSound_buttonSoundChar0 /= 0)
-                        then inconsistent else return ()
+           Just x | defineButtonSound_buttonSoundChar0 /= 0 -> putSOUNDINFO x
+                  | otherwise -> inconsistent
+           Nothing | defineButtonSound_buttonSoundChar0 /= 0 -> inconsistent
+                   | otherwise -> return ()
        putUI16 defineButtonSound_buttonSoundChar1
        case defineButtonSound_buttonSoundInfo1 of
-           Just x -> if True /= (defineButtonSound_buttonSoundChar1 /= 0) then
-                       inconsistent else putSOUNDINFO x
-           Nothing -> if False /= (defineButtonSound_buttonSoundChar1 /= 0)
-                        then inconsistent else return ()
+           Just x | defineButtonSound_buttonSoundChar1 /= 0 -> putSOUNDINFO x
+                  | otherwise -> inconsistent
+           Nothing | defineButtonSound_buttonSoundChar1 /= 0 -> inconsistent
+                   | otherwise -> return ()
        putUI16 defineButtonSound_buttonSoundChar2
        case defineButtonSound_buttonSoundInfo2 of
-           Just x -> if True /= (defineButtonSound_buttonSoundChar2 /= 0) then
-                       inconsistent else putSOUNDINFO x
-           Nothing -> if False /= (defineButtonSound_buttonSoundChar2 /= 0)
-                        then inconsistent else return ()
+           Just x | defineButtonSound_buttonSoundChar2 /= 0 -> putSOUNDINFO x
+                  | otherwise -> inconsistent
+           Nothing | defineButtonSound_buttonSoundChar2 /= 0 -> inconsistent
+                   | otherwise -> return ()
        putUI16 defineButtonSound_buttonSoundChar3
        case defineButtonSound_buttonSoundInfo3 of
-           Just x -> if True /= (defineButtonSound_buttonSoundChar3 /= 0) then
-                       inconsistent else putSOUNDINFO x
-           Nothing -> if False /= (defineButtonSound_buttonSoundChar3 /= 0)
-                        then inconsistent else return ()
+           Just x | defineButtonSound_buttonSoundChar3 /= 0 -> putSOUNDINFO x
+                  | otherwise -> inconsistent
+           Nothing | defineButtonSound_buttonSoundChar3 /= 0 -> inconsistent
+                   | otherwise -> return ()
        return ()
 
 \end{code}
