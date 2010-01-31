@@ -25,10 +25,14 @@ TODOS
   * In particular, the zlib compressed fields in the image chapter
   * Perhaps also those embedding sound and video formats
 3) Reduce semantic junk
-  * RECORDHEADER/ACTIONHEADER entries
   * NBits fields
 4) Asserts to validate semantic junk is in agreement with each other in all custom data types
 5) Simplify away generated consistency checks that are trivially true
+6) Overflow checks on UB/SB/FB fields, since the data types used to represent them are imprecise
+7) Generate comments on constructor fields and add them to custom ones
+8) Represent some [UI8] as ByteString?
+9) Add String sources to the inconsistency checks for debugging
+10) Clean up names in putters and getters: don't give excluded fields record-prefixed names
 
 
 Roundtripping
@@ -2421,11 +2425,8 @@ putACTIONRECORDHEADER (ACTIONRECORDHEADER {..}) = do
     when (((aCTIONRECORDHEADER_actionCode .&. 0x80) /= 0) `consistentWith` isJust aCTIONRECORDHEADER_actionLength) $ do
         putUI16 (fromJust aCTIONRECORDHEADER_actionLength)
 
-data ACTIONRECORD = ACTIONRECORD { aCTIONRECORD_actionRecordHeader :: ACTIONRECORDHEADER, aCTIONRECORD_actionRecordAction :: Action }
-                  deriving (Eq, Show, Typeable, Data)
-
-data Action = UnknownAction (Maybe ByteString)
-            | ActionPush { actionPush_actionPushLiteral :: ActionPushLiteral }
+data ACTIONRECORD = UnknownAction { unknownAction_actionCode :: UI8, unknownAction_data :: Maybe ByteString }
+                  | ActionPush { actionPush_actionPushLiteral :: ActionPushLiteral }
          |  ActionGotoFrame{actionGotoFrame_frame :: UI16}
          |  ActionGetURL{actionGetURL_urlString :: STRING,
                actionGetURL_targetString :: STRING}
@@ -2550,30 +2551,32 @@ data Action = UnknownAction (Maybe ByteString)
             deriving (Eq, Show, Typeable, Data)
 
 getACTIONRECORD = do
-    aCTIONRECORD_actionRecordHeader@(ACTIONRECORDHEADER {..}) <- getACTIONRECORDHEADER
+    ACTIONRECORDHEADER {..} <- getACTIONRECORDHEADER
     
     let mb_getter = case aCTIONRECORDHEADER_actionCode of
                       0x96 -> Just getActionPush
                       _    -> generatedActionGetters aCTIONRECORDHEADER_actionCode
     
-    aCTIONRECORD_actionRecordAction <- case aCTIONRECORDHEADER_actionLength of
-       -- No payload: tags < 0x80
-      Nothing -> case aCTIONRECORDHEADER_actionCode of
-        _ -> return $ UnknownAction Nothing
-       -- Payload: tags >= 0x81
-      Just aCTIONRECORDHEADER_actionLength -> nestSwfGet (fromIntegral aCTIONRECORDHEADER_actionLength) $ case mb_getter of
+    -- Only some tags (with code >= 0x80) have a payload:
+    nestSwfGet (maybe 0 fromIntegral aCTIONRECORDHEADER_actionLength) $ case mb_getter of
         Just getter -> getter
-        Nothing     -> fmap (UnknownAction . Just) getRemainingLazyByteString
-    
-    return $ ACTIONRECORD {..}
+        Nothing -> do
+            dat <- getRemainingLazyByteString
+            return $ UnknownAction { unknownAction_actionCode = aCTIONRECORDHEADER_actionCode, unknownAction_data = fmap (const dat) aCTIONRECORDHEADER_actionLength }
 
-putACTIONRECORD (ACTIONRECORD {..}) = do
-    putACTIONRECORDHEADER aCTIONRECORD_actionRecordHeader
-    
-    case aCTIONRECORD_actionRecordAction of
-        UnknownAction mb_bs -> maybe (return ()) putLazyByteString mb_bs
-        ActionPush {}       -> putActionPush aCTIONRECORD_actionRecordAction
-        _                   -> generatedActionPutters aCTIONRECORD_actionRecordAction
+putACTIONRECORD actionrecord = do
+    (len, put) <- nestSwfPut $ case actionrecord of
+        UnknownAction {..} -> when (isJust unknownAction_data `consistentWith` (unknownAction_actionCode >= 0x80)) $
+                                putLazyByteString $ fromJust unknownAction_data
+        ActionPush {}      -> putActionPush actionrecord
+        _                  -> generatedActionPutters actionrecord
+
+    let code = generatedActionTypes actionrecord
+    putACTIONRECORDHEADER $ ACTIONRECORDHEADER {
+        aCTIONRECORDHEADER_actionCode = code,
+        aCTIONRECORDHEADER_actionLength = if code < 0x80 then Nothing else Just len
+      }
+    put
 
 \end{code}
 
