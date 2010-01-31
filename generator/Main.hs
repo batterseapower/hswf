@@ -375,7 +375,7 @@ recordToDecls (Record { record_name, record_params, record_fields })
         recfields = [([bndr], UnBangedTy typ) | (bndr, typ) <- present_fields]
         
         defuser = defuseFieldName record_name
-        params_bndrs = map (PVar . Ident . defuser) record_params
+        params_bndrs = map (PVar . defuser) record_params
         
         getter_name = Ident $ "get" ++ record_name
         getter = FunBind [Match noSrcLoc getter_name params_bndrs Nothing (UnGuardedRhs getexpr) (BDecls [])]
@@ -385,7 +385,7 @@ recordToDecls (Record { record_name, record_params, record_fields })
         
         (present_fields, getexpr, putexpr) = fieldsToSyntax defuser record_fields (\_ -> RecConstr (qname record_name) [FieldWildcard])
 
-fieldsToSyntax :: (FieldName -> String) -> [Field] -> ([Name] -> Exp) -> ([(Name, LHE.Type)], Exp, Exp)
+fieldsToSyntax :: (FieldName -> Name) -> [Field] -> ([Name] -> Exp) -> ([(Name, LHE.Type)], Exp, Exp)
 fieldsToSyntax defuser fields finish
   = (present_fields,
      Do $ getter_stmts ++ [Qualifier $ App (var "return") $ finish (map fst present_fields)],
@@ -395,7 +395,7 @@ fieldsToSyntax defuser fields finish
     putter_stmts = concat putter_stmtss
     (mb_present_fieldss, getter_stmts, putter_stmtss) = unzip3 $ map (fieldToSyntax defuser) fields
 
-fieldToSyntax :: (FieldName -> String) -> Field -> (Maybe (Name, LHE.Type), Stmt, [Stmt])
+fieldToSyntax :: (FieldName -> Name) -> Field -> (Maybe (Name, LHE.Type), Stmt, [Stmt])
 fieldToSyntax defuser field = case field_excluded field of
     Just we | IsReserved <- we -> (Nothing, Qualifier (App (var "discardReserved") getexp), putter_stmts)
             | otherwise        -> (Nothing, Generator noSrcLoc (PVar bndr) getexp, putter_stmts)
@@ -403,10 +403,10 @@ fieldToSyntax defuser field = case field_excluded field of
                                   Qualifier $ putexp (Var (UnQual bndr))]
     Nothing -> (Just (bndr, ty), Generator noSrcLoc (PVar bndr) getexp, [Qualifier $ putexp (Var (UnQual bndr))])
   where
-    bndr = Ident $ defuser (field_name field)
+    bndr = defuser (field_name field)
     (getexp, putexp, ty) = typeToSyntax defuser (field_type field)
 
-typeToSyntax :: (FieldName -> String) -> Type -> (Exp, Exp -> Exp, LHE.Type)
+typeToSyntax :: (FieldName -> Name) -> Type -> (Exp, Exp -> Exp, LHE.Type)
 typeToSyntax defuser typ = case typ of
     CompositeType fields
       -> (getter,
@@ -490,12 +490,12 @@ typeToSyntax defuser typ = case typ of
         tyOne (TyCon tycon _)        = LHE.TyCon (qname tycon)
 
 whyExcludedToSyntax _       IsReserved          = var "reservedDefault"
-whyExcludedToSyntax defuser (IsPresenceFlag fn) = App (var "isJust") (var $ defuser fn)
-whyExcludedToSyntax defuser (IsSelectFlag fn)   = App (var "isLeft") (var $ defuser fn)
-whyExcludedToSyntax defuser (IsLength fn)       = App (var "genericLength") (var $ defuser fn)
+whyExcludedToSyntax defuser (IsPresenceFlag fn) = App (var "isJust") (Var $ UnQual $ defuser fn)
+whyExcludedToSyntax defuser (IsSelectFlag fn)   = App (var "isLeft") (Var $ UnQual $ defuser fn)
+whyExcludedToSyntax defuser (IsLength fn)       = App (var "genericLength") (Var $ UnQual $ defuser fn)
 
 fieldExprToSyntax _       (LitE i) = Lit (Int $ fromIntegral i)
-fieldExprToSyntax defuser (FieldE x) = var (defuser x)
+fieldExprToSyntax defuser (FieldE x) = Var $ UnQual $ defuser x
 fieldExprToSyntax defuser (UnOpE op e) = App eop (fieldExprToSyntax defuser e)
   where eop = case op of Not -> var "not"
 fieldExprToSyntax defuser (BinOpE op e1 e2) = InfixApp (fieldExprToSyntax defuser e1) (QVarOp $ UnQual $ Symbol $ eop) (fieldExprToSyntax defuser e2)
@@ -511,7 +511,7 @@ simplifyFieldExpr True (UnOpE Not e) = UnOpE Not (simplifyFieldExpr True e)
 simplifyFieldExpr _    e = e
 
 
-defuseFieldName record_name field_name = toVarName record_name ++ '_':toVarName field_name
+defuseFieldName record_name field_name = Ident $ toVarName record_name ++ '_':toVarName field_name
   where toVarName (c:s) = toLower c : s
 
 
