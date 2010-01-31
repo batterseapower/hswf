@@ -57,3 +57,6 @@ maybeHas flag act
 genericReplicateM :: (Integral a, Monad m) => a -> m b -> m [b]
 genericReplicateM n act = sequence $ genericReplicate n act
 
+isLeft :: Either a b -> Bool
+isLeft (Left _) = True
+isLeft _        = False

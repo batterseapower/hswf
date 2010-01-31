@@ -46,16 +46,19 @@ unParseChunk _ (RecordChunk r)
   = (specialinfo, codeBlock decls)
   where (specialinfo, decls) = recordToDecls $ r { record_fields = identifyExclusions $ identifyComposites $ simplify $ record_fields r }
 unParseChunk (getter_special, putter_special, _) (GenFunctionsChunk gen)
-  = (emptySpecialInfo, codeBlock [mkDispatcher "Getters" getter_special,
-                                  mkDispatcher "Putters" putter_special])
+  = (emptySpecialInfo, codeBlock [getter_decl, putter_decl])
   where varName = map toLower (show gen)
     
-        mkDispatcher thing thingmap
-          = FunBind [Match noSrcLoc (Ident $ "generated" ++ show gen ++ thing) [PVar (Ident varName)] Nothing (UnGuardedRhs dispatcher) (BDecls [])]
+        getter_decl = FunBind [Match noSrcLoc (Ident $ "generated" ++ show gen ++ "Getters") [PVar (Ident varName)] Nothing (UnGuardedRhs dispatcher) (BDecls [])]
           where
             dispatcher = Case (var varName) (alts ++ [default_alt])
-            alts = [Alt noSrcLoc pat (UnGuardedAlt (App (con "Just") (Var $ UnQual thingname))) (BDecls []) | (pat, thingname) <- M.findWithDefault [] gen thingmap]
+            alts = [Alt noSrcLoc pat (UnGuardedAlt (App (con "Just") (Var gettername))) (BDecls []) | (pat, gettername) <- M.findWithDefault [] gen getter_special]
             default_alt = Alt noSrcLoc PWildCard (UnGuardedAlt (con "Nothing")) (BDecls [])
+
+        putter_decl = FunBind [Match noSrcLoc (Ident $ "generated" ++ show gen ++ "Putters") [PVar (Ident varName)] Nothing (UnGuardedRhs dispatcher) (BDecls [])]
+          where
+            dispatcher = Case (var varName) alts
+            alts = [Alt noSrcLoc pat (UnGuardedAlt (App (Var puttername) (var varName))) (BDecls []) | (pat, puttername) <- M.findWithDefault [] gen putter_special]
 unParseChunk (_, _, datacon_special) (GenConstructorsChunk gen)
   = (emptySpecialInfo, ["         " ++ (if firstalt then "=" else "|") ++ LHEP.prettyPrint datacon | (firstalt, datacon) <- (exhaustive : repeat False) `zip` datacons])
   where exhaustive = gen == ShapeRecord
@@ -67,8 +70,8 @@ codeBlock ls = "\\begin{code}" : map LHEP.prettyPrint ls ++ ["", "\\end{code}"]
 data Generatable = Tag | Action | ShapeRecord
                  deriving (Eq, Ord, Show)
 
-type SpecialInfo = (M.Map Generatable [(Pat, Name)], -- Dispatch to getter with given name
-                    M.Map Generatable [(Pat, Name)], -- Dispatch to putter with given name
+type SpecialInfo = (M.Map Generatable [(Pat, QName)], -- Dispatch to getter with given name
+                    M.Map Generatable [(Pat, QName)], -- Dispatch to putter with given name
                     M.Map Generatable [QualConDecl]) -- Output specified data constructor
 
 emptySpecialInfo = (M.empty, M.empty, M.empty)
@@ -101,7 +104,7 @@ data Field = Field {
     field_excluded :: Maybe WhyExcluded
   } deriving (Show)
 
-data WhyExcluded = IsReserved | IsPresenceFlag FieldName | IsLength FieldName
+data WhyExcluded = IsReserved | IsPresenceFlag FieldName | IsSelectFlag FieldName | IsLength FieldName
                  deriving (Show)
 
 data TyCon = TyCon String [FieldExpr]
@@ -131,9 +134,9 @@ data FieldUnOp = Not
 data FieldBinOp = Plus | Mult | Equals | NotEquals | Or | And
                 deriving (Eq, Show)
 
-type_cond_maybe :: Type -> Maybe FieldExpr
-type_cond_maybe (IfThenType { type_cond })     = Just type_cond
-type_cond_maybe (IfThenElseType { type_cond }) = Just type_cond
+type_cond_maybe :: Type -> Maybe (Bool, FieldExpr)
+type_cond_maybe (IfThenType { type_cond })     = Just (True, type_cond)
+type_cond_maybe (IfThenElseType { type_cond }) = Just (False, type_cond)
 type_cond_maybe _                              = Nothing
 
 parseFile :: String -> [Chunk]
@@ -292,10 +295,10 @@ identifyExclusions (f:fs)
   
   -- TODO: only do these two if no other fields mention this one?
   
-  | [controls_field] <- [other_f | other_f <- fs
-                                 , Just (FieldE cond_field_name) <- [type_cond_maybe (field_type other_f)]
-                                 , cond_field_name == field_name f]
-  = f { field_excluded = Just (IsPresenceFlag $ field_name controls_field) } : identifyExclusions fs
+  | [(if_then, controls_field)] <- [(if_then, other_f) | other_f <- fs
+                                                       , Just (if_then, FieldE cond_field_name) <- [type_cond_maybe (field_type other_f)]
+                                                       , cond_field_name == field_name f]
+  = f { field_excluded = Just ((if if_then then IsPresenceFlag else IsSelectFlag) $ field_name controls_field) } : identifyExclusions fs
   
   | [controls_field] <- [other_f | other_f <- fs
                                  , Type { type_repeats=NumberOfTimes (FieldE len_field_name) } <- [field_type other_f]
@@ -336,7 +339,7 @@ recordToDecls (Record { record_name, record_params, record_fields })
   where
     derivng = [(qname "Eq", []), (qname "Show", []), (qname "Typeable", []), (qname "Data", [])]
     
-    process record_fields = (datacon, datacon_name, getter, getter_name, putter, putter_name)
+    process record_fields = (datacon, datacon_name, getter, UnQual getter_name, putter, UnQual putter_name)
       where
         datacon_name = qname record_name
         datacon = QualConDecl noSrcLoc [] [] (RecDecl (Ident record_name) recfields)
@@ -459,6 +462,7 @@ typeToSyntax defuser typ = case typ of
 
 whyExcludedToSyntax _       IsReserved          = Lit (Int 0)
 whyExcludedToSyntax defuser (IsPresenceFlag fn) = App (var "isJust") (var $ defuser fn)
+whyExcludedToSyntax defuser (IsSelectFlag fn)   = App (var "isLeft") (var $ defuser fn)
 whyExcludedToSyntax defuser (IsLength fn)       = App (var "genericLength") (var $ defuser fn)
 
 fieldExprToSyntax _       (LitE i) = Lit (Int $ fromIntegral i)

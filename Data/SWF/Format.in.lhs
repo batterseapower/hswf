@@ -27,9 +27,8 @@ TODOS
 3) Tests, tests, tests!
 4) Implement the code generators for writing back out
 5) Reduce semantic junk - e.g. RECORDHEADER/ACTIONHEADER entries
-6) Fix swfVersion with Put
-7) Asserts to validate safety of throwing away info like Reserved
-8) Asserts to validate semantic junk is in agreement with each other
+6) Asserts to validate safety of throwing away info like Reserved
+7) Asserts to validate semantic junk is in agreement with each other
 
 
 Chapter 1: Basic Data Types
@@ -462,7 +461,7 @@ getSwf bs = runSwfGet emptySwfEnv bs $ do
     version <- getUI8
     fileLength <- getUI32
     
-    (if compressed then modify (\e -> e { swfVersion = version }) . decompressRemainder (fromIntegral fileLength) else id) $ do
+    modifySwfGet (\e -> e { swfVersion = version }) $ (if compressed then decompressRemainder (fromIntegral fileLength) else id) $ do
         frameSize <- getRECT
         -- TODO: assert XMin/YMin are 0
         frameRate <- getFIXED8
@@ -472,13 +471,13 @@ getSwf bs = runSwfGet emptySwfEnv bs $ do
 
 putSwf :: Swf -> ByteString
 putSwf swf = runSwfPut emptySwfEnv $ do
-    putUI8 $ fromIntegral (if compressed swf then ord 'F' else ord 'C')
+    putUI8 $ fromIntegral (if compressed swf then ord 'C' else ord 'F')
     putUI8 $ fromIntegral (ord 'W')
     putUI8 $ fromIntegral (ord 'S')
     putUI8 $ version swf
     putUI32 $ fileLength swf
     
-    (if compressed swf then compressRemainder (fileLength swf) else id) $ do
+    modifySwfPutM (\e -> e { swfVersion = version swf }) $ (if compressed swf then compressRemainder (fromIntegral $ fileLength swf) else id) $ do
         putRECT $ frameSize swf
         putFIXED8 $ frameRate swf
         putUI16 $ frameCount swf
@@ -489,7 +488,7 @@ putSwf swf = runSwfPut emptySwfEnv $ do
 p27: Tag format
 \begin{code}
 
-data RECORDHEADER = RECORDHEADER { rECORDHEADER_tagType :: UI16, rECORDHEADER_tagLength :: SI32 }
+data RECORDHEADER = RECORDHEADER { rECORDHEADER_tagType :: UI16, rECORDHEADER_tagLength :: UI32 } -- NB: spec claims tagLength is SI32, but that's too stupid to be true.
                   deriving (Eq, Show, Typeable, Data)
 
 getRECORDHEADER :: SwfGet RECORDHEADER
@@ -497,7 +496,7 @@ getRECORDHEADER = do
     tagCodeAndLength <- getUI16
     let tagCode = (tagCodeAndLength `shiftR` 6) .&. 0x3FF
         tagLength = tagCodeAndLength .&. 0x3F
-    tagLength <- if tagLength == 0x3F then getSI32 else return (fromIntegral tagLength)
+    tagLength <- if tagLength == 0x3F then getUI32 else return (fromIntegral tagLength)
     return $ RECORDHEADER tagCode tagLength
 
 putRECORDHEADER :: RECORDHEADER -> SwfPut
@@ -674,7 +673,7 @@ data BlendMode = Normal0 | Normal1
                | UnknownBlendMode UI8
                deriving (Eq, Show, Typeable, Data)
 
-(getBlendMode, putBlendMode) = (put, get)
+(getBlendMode, putBlendMode) = (getter, putter)
   where
     table = [0..] `zip` [Normal0, Normal1,
                          Layer, Multiply, Screen,
@@ -686,14 +685,14 @@ data BlendMode = Normal0 | Normal1
     
     inverse_table = map (uncurry $ flip (,)) table
     
-    get = do
+    getter = do
         i <- getUI8
         return $ case lookup i table of
           Just bm -> bm
           Nothing -> UnknownBlendMode i
 
-    put (UnknownBlendMode x) = putUI8 x
-    put bm                   = putUI8 (fromJust $ lookup bm inverse_table)
+    putter (UnknownBlendMode x) = putUI8 x
+    putter bm                   = putUI8 (fromJust $ lookup bm inverse_table)
 
 type FILTERLIST = [FILTER]
 
@@ -702,7 +701,7 @@ getFILTERLIST = do
     genericReplicateM numberOfFilters getFILTER
 
 putFILTERLIST filters = do
-    putUI8 (length filters)
+    putUI8 (genericLength filters)
     mapM_ putFILTER filters
 
 data FILTER = DropShadowFilter DROPSHADOWFILTER
@@ -870,7 +869,7 @@ data CLIPEVENTFLAG = ClipEventKeyUp | ClipEventKeyDown
 
 type CLIPEVENTFLAGS = [CLIPEVENTFLAG]
 
-(getCLIPEVENTFLAGS, putCLIPEVENTFLAGS) = (get, put)
+(getCLIPEVENTFLAGS, putCLIPEVENTFLAGS) = (getter, putter)
   where
     initial_flags = [ClipEventKeyUp, ClipEventKeyDown,
                      ClipEventMouseUp, ClipEventMouseDown, ClipEventMouseMove,
@@ -881,11 +880,11 @@ type CLIPEVENTFLAGS = [CLIPEVENTFLAG]
     
     swf6_flags = [ClipEventConstruct, ClipEventKeyPress, ClipEventDragOut]
     
-    get = do
+    getter = do
       let f cefs cef = getFlag >>= \b -> return $ if b then cef:cefs else cefs
       cefs <- foldM f [] initial_flags
   
-      version <- fmap swfVersion get
+      version <- fmap swfVersion getSwfGet
       if (version <= 5)
        then return cefs
        else do
@@ -894,11 +893,11 @@ type CLIPEVENTFLAGS = [CLIPEVENTFLAG]
           _reserved <- getUB 8
           return cefs
 
-    put flags = do
+    putter flags = do
       let f cef = putFlag (cef `elem` flags)
       mapM_ f initial_flags
       
-      version <- fmap swfVersion get
+      version <- fmap swfVersion getSwfPutM
       when (version > 5) $ do
           putUB 5 0
           mapM_ f swf6_flags
@@ -2038,7 +2037,7 @@ putFILLSTYLE shapeVer fs = case fs of
     FocalRadialGradientFill {..} -> do
         putUI8 0x13
         putMATRIX fILLSTYLE_gradientMatrix
-        putFOCALGRADIENT fILLSTYLE_focalGradient
+        putFOCALGRADIENT shapeVer fILLSTYLE_focalGradient
     BitmapFill {..} -> do
         putUI8 (case (fILLSTYLE_repeatingClipped, fILLSTYLE_smoothed) of (Repeating, True) -> 0x40; (Clipped, True) -> 0x41; (Repeating, False) -> 0x42; (Clipped, False) -> 0x43)
         putUI16 fILLSTYLE_bitmapId
@@ -2128,41 +2127,45 @@ ShapeRecords SHAPERECORDS(ShapeVer, NumFillBits, NumLineBits) Shape records (see
 
 type SHAPERECORDS = [SHAPERECORD]
 
-getSHAPERECORDS shapeVer = go
+(getSHAPERECORDS, putSHAPERECORDS) = (getter, putter)
   where
-    go fillBits lineBits = do
-      edgeRecord <- getFlag
-      if edgeRecord
-       then do
-          straightEdge <- getFlag
-          if straightEdge
+    sTYLECHANGERECORD_fillBitsLineBits = fmap (thd4 &&& fth4) . sTYLECHANGERECORD_new
+    
+    getter shapeVer = go
+      where
+        go fillBits lineBits = do
+          edgeRecord <- getFlag
+          if edgeRecord
            then do
-             x <- getSTRAIGHTEDGERECORD
-             fmap (x:) $ go fillBits lineBits
+              straightEdge <- getFlag
+              if straightEdge
+               then do
+                 x <- getSTRAIGHTEDGERECORD
+                 fmap (x:) $ go fillBits lineBits
+               else do
+                 x <- getCURVEDEDGERECORD
+                 fmap (x:) $ go fillBits lineBits
            else do
-             x <- getCURVEDEDGERECORD
-             fmap (x:) $ go fillBits lineBits
-       else do
-          look <- lookAhead (getUB 5)
-          if look == 0
-           then do
-             -- NB: align the SHAPERECORD array only at the end!
-             getUB 5 >> byteAlign
-             return []
-           else do
-             x <- getSTYLECHANGERECORD shapeVer fillBits lineBits
-             let (fillBits', lineBits') = fromMaybe (fillBits, lineBits) $ fmap (thd4 &&& fth4) $ sTYLECHANGERECORD_new x
-             fmap (x:) $ go fillBits' lineBits'
-
-putSHAPERECORDS shapeVer = go
-  where
-    go [] = putFlag False >> putUB 5
-    go (r:rs) = do
-      case r of
-        STRAIGHTEDGERECORD {} -> putFlag True >> putFlag True >> putSTRAIGHTEDGERECORD r
-        CURVEDEDGERECORD {}   -> putFlag True >> putFlag False >> putCURVEDEDGERECORD r
-        STYLECHANGERECORD {}  -> putFlag False >> putSTYLECHANGERECORD r
-      go rs
+              look <- lookAhead (getUB 5)
+              if look == 0
+               then do
+                 -- NB: align the SHAPERECORD array only at the end!
+                 getUB 5 >> byteAlign
+                 return []
+               else do
+                 x <- getSTYLECHANGERECORD shapeVer fillBits lineBits
+                 let (fillBits', lineBits') = fromMaybe (fillBits, lineBits) $ sTYLECHANGERECORD_fillBitsLineBits x
+                 fmap (x:) $ go fillBits' lineBits'
+    
+    putter shapeVer = go
+      where
+        go _ _ [] = putFlag False >> putUB 5 0
+        go fillBits lineBits (r:rs) = do
+          (fillBits, lineBits) <- case r of
+            STRAIGHTEDGERECORD {} -> putFlag True >> putFlag True >> putSTRAIGHTEDGERECORD r >> return (fillBits, lineBits)
+            CURVEDEDGERECORD {}   -> putFlag True >> putFlag False >> putCURVEDEDGERECORD r >> return (fillBits, lineBits)
+            STYLECHANGERECORD {}  -> putFlag False >> putSTYLECHANGERECORD shapeVer fillBits lineBits r >> return (fromMaybe (fillBits, lineBits) $ sTYLECHANGERECORD_fillBitsLineBits r)
+          go fillBits lineBits rs
 
 data SHAPERECORD
 \genconstructors{shaperecord}
@@ -2591,10 +2594,10 @@ getDefineFont = do
 putDefineFont (DefineFont {..}) = do
     putUI16 defineFont_fontID
     
-    (lengths, shape_puts) <- fmap unzip $ mapM (nestSwfPut (putSHAPE 1)) defineFont_glyphShapeTable
+    (lengths, shape_puts) <- fmap unzip $ mapM (nestSwfPut . putSHAPE 1) defineFont_glyphShapeTable
     
     -- Compute the offsets from the data, so we don't need to redundantly store them in the data structure
-    foldM (\i len -> putUI16 i >> return (i + len)) 0 lengths
+    _ <- foldM (\i len -> putUI16 i >> return (i + len)) 0 lengths
     sequence_ shape_puts
 
 \end{code}

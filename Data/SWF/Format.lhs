@@ -27,9 +27,8 @@ TODOS
 3) Tests, tests, tests!
 4) Implement the code generators for writing back out
 5) Reduce semantic junk - e.g. RECORDHEADER/ACTIONHEADER entries
-6) Fix swfVersion with Put
-7) Asserts to validate safety of throwing away info like Reserved
-8) Asserts to validate semantic junk is in agreement with each other
+6) Asserts to validate safety of throwing away info like Reserved
+7) Asserts to validate semantic junk is in agreement with each other
 
 
 Chapter 1: Basic Data Types
@@ -648,7 +647,7 @@ getSwf bs = runSwfGet emptySwfEnv bs $ do
     version <- getUI8
     fileLength <- getUI32
     
-    (if compressed then modify (\e -> e { swfVersion = version }) . decompressRemainder (fromIntegral fileLength) else id) $ do
+    modifySwfGet (\e -> e { swfVersion = version }) $ (if compressed then decompressRemainder (fromIntegral fileLength) else id) $ do
         frameSize <- getRECT
         -- TODO: assert XMin/YMin are 0
         frameRate <- getFIXED8
@@ -664,7 +663,7 @@ putSwf swf = runSwfPut emptySwfEnv $ do
     putUI8 $ version swf
     putUI32 $ fileLength swf
     
-    (if compressed swf then compressRemainder (fileLength swf) else id) $ do
+    modifySwfPutM (\e -> e { swfVersion = version swf }) $ (if compressed swf then compressRemainder (fromIntegral $ fileLength swf) else id) $ do
         putRECT $ frameSize swf
         putFIXED8 $ frameRate swf
         putUI16 $ frameCount swf
@@ -675,7 +674,7 @@ putSwf swf = runSwfPut emptySwfEnv $ do
 p27: Tag format
 \begin{code}
 
-data RECORDHEADER = RECORDHEADER { rECORDHEADER_tagType :: UI16, rECORDHEADER_tagLength :: SI32 }
+data RECORDHEADER = RECORDHEADER { rECORDHEADER_tagType :: UI16, rECORDHEADER_tagLength :: UI32 } -- NB: spec claims tagLength is SI32, but that's too stupid to be true.
                   deriving (Eq, Show, Typeable, Data)
 
 getRECORDHEADER :: SwfGet RECORDHEADER
@@ -683,7 +682,7 @@ getRECORDHEADER = do
     tagCodeAndLength <- getUI16
     let tagCode = (tagCodeAndLength `shiftR` 6) .&. 0x3FF
         tagLength = tagCodeAndLength .&. 0x3F
-    tagLength <- if tagLength == 0x3F then getSI32 else return (fromIntegral tagLength)
+    tagLength <- if tagLength == 0x3F then getUI32 else return (fromIntegral tagLength)
     return $ RECORDHEADER tagCode tagLength
 
 putRECORDHEADER :: RECORDHEADER -> SwfPut
@@ -1071,71 +1070,70 @@ generatedTagGetters tag
         _ -> Nothing
 generatedTagPutters tag
   = case tag of
-        PlaceObject{..} -> Just putPlaceObject
-        PlaceObject2{..} -> Just putPlaceObject2
-        PlaceObject3{..} -> Just putPlaceObject3
-        RemoveObject{..} -> Just putRemoveObject
-        RemoveObject2{..} -> Just putRemoveObject2
-        ShowFrame{..} -> Just putShowFrame
-        SetBackgroundColor{..} -> Just putSetBackgroundColor
-        FrameLabel{..} -> Just putFrameLabel
-        Protect{..} -> Just putProtect
-        End{..} -> Just putEnd
-        ExportAssets{..} -> Just putExportAssets
-        ImportAssets{..} -> Just putImportAssets
-        EnableDebugger{..} -> Just putEnableDebugger
-        EnableDebugger2{..} -> Just putEnableDebugger2
-        ScriptLimits{..} -> Just putScriptLimits
-        SetTabIndex{..} -> Just putSetTabIndex
-        FileAttributes{..} -> Just putFileAttributes
-        ImportAssets2{..} -> Just putImportAssets2
-        SymbolClass{..} -> Just putSymbolClass
-        Metadata{..} -> Just putMetadata
-        DefineScalingGrid{..} -> Just putDefineScalingGrid
-        DefineSceneAndFrameLabelData{..} -> Just
-                                              putDefineSceneAndFrameLabelData
-        DoAction{..} -> Just putDoAction
-        DoInitAction{..} -> Just putDoInitAction
-        DoABC{..} -> Just putDoABC
-        DefineShape{..} -> Just putDefineShape
-        DefineShape2{..} -> Just putDefineShape2
-        DefineShape3{..} -> Just putDefineShape3
-        DefineShape4{..} -> Just putDefineShape4
-        DefineBits{..} -> Just putDefineBits
-        JPEGTables{..} -> Just putJPEGTables
-        DefineBitsJPEG2{..} -> Just putDefineBitsJPEG2
-        DefineBitsJPEG3{..} -> Just putDefineBitsJPEG3
-        DefineBitsLossless{..} -> Just putDefineBitsLossless
-        DefineBitsLossless2{..} -> Just putDefineBitsLossless2
-        DefineBitsJPEG4{..} -> Just putDefineBitsJPEG4
-        DefineMorphShape{..} -> Just putDefineMorphShape
-        DefineMorphShape2{..} -> Just putDefineMorphShape2
-        DefineFontInfo{..} -> Just putDefineFontInfo
-        DefineFontInfo2{..} -> Just putDefineFontInfo2
-        DefineFont2{..} -> Just putDefineFont2
-        DefineFont3{..} -> Just putDefineFont3
-        DefineFontAlignZones{..} -> Just putDefineFontAlignZones
-        DefineFontName{..} -> Just putDefineFontName
-        DefineText{..} -> Just putDefineText
-        DefineText2{..} -> Just putDefineText2
-        DefineEditText{..} -> Just putDefineEditText
-        CSMTextSettings{..} -> Just putCSMTextSettings
-        DefineFont4{..} -> Just putDefineFont4
-        DefineSound{..} -> Just putDefineSound
-        StartSound{..} -> Just putStartSound
-        StartSound2{..} -> Just putStartSound2
-        SoundStreamHead{..} -> Just putSoundStreamHead
-        SoundStreamHead2{..} -> Just putSoundStreamHead2
-        SoundStreamBlock{..} -> Just putSoundStreamBlock
-        DefineButton{..} -> Just putDefineButton
-        DefineButton2{..} -> Just putDefineButton2
-        DefineButtonCxform{..} -> Just putDefineButtonCxform
-        DefineButtonSound{..} -> Just putDefineButtonSound
-        DefineSprite{..} -> Just putDefineSprite
-        DefineVideoStream{..} -> Just putDefineVideoStream
-        StreamID{..} -> Just putStreamID
-        DefineBinaryData{..} -> Just putDefineBinaryData
-        _ -> Nothing
+        PlaceObject{..} -> putPlaceObject tag
+        PlaceObject2{..} -> putPlaceObject2 tag
+        PlaceObject3{..} -> putPlaceObject3 tag
+        RemoveObject{..} -> putRemoveObject tag
+        RemoveObject2{..} -> putRemoveObject2 tag
+        ShowFrame{..} -> putShowFrame tag
+        SetBackgroundColor{..} -> putSetBackgroundColor tag
+        FrameLabel{..} -> putFrameLabel tag
+        Protect{..} -> putProtect tag
+        End{..} -> putEnd tag
+        ExportAssets{..} -> putExportAssets tag
+        ImportAssets{..} -> putImportAssets tag
+        EnableDebugger{..} -> putEnableDebugger tag
+        EnableDebugger2{..} -> putEnableDebugger2 tag
+        ScriptLimits{..} -> putScriptLimits tag
+        SetTabIndex{..} -> putSetTabIndex tag
+        FileAttributes{..} -> putFileAttributes tag
+        ImportAssets2{..} -> putImportAssets2 tag
+        SymbolClass{..} -> putSymbolClass tag
+        Metadata{..} -> putMetadata tag
+        DefineScalingGrid{..} -> putDefineScalingGrid tag
+        DefineSceneAndFrameLabelData{..} -> putDefineSceneAndFrameLabelData
+                                              tag
+        DoAction{..} -> putDoAction tag
+        DoInitAction{..} -> putDoInitAction tag
+        DoABC{..} -> putDoABC tag
+        DefineShape{..} -> putDefineShape tag
+        DefineShape2{..} -> putDefineShape2 tag
+        DefineShape3{..} -> putDefineShape3 tag
+        DefineShape4{..} -> putDefineShape4 tag
+        DefineBits{..} -> putDefineBits tag
+        JPEGTables{..} -> putJPEGTables tag
+        DefineBitsJPEG2{..} -> putDefineBitsJPEG2 tag
+        DefineBitsJPEG3{..} -> putDefineBitsJPEG3 tag
+        DefineBitsLossless{..} -> putDefineBitsLossless tag
+        DefineBitsLossless2{..} -> putDefineBitsLossless2 tag
+        DefineBitsJPEG4{..} -> putDefineBitsJPEG4 tag
+        DefineMorphShape{..} -> putDefineMorphShape tag
+        DefineMorphShape2{..} -> putDefineMorphShape2 tag
+        DefineFontInfo{..} -> putDefineFontInfo tag
+        DefineFontInfo2{..} -> putDefineFontInfo2 tag
+        DefineFont2{..} -> putDefineFont2 tag
+        DefineFont3{..} -> putDefineFont3 tag
+        DefineFontAlignZones{..} -> putDefineFontAlignZones tag
+        DefineFontName{..} -> putDefineFontName tag
+        DefineText{..} -> putDefineText tag
+        DefineText2{..} -> putDefineText2 tag
+        DefineEditText{..} -> putDefineEditText tag
+        CSMTextSettings{..} -> putCSMTextSettings tag
+        DefineFont4{..} -> putDefineFont4 tag
+        DefineSound{..} -> putDefineSound tag
+        StartSound{..} -> putStartSound tag
+        StartSound2{..} -> putStartSound2 tag
+        SoundStreamHead{..} -> putSoundStreamHead tag
+        SoundStreamHead2{..} -> putSoundStreamHead2 tag
+        SoundStreamBlock{..} -> putSoundStreamBlock tag
+        DefineButton{..} -> putDefineButton tag
+        DefineButton2{..} -> putDefineButton2 tag
+        DefineButtonCxform{..} -> putDefineButtonCxform tag
+        DefineButtonSound{..} -> putDefineButtonSound tag
+        DefineSprite{..} -> putDefineSprite tag
+        DefineVideoStream{..} -> putDefineVideoStream tag
+        StreamID{..} -> putStreamID tag
+        DefineBinaryData{..} -> putDefineBinaryData tag
 
 \end{code}
 
@@ -1414,7 +1412,7 @@ data BlendMode = Normal0 | Normal1
                | UnknownBlendMode UI8
                deriving (Eq, Show, Typeable, Data)
 
-(getBlendMode, putBlendMode) = (put, get)
+(getBlendMode, putBlendMode) = (getter, putter)
   where
     table = [0..] `zip` [Normal0, Normal1,
                          Layer, Multiply, Screen,
@@ -1426,14 +1424,14 @@ data BlendMode = Normal0 | Normal1
     
     inverse_table = map (uncurry $ flip (,)) table
     
-    get = do
+    getter = do
         i <- getUI8
         return $ case lookup i table of
           Just bm -> bm
           Nothing -> UnknownBlendMode i
 
-    put (UnknownBlendMode x) = putUI8 x
-    put bm                   = putUI8 (fromJust $ lookup bm inverse_table)
+    putter (UnknownBlendMode x) = putUI8 x
+    putter bm                   = putUI8 (fromJust $ lookup bm inverse_table)
 
 type FILTERLIST = [FILTER]
 
@@ -1442,7 +1440,7 @@ getFILTERLIST = do
     genericReplicateM numberOfFilters getFILTER
 
 putFILTERLIST filters = do
-    putUI8 (length filters)
+    putUI8 (genericLength filters)
     mapM_ putFILTER filters
 
 data FILTER = DropShadowFilter DROPSHADOWFILTER
@@ -1794,7 +1792,7 @@ data CLIPEVENTFLAG = ClipEventKeyUp | ClipEventKeyDown
 
 type CLIPEVENTFLAGS = [CLIPEVENTFLAG]
 
-(getCLIPEVENTFLAGS, putCLIPEVENTFLAGS) = (get, put)
+(getCLIPEVENTFLAGS, putCLIPEVENTFLAGS) = (getter, putter)
   where
     initial_flags = [ClipEventKeyUp, ClipEventKeyDown,
                      ClipEventMouseUp, ClipEventMouseDown, ClipEventMouseMove,
@@ -1805,11 +1803,11 @@ type CLIPEVENTFLAGS = [CLIPEVENTFLAG]
     
     swf6_flags = [ClipEventConstruct, ClipEventKeyPress, ClipEventDragOut]
     
-    get = do
+    getter = do
       let f cefs cef = getFlag >>= \b -> return $ if b then cef:cefs else cefs
       cefs <- foldM f [] initial_flags
   
-      version <- fmap swfVersion get
+      version <- fmap swfVersion getSwfGet
       if (version <= 5)
        then return cefs
        else do
@@ -1818,11 +1816,11 @@ type CLIPEVENTFLAGS = [CLIPEVENTFLAG]
           _reserved <- getUB 8
           return cefs
 
-    put flags = do
+    putter flags = do
       let f cef = putFlag (cef `elem` flags)
       mapM_ f initial_flags
       
-      version <- fmap swfVersion get
+      version <- fmap swfVersion getSwfPutM
       when (version > 5) $ do
           putUB 5 0
           mapM_ f swf6_flags
@@ -2431,105 +2429,104 @@ generatedActionGetters action
         _ -> Nothing
 generatedActionPutters action
   = case action of
-        ActionGotoFrame{..} -> Just putActionGotoFrame
-        ActionGetURL{..} -> Just putActionGetURL
-        ActionNextFrame{..} -> Just putActionNextFrame
-        ActionPreviousFrame{..} -> Just putActionPreviousFrame
-        ActionPlay{..} -> Just putActionPlay
-        ActionStop{..} -> Just putActionStop
-        ActionToggleQuality{..} -> Just putActionToggleQuality
-        ActionStopSounds{..} -> Just putActionStopSounds
-        ActionWaitForFrame{..} -> Just putActionWaitForFrame
-        ActionSetTarget{..} -> Just putActionSetTarget
-        ActionGoToLabel{..} -> Just putActionGoToLabel
-        ActionPop{..} -> Just putActionPop
-        ActionAdd{..} -> Just putActionAdd
-        ActionSubtract{..} -> Just putActionSubtract
-        ActionMultiply{..} -> Just putActionMultiply
-        ActionDivide{..} -> Just putActionDivide
-        ActionEquals{..} -> Just putActionEquals
-        ActionLess{..} -> Just putActionLess
-        ActionAnd{..} -> Just putActionAnd
-        ActionOr{..} -> Just putActionOr
-        ActionNot{..} -> Just putActionNot
-        ActionStringEquals{..} -> Just putActionStringEquals
-        ActionStringLength{..} -> Just putActionStringLength
-        ActionStringAdd{..} -> Just putActionStringAdd
-        ActionStringExtract{..} -> Just putActionStringExtract
-        ActionStringLess{..} -> Just putActionStringLess
-        ActionMBStringLength{..} -> Just putActionMBStringLength
-        ActionMBStringExtract{..} -> Just putActionMBStringExtract
-        ActionToInteger{..} -> Just putActionToInteger
-        ActionCharToAscii{..} -> Just putActionCharToAscii
-        ActionAsciiToChar{..} -> Just putActionAsciiToChar
-        ActionMBCharToAscii{..} -> Just putActionMBCharToAscii
-        ActionMBAsciiToChar{..} -> Just putActionMBAsciiToChar
-        ActionJump{..} -> Just putActionJump
-        ActionIf{..} -> Just putActionIf
-        ActionCall{..} -> Just putActionCall
-        ActionGetVariable{..} -> Just putActionGetVariable
-        ActionSetVariable{..} -> Just putActionSetVariable
-        ActionGetURL2{..} -> Just putActionGetURL2
-        ActionGotoFrame2{..} -> Just putActionGotoFrame2
-        ActionSetTarget2{..} -> Just putActionSetTarget2
-        ActionGetProperty{..} -> Just putActionGetProperty
-        ActionSetProperty{..} -> Just putActionSetProperty
-        ActionCloneSprite{..} -> Just putActionCloneSprite
-        ActionRemoveSprite{..} -> Just putActionRemoveSprite
-        ActionStartDrag{..} -> Just putActionStartDrag
-        ActionEndDrag{..} -> Just putActionEndDrag
-        ActionWaitForFrame2{..} -> Just putActionWaitForFrame2
-        ActionTrace{..} -> Just putActionTrace
-        ActionGetTime{..} -> Just putActionGetTime
-        ActionRandomNumber{..} -> Just putActionRandomNumber
-        ActionCallFunction{..} -> Just putActionCallFunction
-        ActionCallMethod{..} -> Just putActionCallMethod
-        ActionConstantPool{..} -> Just putActionConstantPool
-        ActionDefineFunction{..} -> Just putActionDefineFunction
-        ActionDefineLocal{..} -> Just putActionDefineLocal
-        ActionDefineLocal2{..} -> Just putActionDefineLocal2
-        ActionDelete{..} -> Just putActionDelete
-        ActionDelete2{..} -> Just putActionDelete2
-        ActionEnumerate{..} -> Just putActionEnumerate
-        ActionEquals2{..} -> Just putActionEquals2
-        ActionGetMember{..} -> Just putActionGetMember
-        ActionInitArray{..} -> Just putActionInitArray
-        ActionInitObject{..} -> Just putActionInitObject
-        ActionNewMethod{..} -> Just putActionNewMethod
-        ActionNewObject{..} -> Just putActionNewObject
-        ActionSetMember{..} -> Just putActionSetMember
-        ActionTargetPath{..} -> Just putActionTargetPath
-        ActionWith{..} -> Just putActionWith
-        ActionToNumber{..} -> Just putActionToNumber
-        ActionToString{..} -> Just putActionToString
-        ActionTypeOf{..} -> Just putActionTypeOf
-        ActionAdd2{..} -> Just putActionAdd2
-        ActionLess2{..} -> Just putActionLess2
-        ActionModulo{..} -> Just putActionModulo
-        ActionBitAnd{..} -> Just putActionBitAnd
-        ActionBitLShift{..} -> Just putActionBitLShift
-        ActionBitOr{..} -> Just putActionBitOr
-        ActionBitRShift{..} -> Just putActionBitRShift
-        ActionBitURShift{..} -> Just putActionBitURShift
-        ActionBitXor{..} -> Just putActionBitXor
-        ActionDecrement{..} -> Just putActionDecrement
-        ActionIncrement{..} -> Just putActionIncrement
-        ActionPushDuplicate{..} -> Just putActionPushDuplicate
-        ActionReturn{..} -> Just putActionReturn
-        ActionStackSwap{..} -> Just putActionStackSwap
-        ActionStoreRegister{..} -> Just putActionStoreRegister
-        ActionInstanceOf{..} -> Just putActionInstanceOf
-        ActionEnumerate2{..} -> Just putActionEnumerate2
-        ActionStrictEquals{..} -> Just putActionStrictEquals
-        ActionGreater{..} -> Just putActionGreater
-        ActionStringGreater{..} -> Just putActionStringGreater
-        ActionDefineFunction2{..} -> Just putActionDefineFunction2
-        ActionExtends{..} -> Just putActionExtends
-        ActionCastOp{..} -> Just putActionCastOp
-        ActionImplementsOp{..} -> Just putActionImplementsOp
-        ActionTry{..} -> Just putActionTry
-        ActionThrow{..} -> Just putActionThrow
-        _ -> Nothing
+        ActionGotoFrame{..} -> putActionGotoFrame action
+        ActionGetURL{..} -> putActionGetURL action
+        ActionNextFrame{..} -> putActionNextFrame action
+        ActionPreviousFrame{..} -> putActionPreviousFrame action
+        ActionPlay{..} -> putActionPlay action
+        ActionStop{..} -> putActionStop action
+        ActionToggleQuality{..} -> putActionToggleQuality action
+        ActionStopSounds{..} -> putActionStopSounds action
+        ActionWaitForFrame{..} -> putActionWaitForFrame action
+        ActionSetTarget{..} -> putActionSetTarget action
+        ActionGoToLabel{..} -> putActionGoToLabel action
+        ActionPop{..} -> putActionPop action
+        ActionAdd{..} -> putActionAdd action
+        ActionSubtract{..} -> putActionSubtract action
+        ActionMultiply{..} -> putActionMultiply action
+        ActionDivide{..} -> putActionDivide action
+        ActionEquals{..} -> putActionEquals action
+        ActionLess{..} -> putActionLess action
+        ActionAnd{..} -> putActionAnd action
+        ActionOr{..} -> putActionOr action
+        ActionNot{..} -> putActionNot action
+        ActionStringEquals{..} -> putActionStringEquals action
+        ActionStringLength{..} -> putActionStringLength action
+        ActionStringAdd{..} -> putActionStringAdd action
+        ActionStringExtract{..} -> putActionStringExtract action
+        ActionStringLess{..} -> putActionStringLess action
+        ActionMBStringLength{..} -> putActionMBStringLength action
+        ActionMBStringExtract{..} -> putActionMBStringExtract action
+        ActionToInteger{..} -> putActionToInteger action
+        ActionCharToAscii{..} -> putActionCharToAscii action
+        ActionAsciiToChar{..} -> putActionAsciiToChar action
+        ActionMBCharToAscii{..} -> putActionMBCharToAscii action
+        ActionMBAsciiToChar{..} -> putActionMBAsciiToChar action
+        ActionJump{..} -> putActionJump action
+        ActionIf{..} -> putActionIf action
+        ActionCall{..} -> putActionCall action
+        ActionGetVariable{..} -> putActionGetVariable action
+        ActionSetVariable{..} -> putActionSetVariable action
+        ActionGetURL2{..} -> putActionGetURL2 action
+        ActionGotoFrame2{..} -> putActionGotoFrame2 action
+        ActionSetTarget2{..} -> putActionSetTarget2 action
+        ActionGetProperty{..} -> putActionGetProperty action
+        ActionSetProperty{..} -> putActionSetProperty action
+        ActionCloneSprite{..} -> putActionCloneSprite action
+        ActionRemoveSprite{..} -> putActionRemoveSprite action
+        ActionStartDrag{..} -> putActionStartDrag action
+        ActionEndDrag{..} -> putActionEndDrag action
+        ActionWaitForFrame2{..} -> putActionWaitForFrame2 action
+        ActionTrace{..} -> putActionTrace action
+        ActionGetTime{..} -> putActionGetTime action
+        ActionRandomNumber{..} -> putActionRandomNumber action
+        ActionCallFunction{..} -> putActionCallFunction action
+        ActionCallMethod{..} -> putActionCallMethod action
+        ActionConstantPool{..} -> putActionConstantPool action
+        ActionDefineFunction{..} -> putActionDefineFunction action
+        ActionDefineLocal{..} -> putActionDefineLocal action
+        ActionDefineLocal2{..} -> putActionDefineLocal2 action
+        ActionDelete{..} -> putActionDelete action
+        ActionDelete2{..} -> putActionDelete2 action
+        ActionEnumerate{..} -> putActionEnumerate action
+        ActionEquals2{..} -> putActionEquals2 action
+        ActionGetMember{..} -> putActionGetMember action
+        ActionInitArray{..} -> putActionInitArray action
+        ActionInitObject{..} -> putActionInitObject action
+        ActionNewMethod{..} -> putActionNewMethod action
+        ActionNewObject{..} -> putActionNewObject action
+        ActionSetMember{..} -> putActionSetMember action
+        ActionTargetPath{..} -> putActionTargetPath action
+        ActionWith{..} -> putActionWith action
+        ActionToNumber{..} -> putActionToNumber action
+        ActionToString{..} -> putActionToString action
+        ActionTypeOf{..} -> putActionTypeOf action
+        ActionAdd2{..} -> putActionAdd2 action
+        ActionLess2{..} -> putActionLess2 action
+        ActionModulo{..} -> putActionModulo action
+        ActionBitAnd{..} -> putActionBitAnd action
+        ActionBitLShift{..} -> putActionBitLShift action
+        ActionBitOr{..} -> putActionBitOr action
+        ActionBitRShift{..} -> putActionBitRShift action
+        ActionBitURShift{..} -> putActionBitURShift action
+        ActionBitXor{..} -> putActionBitXor action
+        ActionDecrement{..} -> putActionDecrement action
+        ActionIncrement{..} -> putActionIncrement action
+        ActionPushDuplicate{..} -> putActionPushDuplicate action
+        ActionReturn{..} -> putActionReturn action
+        ActionStackSwap{..} -> putActionStackSwap action
+        ActionStoreRegister{..} -> putActionStoreRegister action
+        ActionInstanceOf{..} -> putActionInstanceOf action
+        ActionEnumerate2{..} -> putActionEnumerate2 action
+        ActionStrictEquals{..} -> putActionStrictEquals action
+        ActionGreater{..} -> putActionGreater action
+        ActionStringGreater{..} -> putActionStringGreater action
+        ActionDefineFunction2{..} -> putActionDefineFunction2 action
+        ActionExtends{..} -> putActionExtends action
+        ActionCastOp{..} -> putActionCastOp action
+        ActionImplementsOp{..} -> putActionImplementsOp action
+        ActionTry{..} -> putActionTry action
+        ActionThrow{..} -> putActionThrow action
 
 \end{code}
 
@@ -3519,7 +3516,7 @@ putFILLSTYLE shapeVer fs = case fs of
     FocalRadialGradientFill {..} -> do
         putUI8 0x13
         putMATRIX fILLSTYLE_gradientMatrix
-        putFOCALGRADIENT fILLSTYLE_focalGradient
+        putFOCALGRADIENT shapeVer fILLSTYLE_focalGradient
     BitmapFill {..} -> do
         putUI8 (case (fILLSTYLE_repeatingClipped, fILLSTYLE_smoothed) of (Repeating, True) -> 0x40; (Clipped, True) -> 0x41; (Repeating, False) -> 0x42; (Clipped, False) -> 0x43)
         putUI16 fILLSTYLE_bitmapId
@@ -3680,41 +3677,45 @@ putSHAPEWITHSTYLE sHAPEWITHSTYLE_shapeVer SHAPEWITHSTYLE{..}
 
 type SHAPERECORDS = [SHAPERECORD]
 
-getSHAPERECORDS shapeVer = go
+(getSHAPERECORDS, putSHAPERECORDS) = (getter, putter)
   where
-    go fillBits lineBits = do
-      edgeRecord <- getFlag
-      if edgeRecord
-       then do
-          straightEdge <- getFlag
-          if straightEdge
+    sTYLECHANGERECORD_fillBitsLineBits = fmap (thd4 &&& fth4) . sTYLECHANGERECORD_new
+    
+    getter shapeVer = go
+      where
+        go fillBits lineBits = do
+          edgeRecord <- getFlag
+          if edgeRecord
            then do
-             x <- getSTRAIGHTEDGERECORD
-             fmap (x:) $ go fillBits lineBits
+              straightEdge <- getFlag
+              if straightEdge
+               then do
+                 x <- getSTRAIGHTEDGERECORD
+                 fmap (x:) $ go fillBits lineBits
+               else do
+                 x <- getCURVEDEDGERECORD
+                 fmap (x:) $ go fillBits lineBits
            else do
-             x <- getCURVEDEDGERECORD
-             fmap (x:) $ go fillBits lineBits
-       else do
-          look <- lookAhead (getUB 5)
-          if look == 0
-           then do
-             -- NB: align the SHAPERECORD array only at the end!
-             getUB 5 >> byteAlign
-             return []
-           else do
-             x <- getSTYLECHANGERECORD shapeVer fillBits lineBits
-             let (fillBits', lineBits') = fromMaybe (fillBits, lineBits) $ fmap (thd4 &&& fth4) $ sTYLECHANGERECORD_new x
-             fmap (x:) $ go fillBits' lineBits'
-
-putSHAPERECORDS shapeVer = go
-  where
-    go [] = putFlag False >> putUB 5
-    go (r:rs) = do
-      case r of
-        STRAIGHTEDGERECORD {} -> putFlag True >> putFlag True >> putSTRAIGHTEDGERECORD r
-        CURVEDEDGERECORD {}   -> putFlag True >> putFlag False >> putCURVEDEDGERECORD r
-        STYLECHANGERECORD {}  -> putFlag False >> putSTYLECHANGERECORD r
-      go rs
+              look <- lookAhead (getUB 5)
+              if look == 0
+               then do
+                 -- NB: align the SHAPERECORD array only at the end!
+                 getUB 5 >> byteAlign
+                 return []
+               else do
+                 x <- getSTYLECHANGERECORD shapeVer fillBits lineBits
+                 let (fillBits', lineBits') = fromMaybe (fillBits, lineBits) $ sTYLECHANGERECORD_fillBitsLineBits x
+                 fmap (x:) $ go fillBits' lineBits'
+    
+    putter shapeVer = go
+      where
+        go _ _ [] = putFlag False >> putUB 5 0
+        go fillBits lineBits (r:rs) = do
+          (fillBits, lineBits) <- case r of
+            STRAIGHTEDGERECORD {} -> putFlag True >> putFlag True >> putSTRAIGHTEDGERECORD r >> return (fillBits, lineBits)
+            CURVEDEDGERECORD {}   -> putFlag True >> putFlag False >> putCURVEDEDGERECORD r >> return (fillBits, lineBits)
+            STYLECHANGERECORD {}  -> putFlag False >> putSTYLECHANGERECORD shapeVer fillBits lineBits r >> return (fromMaybe (fillBits, lineBits) $ sTYLECHANGERECORD_fillBitsLineBits r)
+          go fillBits lineBits rs
 
 data SHAPERECORD
          =  STYLECHANGERECORD{sTYLECHANGERECORD_move :: Maybe (UB, SB, SB),
@@ -4456,7 +4457,7 @@ getDefineFont = do
 putDefineFont (DefineFont {..}) = do
     putUI16 defineFont_fontID
     
-    (lengths, shape_puts) <- fmap unzip $ mapM (nestSwfPut (putSHAPE 1)) defineFont_glyphShapeTable
+    (lengths, shape_puts) <- fmap unzip $ mapM (nestSwfPut . putSHAPE 1) defineFont_glyphShapeTable
     
     -- Compute the offsets from the data, so we don't need to redundantly store them in the data structure
     foldM (\i len -> putUI16 i >> return (i + len)) 0 lengths
@@ -4495,7 +4496,7 @@ putDefineFontInfo DefineFontInfo{..}
        putFlag defineFontInfo_fontFlagsItalic
        putFlag defineFontInfo_fontFlagsBold
        let defineFontInfo_fontFlagsWideCodes
-             = isJust defineFontInfo_codeTable
+             = isLeft defineFontInfo_codeTable
        case defineFontInfo_codeTable of
            Left x -> mapM_ (\ x -> putUI16 x) x
            Right x -> mapM_ (\ x -> putUI8 x) x
@@ -4598,7 +4599,7 @@ putDefineFont2 DefineFont2{..}
        putFlag defineFont2_fontFlagsSmallText
        putFlag defineFont2_fontFlagsANSI
        putFlag defineFont2_fontFlagsWideOffsets
-       let defineFont2_fontFlagsWideCodes = isJust defineFont2_codeTable
+       let defineFont2_fontFlagsWideCodes = isLeft defineFont2_codeTable
        putFlag defineFont2_fontFlagsItalic
        putFlag defineFont2_fontFlagsBold
        putLANGCODE defineFont2_languageCode

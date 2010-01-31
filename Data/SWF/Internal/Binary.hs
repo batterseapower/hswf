@@ -41,11 +41,11 @@ instance Monad SwfGet where
     return x = SwfGet $ \_ byte nbits -> return (byte, nbits, x)
     mx >>= fxmy = SwfGet $ \env byte nbits -> unSwfGet mx env byte nbits >>= \(byte, nbits, x) -> unSwfGet (fxmy x) env byte nbits
 
-modify :: (SwfEnv -> SwfEnv) -> SwfGet a -> SwfGet a
-modify f act = SwfGet $ \env byte nbits -> unSwfGet act (f env) byte nbits
+modifySwfGet :: (SwfEnv -> SwfEnv) -> SwfGet a -> SwfGet a
+modifySwfGet f act = SwfGet $ \env byte nbits -> unSwfGet act (f env) byte nbits
 
-get :: SwfGet SwfEnv
-get = SwfGet $ \env byte nbits -> return (byte, nbits, env)
+getSwfGet :: SwfGet SwfEnv
+getSwfGet = SwfGet $ \env byte nbits -> return (byte, nbits, env)
 
 runSwfGet :: SwfEnv -> ByteString -> SwfGet a -> a
 runSwfGet env bs mx = thd3 $ B.runGet (unSwfGet (checkConsumesAll mx) env 0 0) bs
@@ -142,6 +142,12 @@ instance Monad SwfPutM where
     mx >>= fxmy = SwfPutM $ \env byte nbits -> do
         (byte, nbits, x) <- unSwfPutM mx env byte nbits
         unSwfPutM (fxmy x) env byte nbits
+
+modifySwfPutM :: (SwfEnv -> SwfEnv) -> SwfPutM a -> SwfPutM a
+modifySwfPutM f act = SwfPutM $ \env byte nbits -> unSwfPutM act (f env) byte nbits
+
+getSwfPutM :: SwfPutM SwfEnv
+getSwfPutM = SwfPutM $ \env byte nbits -> return (byte, nbits, env)
 
 runSwfPutM :: SwfEnv -> SwfPutM a -> (a, ByteString)
 runSwfPutM env mx = first thd3 $ B.runPutM (unSwfPutM (checkFlushesAll mx) env 0 8)
