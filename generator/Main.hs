@@ -123,6 +123,7 @@ data WhyExcluded = IsReserved | IsPresenceFlag FieldName | IsSelectFlag FieldNam
                  deriving (Show, Typeable, Data)
 
 data TyCon = TyCon String [FieldExpr]
+           | BitsTyCon String FieldExpr
            deriving (Show, Typeable, Data)
 
 data Type = TyConType { type_tycon :: TyCon }
@@ -149,9 +150,6 @@ data FieldUnOp = Not
 
 data FieldBinOp = Plus | Mult | Equals | NotEquals | Or | And
                 deriving (Eq, Show, Typeable, Data)
-
-isBitTyCon (TyCon name []) | name `elem` ["UB", "SB", "FB"] = Just name
-isBitTyCon _ = Nothing
 
 type_cond_maybe :: Type -> Maybe (Bool, FieldExpr)
 type_cond_maybe (IfThenType { type_cond })     = Just (True, type_cond)
@@ -207,7 +205,7 @@ typ = try conditional
 
 basetyp = do
     optional <- optionality
-    cons <- tycon <|> tycons
+    cons <- tycontyp <|> tupletyp
     mb_repeats <- if optional then return (Just OptionallyAtEnd) else optionMaybe repeatspecifier
     return $ maybe cons (RepeatType cons) mb_repeats
 
@@ -229,8 +227,18 @@ conditional = do
         typ
     return $ maybe (IfThenType e tt) (IfThenElseType e tt) mb_tf
 
-tycon = do { tc <- many1 alphaNum; mb_args <- optionMaybe arguments; spaces; return $ TyConType $ TyCon tc (fromMaybe [] mb_args) }
-    <?> "type constructor"
+tycon = do
+    tc <- many1 alphaNum
+    if tc `elem` ["UB", "SB", "FB"]
+     then do
+        e <- between (char '[') (char ']' >> spaces) expr
+        return $ BitsTyCon tc e
+     else do
+        mb_args <- optionMaybe arguments; spaces
+        return $ TyCon tc (fromMaybe [] mb_args)
+
+tycontyp = fmap TyConType tycon
+         <?> "type constructor"
 
 fieldname = do { x <- letter; xs <- many alphaNum; return (x:xs) }
 
@@ -240,7 +248,7 @@ arguments = between (char '(') (char ')' >> spaces) (sepBy expr (char ',' >> spa
 parameters = between (char '(') (char ')' >> spaces) (sepBy fieldname (char ',' >> spaces))
          <?> "parameters"
 
-tycons = fmap TupleType $ between (char '<') (char '>' >> spaces) $ sepBy tycon (char ',' >> spaces)
+tupletyp = fmap TupleType $ between (char '<') (char '>' >> spaces) $ sepBy typ (char ',' >> spaces)
 
 expr = buildExpressionParser table (do { e <- factor; spaces; return e })
    <?> "expression"
@@ -332,7 +340,6 @@ identifyExclusions (f:fs)
       <- [other_f
          | other_f <- fs
          , RepeatType { type_type=typ, type_repeats=NumberOfTimes (FieldE len_field_name) } <- [field_type other_f]
-         , case typ of TyConType tycon -> isNothing (isBitTyCon tycon);_ -> True  -- IMPORTANT: can't recover the used bit length from these fields!
          , len_field_name == field_name f]
   = f { field_excluded = Just (IsLength $ field_name controls_field) } : identifyExclusions fs
   
@@ -422,6 +429,17 @@ typeToSyntax defuser typ = case typ of
           LHE.TyCon (qname tycon))
       where args_syns = map (fieldExprToSyntax defuser) args
 
+    TyConType (BitsTyCon "UB" (LitE 1))
+      -> (var "getFlag",
+          App $ var "putFlag",
+          LHE.TyCon (qname "Bool"))
+
+    TyConType (BitsTyCon tycon_name lenexpr)
+      -> (App (var $ "get" ++ tycon_name) lenexpr_syn,
+          App $ App (var $ "put" ++ tycon_name) lenexpr_syn,
+          LHE.TyCon (qname tycon_name))
+      where lenexpr_syn = fieldExprToSyntax defuser lenexpr
+
     TupleType typs
       -> (lift_ (Con con : getters),
           \e -> caseTuple_ nelems e $ \xs -> Do $ zipWith (\putter x -> Qualifier $ putter (Var $ UnQual x)) putters xs,
@@ -454,18 +472,6 @@ typeToSyntax defuser typ = case typ of
       where condexprsyn = fieldExprToSyntax defuser condexpr
             (getexpt, putexpt, tyt) = typeToSyntax defuser typt
             (getexpf, putexpf, tyf) = typeToSyntax defuser typf
-    
-    RepeatType (TyConType (TyCon "UB" [])) (NumberOfTimes (LitE 1))
-      -> (var "getFlag",
-          App $ var "putFlag",
-          LHE.TyCon (qname "Bool"))
-    
-    RepeatType (TyConType tycon) (NumberOfTimes lenexpr)
-      | Just tycon_name <- isBitTyCon tycon
-      -> (App (var $ "get" ++ tycon_name) lenexpr_syn,
-          App $ App (var $ "put" ++ tycon_name) lenexpr_syn,
-          LHE.TyCon (qname tycon_name))
-      where lenexpr_syn = fieldExprToSyntax defuser lenexpr
     
     RepeatType (TyConType (TyCon "BYTE" [])) RepeatsUntilEnd
       -> (var "getRemainingLazyByteString",
