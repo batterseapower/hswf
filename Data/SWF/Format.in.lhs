@@ -131,10 +131,13 @@ getFLOAT16 :: SwfGet FLOAT16
 getFLOAT16 = do
     w <- getWord16
     let sign  = (w `shiftR` 15) .&. 0x1
-        expon = (w `shiftR` 10) .&. 0x1F - 16
-        manti = (w `shiftR` 0)  .&. 0x3FF
-        promote = (realToFrac :: CFloat -> Float) . storableCast
-    return $ FLOAT16 $ (if sign /= 0 then negate else id) $ (1 + (promote manti / 0x400)) * 2 ^^ expon
+        expon = (w `shiftR` 10) .&. 0x1F
+        manti = w               .&. 0x3FF
+    
+        signer = if sign /= 0 then negate else id
+    return $ FLOAT16 $ if expon == 0x1F
+                       then if manti /= 0 then 0/0 else (signer 1 / 0)
+                       else signer $ (1.0 + (fromIntegral manti / 1024.0)) * 2 ^ (expon - 16)
 
 putFLOAT16 :: FLOAT16 -> SwfPut
 putFLOAT16 (FLOAT16 x) = do

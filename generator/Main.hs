@@ -1,10 +1,11 @@
-{-# LANGUAGE NamedFieldPuns, PatternGuards, DerivingDataTypeable #-}
+{-# LANGUAGE NamedFieldPuns, PatternGuards, DeriveDataTypeable #-}
 module Main where
 
 import Control.Arrow (first)
 import Control.Monad
 
 import Data.Char
+import Data.Data (Data, Typeable)
 import Data.List
 import Data.List.Split (split, keepDelimsR, condense, oneOf)
 import Data.Maybe
@@ -382,9 +383,10 @@ fieldsToSyntax defuser fields finish
     getter_stmt bndr getter = Generator noSrcLoc (PVar bndr) getter
     getter_stmts = zipWith getter_stmt bndrs getters
     
-    putter_stmt bndr (Left we) putter = LetStmt (BDecls [PatBind noSrcLoc (PVar bndr) Nothing (UnGuardedRhs $ whyExcludedToSyntax defuser we) (BDecls [])])
-    putter_stmt bndr (Right _) putter = Qualifier $ putter (Var (UnQual bndr))
-    putter_stmts = zipWith3 putter_stmt bndrs storages putters
+    putter_stmt bndr storage putter
+      = [LetStmt (BDecls [PatBind noSrcLoc (PVar bndr) Nothing (UnGuardedRhs $ whyExcludedToSyntax defuser we) (BDecls [])]) | Left we <- [storage]] ++
+        [Qualifier $ putter (Var (UnQual bndr))]
+    putter_stmts = concat $ zipWith3 putter_stmt bndrs storages putters
     
     (bndrs, getters, putters, storages) = unzip4 $ map (fieldToSyntax defuser) fields
 

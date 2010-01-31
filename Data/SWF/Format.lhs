@@ -147,10 +147,13 @@ getFLOAT16 :: SwfGet FLOAT16
 getFLOAT16 = do
     w <- getWord16
     let sign  = (w `shiftR` 15) .&. 0x1
-        expon = (w `shiftR` 10) .&. 0x1F - 16
-        manti = (w `shiftR` 0)  .&. 0x3FF
-        promote = (realToFrac :: CFloat -> Float) . storableCast
-    return $ FLOAT16 $ (if sign /= 0 then negate else id) $ (1 + (promote manti / 0x400)) * 2 ^^ expon
+        expon = (w `shiftR` 10) .&. 0x1F
+        manti = w               .&. 0x3FF
+    
+        signer = if sign /= 0 then negate else id
+    return $ FLOAT16 $ if expon == 0x1F
+                       then if manti /= 0 then 0/0 else (signer 1 / 0)
+                       else signer $ (1.0 + (fromIntegral manti / 1024.0)) * 2 ^ (expon - 16)
 
 putFLOAT16 :: FLOAT16 -> SwfPut
 putFLOAT16 (FLOAT16 x) = do
@@ -311,7 +314,7 @@ getFB nbits = fmap parse (getBits nbits)
   where parse bits = FIXED { fIXED_integer = signextend (nbits - 16) (bits `shiftR` 16), fIXED_decimal = fromIntegral (bits .&. 0xFFFF) }
 
 putFB :: Integral a => a -> FB -> SwfPut
-putFB nbits fixed = putBits nbits $ (signretract (nbits - 15) $ fIXED_integer fixed) `shiftL` 16 .|. (fromIntegral (fIXED_decimal fixed) .&. 0xFFFF)
+putFB nbits fixed = putBits nbits $ ((signretract (nbits - 16) $ fIXED_integer fixed) `shiftL` 16) .|. fromIntegral (fIXED_decimal fixed)
 
 \end{code}
 
@@ -422,8 +425,8 @@ putARGB ARGB{..}
 p20: Rectangle record
 \begin{code}
  
-data RECT = RECT{rECT_nbits :: UB, rECT_xmin :: SB,
-                 rECT_xmax :: SB, rECT_ymin :: SB, rECT_ymax :: SB}
+data RECT = RECT{rECT_xmin :: SB, rECT_xmax :: SB, rECT_ymin :: SB,
+                 rECT_ymax :: SB}
           deriving (Eq, Show, Typeable, Data)
 getRECT
   = do rECT_nbits <- getUB 5
@@ -434,12 +437,14 @@ getRECT
        _rECT_padding <- byteAlign
        return (RECT{..})
 putRECT RECT{..}
-  = do putUB 5 rECT_nbits
+  = do let rECT_nbits = genericLength rECT_xmin
+       putUB 5 rECT_nbits
        putSB rECT_nbits rECT_xmin
        putSB rECT_nbits rECT_xmax
        putSB rECT_nbits rECT_ymin
        putSB rECT_nbits rECT_ymax
        let _rECT_padding = 0
+       flushBits
        return ()
 
 \end{code}
@@ -449,8 +454,8 @@ p20: MATRIX record
 \begin{code}
  
 data MATRIX = MATRIX{mATRIX_scale :: Maybe (UB, FB, FB),
-                     mATRIX_rotate :: Maybe (UB, FB, FB), mATRIX_translateBits :: UB,
-                     mATRIX_translateX :: SB, mATRIX_translateY :: SB}
+                     mATRIX_rotate :: Maybe (UB, FB, FB), mATRIX_translateX :: SB,
+                     mATRIX_translateY :: SB}
             deriving (Eq, Show, Typeable, Data)
 getMATRIX
   = do mATRIX_hasScale <- getFlag
@@ -472,6 +477,7 @@ getMATRIX
        return (MATRIX{..})
 putMATRIX MATRIX{..}
   = do let mATRIX_hasScale = isJust mATRIX_scale
+       putFlag mATRIX_hasScale
        case mATRIX_scale of
            Just x -> if True /= (mATRIX_hasScale) then inconsistent else
                        case x of
@@ -487,6 +493,7 @@ putMATRIX MATRIX{..}
            Nothing -> if False /= (mATRIX_hasScale) then inconsistent else
                         return ()
        let mATRIX_hasRotate = isJust mATRIX_rotate
+       putFlag mATRIX_hasRotate
        case mATRIX_rotate of
            Just x -> if True /= (mATRIX_hasRotate) then inconsistent else
                        case x of
@@ -497,10 +504,12 @@ putMATRIX MATRIX{..}
                                                       return ()
            Nothing -> if False /= (mATRIX_hasRotate) then inconsistent else
                         return ()
+       let mATRIX_translateBits = genericLength mATRIX_translateX
        putUB 5 mATRIX_translateBits
        putSB mATRIX_translateBits mATRIX_translateX
        putSB mATRIX_translateBits mATRIX_translateY
        let _mATRIX_padding = 0
+       flushBits
        return ()
 
 \end{code}
@@ -532,7 +541,9 @@ getCXFORM
        return (CXFORM{..})
 putCXFORM CXFORM{..}
   = do let cXFORM_hasAddTerms = isJust cXFORM_addTerm
+       putFlag cXFORM_hasAddTerms
        let cXFORM_hasMultTerms = isJust cXFORM_multTerm
+       putFlag cXFORM_hasMultTerms
        putUB 4 cXFORM_nbits
        case cXFORM_multTerm of
            Just x -> if True /= (cXFORM_hasMultTerms) then inconsistent else
@@ -555,6 +566,7 @@ putCXFORM CXFORM{..}
            Nothing -> if False /= (cXFORM_hasAddTerms) then inconsistent else
                         return ()
        let _cXFORM_padding = 0
+       flushBits
        return ()
 
 \end{code}
@@ -597,7 +609,9 @@ getCXFORMWITHALPHA
 putCXFORMWITHALPHA CXFORMWITHALPHA{..}
   = do let cXFORMWITHALPHA_hasAddTerms
              = isJust cXFORMWITHALPHA_addTerm
+       putFlag cXFORMWITHALPHA_hasAddTerms
        let cXFORMWITHALPHA_hasMultTerms = isJust cXFORMWITHALPHA_multTerm
+       putFlag cXFORMWITHALPHA_hasMultTerms
        putUB 4 cXFORMWITHALPHA_nbits
        case cXFORMWITHALPHA_multTerm of
            Just x -> if True /= (cXFORMWITHALPHA_hasMultTerms) then
@@ -634,6 +648,7 @@ putCXFORMWITHALPHA CXFORMWITHALPHA{..}
            Nothing -> if False /= (cXFORMWITHALPHA_hasAddTerms) then
                         inconsistent else return ()
        let _cXFORMWITHALPHA_padding = 0
+       flushBits
        return ()
 
 \end{code}
@@ -864,7 +879,6 @@ data Tag = UnknownTag ByteString
               defineFont2_fontFlagsShiftJIS :: Bool,
               defineFont2_fontFlagsSmallText :: Bool,
               defineFont2_fontFlagsANSI :: Bool,
-              defineFont2_fontFlagsWideOffsets :: Bool,
               defineFont2_fontFlagsItalic :: Bool,
               defineFont2_fontFlagsBold :: Bool,
               defineFont2_languageCode :: LANGCODE,
@@ -879,12 +893,11 @@ data Tag = UnknownTag ByteString
               defineFont3_fontFlagsShiftJIS :: Bool,
               defineFont3_fontFlagsSmallText :: Bool,
               defineFont3_fontFlagsANSI :: Bool,
-              defineFont3_fontFlagsWideOffsets :: Bool,
               defineFont3_fontFlagsWideCodes :: Bool,
               defineFont3_fontFlagsItalic :: Bool,
               defineFont3_fontFlagsBold :: Bool,
               defineFont3_languageCode :: LANGCODE,
-              defineFont3_fontName :: [UI8], defineFont3_numGlyphs :: UI16,
+              defineFont3_fontName :: [UI8],
               defineFont3_offsetTable :: Either [UI32] [UI16],
               defineFont3_codeTableOffset :: Either UI32 UI16,
               defineFont3_glyphShapeTable :: [SHAPE],
@@ -908,10 +921,10 @@ data Tag = UnknownTag ByteString
          |  DefineEditText{defineEditText_characterID :: UI16,
                  defineEditText_bounds :: RECT, defineEditText_wordWrap :: Bool,
                  defineEditText_multiline :: Bool, defineEditText_password :: Bool,
-                 defineEditText_readOnly :: Bool, defineEditText_hasFont :: Bool,
-                 defineEditText_autoSize :: Bool, defineEditText_noSelect :: Bool,
-                 defineEditText_border :: Bool, defineEditText_wasStatic :: Bool,
-                 defineEditText_hTML :: Bool, defineEditText_useOutlines :: Bool,
+                 defineEditText_readOnly :: Bool, defineEditText_autoSize :: Bool,
+                 defineEditText_noSelect :: Bool, defineEditText_border :: Bool,
+                 defineEditText_wasStatic :: Bool, defineEditText_hTML :: Bool,
+                 defineEditText_useOutlines :: Bool,
                  defineEditText_fontID :: Maybe UI16,
                  defineEditText_fontClass :: Maybe STRING,
                  defineEditText_fontHeight :: Maybe UI16,
@@ -1205,15 +1218,22 @@ getPlaceObject2
 putPlaceObject2 PlaceObject2{..}
   = do let placeObject2_placeFlagHasClipActions
              = isJust placeObject2_clipActions
+       putFlag placeObject2_placeFlagHasClipActions
        let placeObject2_placeFlagHasClipDepth
              = isJust placeObject2_clipDepth
+       putFlag placeObject2_placeFlagHasClipDepth
        let placeObject2_placeFlagHasName = isJust placeObject2_name
+       putFlag placeObject2_placeFlagHasName
        let placeObject2_placeFlagHasRatio = isJust placeObject2_ratio
+       putFlag placeObject2_placeFlagHasRatio
        let placeObject2_placeFlagHasColorTransform
              = isJust placeObject2_colorTransform
+       putFlag placeObject2_placeFlagHasColorTransform
        let placeObject2_placeFlagHasMatrix = isJust placeObject2_matrix
+       putFlag placeObject2_placeFlagHasMatrix
        let placeObject2_placeFlagHasCharacter
              = isJust placeObject2_characterId
+       putFlag placeObject2_placeFlagHasCharacter
        putFlag placeObject2_placeFlagMove
        putUI16 placeObject2_depth
        case placeObject2_characterId of
@@ -1268,6 +1288,7 @@ getCLIPACTIONS
        return (CLIPACTIONS{..})
 putCLIPACTIONS CLIPACTIONS{..}
   = do let _cLIPACTIONS_reserved = 0
+       putUI16 _cLIPACTIONS_reserved
        putCLIPEVENTFLAGS cLIPACTIONS_allEventFlags
        putCLIPACTIONRECORDS cLIPACTIONS_clipActionRecords
        return ()
@@ -1371,25 +1392,36 @@ getPlaceObject3
 putPlaceObject3 PlaceObject3{..}
   = do let placeObject3_placeFlagHasClipActions
              = isJust placeObject3_clipActions
+       putFlag placeObject3_placeFlagHasClipActions
        let placeObject3_placeFlagHasClipDepth
              = isJust placeObject3_clipDepth
+       putFlag placeObject3_placeFlagHasClipDepth
        let placeObject3_placeFlagHasName = isJust placeObject3_name
+       putFlag placeObject3_placeFlagHasName
        let placeObject3_placeFlagHasRatio = isJust placeObject3_ratio
+       putFlag placeObject3_placeFlagHasRatio
        let placeObject3_placeFlagHasColorTransform
              = isJust placeObject3_colorTransform
+       putFlag placeObject3_placeFlagHasColorTransform
        let placeObject3_placeFlagHasMatrix = isJust placeObject3_matrix
+       putFlag placeObject3_placeFlagHasMatrix
        let placeObject3_placeFlagHasCharacter
              = isJust placeObject3_characterId
+       putFlag placeObject3_placeFlagHasCharacter
        putFlag placeObject3_placeFlagMove
        let _placeObject3_reserved = 0
+       putUB 3 _placeObject3_reserved
        putFlag placeObject3_placeFlagHasImage
        putFlag placeObject3_placeFlagHasClassName
        let placeObject3_placeFlagHasCacheAsBitmap
              = isJust placeObject3_bitmapCache
+       putFlag placeObject3_placeFlagHasCacheAsBitmap
        let placeObject3_placeFlagHasBlendMode
              = isJust placeObject3_blendMode
+       putFlag placeObject3_placeFlagHasBlendMode
        let placeObject3_placeFlagHasFilterList
              = isJust placeObject3_surfaceFilterList
+       putFlag placeObject3_placeFlagHasFilterList
        putUI16 placeObject3_depth
        case placeObject3_className of
            Just x -> if
@@ -1590,6 +1622,7 @@ putCONVOLUTIONFILTER CONVOLUTIONFILTER{..}
          mapM_ (\ x -> putFLOAT x) cONVOLUTIONFILTER_matrix
        putRGBA cONVOLUTIONFILTER_defaultColor
        let _cONVOLUTIONFILTER_reserved = 0
+       putUB 6 _cONVOLUTIONFILTER_reserved
        putFlag cONVOLUTIONFILTER_clamp
        putFlag cONVOLUTIONFILTER_preserveAlpha
        return ()
@@ -1613,6 +1646,7 @@ putBLURFILTER BLURFILTER{..}
        putFIXED bLURFILTER_blurY
        putUB 5 bLURFILTER_passes
        let _bLURFILTER_reserved = 0
+       putUB 3 _bLURFILTER_reserved
        return ()
 
 \end{code}
@@ -1736,9 +1770,8 @@ putBEVELFILTER BEVELFILTER{..}
 p48: Gradient Glow and Gradient Bevel filters
 \begin{code}
  
-data GRADIENTGLOWFILTER = GRADIENTGLOWFILTER{gRADIENTGLOWFILTER_numColors
-                                             :: UI8,
-                                             gRADIENTGLOWFILTER_gradientColors :: [RGBA],
+data GRADIENTGLOWFILTER = GRADIENTGLOWFILTER{gRADIENTGLOWFILTER_gradientColors
+                                             :: [RGBA],
                                              gRADIENTGLOWFILTER_gradientRatio :: [UI8],
                                              gRADIENTGLOWFILTER_blurX :: FIXED,
                                              gRADIENTGLOWFILTER_blurY :: FIXED,
@@ -1771,7 +1804,9 @@ getGRADIENTGLOWFILTER
        gRADIENTGLOWFILTER_passes <- getUB 4
        return (GRADIENTGLOWFILTER{..})
 putGRADIENTGLOWFILTER GRADIENTGLOWFILTER{..}
-  = do putUI8 gRADIENTGLOWFILTER_numColors
+  = do let gRADIENTGLOWFILTER_numColors
+             = genericLength gRADIENTGLOWFILTER_gradientColors
+       putUI8 gRADIENTGLOWFILTER_numColors
        if
          genericLength gRADIENTGLOWFILTER_gradientColors /=
            (gRADIENTGLOWFILTER_numColors)
@@ -1798,9 +1833,8 @@ putGRADIENTGLOWFILTER GRADIENTGLOWFILTER{..}
 
 \begin{code}
  
-data GRADIENTBEVELFILTER = GRADIENTBEVELFILTER{gRADIENTBEVELFILTER_numColors
-                                               :: UI8,
-                                               gRADIENTBEVELFILTER_gradientColors :: [RGBA],
+data GRADIENTBEVELFILTER = GRADIENTBEVELFILTER{gRADIENTBEVELFILTER_gradientColors
+                                               :: [RGBA],
                                                gRADIENTBEVELFILTER_gradientRatio :: [UI8],
                                                gRADIENTBEVELFILTER_blurX :: FIXED,
                                                gRADIENTBEVELFILTER_blurY :: FIXED,
@@ -1833,7 +1867,9 @@ getGRADIENTBEVELFILTER
        gRADIENTBEVELFILTER_passes <- getUB 4
        return (GRADIENTBEVELFILTER{..})
 putGRADIENTBEVELFILTER GRADIENTBEVELFILTER{..}
-  = do putUI8 gRADIENTBEVELFILTER_numColors
+  = do let gRADIENTBEVELFILTER_numColors
+             = genericLength gRADIENTBEVELFILTER_gradientColors
+       putUI8 gRADIENTBEVELFILTER_numColors
        if
          genericLength gRADIENTBEVELFILTER_gradientColors /=
            (gRADIENTBEVELFILTER_numColors)
@@ -2042,6 +2078,7 @@ getEnableDebugger2
        return (EnableDebugger2{..})
 putEnableDebugger2 EnableDebugger2{..}
   = do let _enableDebugger2_reserved = 0
+       putUI16 _enableDebugger2_reserved
        putSTRING enableDebugger2_password
        return ()
 
@@ -2087,13 +2124,16 @@ getFileAttributes
        return (FileAttributes{..})
 putFileAttributes FileAttributes{..}
   = do let _fileAttributes_reserved = 0
+       putFlag _fileAttributes_reserved
        putFlag fileAttributes_useDirectBlit
        putFlag fileAttributes_useGPU
        putFlag fileAttributes_hasMetadata
        putFlag fileAttributes_actionScript3
        let _fileAttributes_reserved = 0
+       putUB 2 _fileAttributes_reserved
        putFlag fileAttributes_useNetwork
        let _fileAttributes_reserved = 0
+       putUB 24 _fileAttributes_reserved
        return ()
 
 \end{code}
@@ -2113,7 +2153,9 @@ getImportAssets2
 putImportAssets2 ImportAssets2{..}
   = do putSTRING importAssets2_uRL
        let _importAssets2_reserved = 0
+       putUI8 _importAssets2_reserved
        let _importAssets2_reserved = 0
+       putUI8 _importAssets2_reserved
        putUI16 importAssets2_count
        putUI16 importAssets2_tag1
        putSTRING importAssets2_name1
@@ -2133,6 +2175,7 @@ getSymbolClass
 putSymbolClass SymbolClass{..}
   = do let symbolClass_numSymbols
              = genericLength symbolClass_tagsNames
+       putUI16 symbolClass_numSymbols
        if genericLength symbolClass_tagsNames /= (symbolClass_numSymbols)
          then inconsistent else
          mapM_
@@ -2184,6 +2227,7 @@ getDefineSceneAndFrameLabelData
 putDefineSceneAndFrameLabelData DefineSceneAndFrameLabelData{..}
   = do let defineSceneAndFrameLabelData_sceneCount
              = genericLength defineSceneAndFrameLabelData_offsetNames
+       putEncodedU32 defineSceneAndFrameLabelData_sceneCount
        if
          genericLength defineSceneAndFrameLabelData_offsetNames /=
            (defineSceneAndFrameLabelData_sceneCount)
@@ -2196,6 +2240,7 @@ putDefineSceneAndFrameLabelData DefineSceneAndFrameLabelData{..}
            defineSceneAndFrameLabelData_offsetNames
        let defineSceneAndFrameLabelData_frameLabelCount
              = genericLength defineSceneAndFrameLabelData_frameNumLabels
+       putEncodedU32 defineSceneAndFrameLabelData_frameLabelCount
        if
          genericLength defineSceneAndFrameLabelData_frameNumLabels /=
            (defineSceneAndFrameLabelData_frameLabelCount)
@@ -2967,6 +3012,7 @@ getActionGetURL2
 putActionGetURL2 ActionGetURL2{..}
   = do putUB 2 actionGetURL2_sendVarsMethod
        let _actionGetURL2_reserved = 0
+       putUB 4 _actionGetURL2_reserved
        putFlag actionGetURL2_loadTargetFlag
        putFlag actionGetURL2_loadVariablesFlag
        return ()
@@ -2985,8 +3031,10 @@ getActionGotoFrame2
        return (ActionGotoFrame2{..})
 putActionGotoFrame2 ActionGotoFrame2{..}
   = do let _actionGotoFrame2_reserved = 0
+       putUB 6 _actionGotoFrame2_reserved
        let actionGotoFrame2_sceneBiasFlag
              = isJust actionGotoFrame2_sceneBias
+       putFlag actionGotoFrame2_sceneBiasFlag
        putFlag actionGotoFrame2_playFlag
        case actionGotoFrame2_sceneBias of
            Just x -> if True /= (actionGotoFrame2_sceneBiasFlag) then
@@ -3103,6 +3151,7 @@ getActionConstantPool
 putActionConstantPool ActionConstantPool{..}
   = do let actionConstantPool_count
              = genericLength actionConstantPool_constantPool
+       putUI16 actionConstantPool_count
        if
          genericLength actionConstantPool_constantPool /=
            (actionConstantPool_count)
@@ -3126,6 +3175,7 @@ putActionDefineFunction ActionDefineFunction{..}
   = do putSTRING actionDefineFunction_functionName
        let actionDefineFunction_numParams
              = genericLength actionDefineFunction_params
+       putUI16 actionDefineFunction_numParams
        if
          genericLength actionDefineFunction_params /=
            (actionDefineFunction_numParams)
@@ -3441,6 +3491,7 @@ putActionDefineFunction2 ActionDefineFunction2{..}
   = do putSTRING actionDefineFunction2_functionName
        let actionDefineFunction2_numParams
              = genericLength actionDefineFunction2_parameters
+       putUI16 actionDefineFunction2_numParams
        putUI8 actionDefineFunction2_registerCount
        putFlag actionDefineFunction2_preloadParentFlag
        putFlag actionDefineFunction2_preloadRootFlag
@@ -3451,6 +3502,7 @@ putActionDefineFunction2 ActionDefineFunction2{..}
        putFlag actionDefineFunction2_suppressThisFlag
        putFlag actionDefineFunction2_preloadThisFlag
        let _actionDefineFunction2_reserved = 0
+       putUB 7 _actionDefineFunction2_reserved
        putFlag actionDefineFunction2_preloadGlobalFlag
        if
          genericLength actionDefineFunction2_parameters /=
@@ -3520,12 +3572,17 @@ getActionTry
        return (ActionTry{..})
 putActionTry ActionTry{..}
   = do let _actionTry_reserved = 0
+       putUB 5 _actionTry_reserved
        let actionTry_catchInRegisterFlag = isJust actionTry_catchRegister
+       putFlag actionTry_catchInRegisterFlag
        putFlag actionTry_finallyBlockFlag
        putFlag actionTry_catchBlockFlag
        let actionTry_trySize = genericLength actionTry_tryBody
+       putUI16 actionTry_trySize
        let actionTry_catchSize = genericLength actionTry_catchBody
+       putUI16 actionTry_catchSize
        let actionTry_finallySize = genericLength actionTry_finallyBody
+       putUI16 actionTry_finallySize
        case actionTry_catchName of
            Just x -> if True /= (not actionTry_catchInRegisterFlag) then
                        inconsistent else putSTRING x
@@ -3710,10 +3767,12 @@ putLINESTYLE2 LINESTYLE2{..}
        putUB 2 lINESTYLE2_startCapStyle
        putUB 2 lINESTYLE2_joinStyle
        let lINESTYLE2_hasFillFlag = isJust lINESTYLE2_fillType
+       putFlag lINESTYLE2_hasFillFlag
        putFlag lINESTYLE2_noHScaleFlag
        putFlag lINESTYLE2_noVScaleFlag
        putFlag lINESTYLE2_pixelHintingFlag
        let _lINESTYLE2_reserved = 0
+       putUB 5 _lINESTYLE2_reserved
        putFlag lINESTYLE2_noClose
        putUB 2 lINESTYLE2_endCapStyle
        case lINESTYLE2_miterLimitFactor of
@@ -3903,13 +3962,18 @@ putSTYLECHANGERECORD sTYLECHANGERECORD_shapeVer
   STYLECHANGERECORD{..}
   = do let sTYLECHANGERECORD_stateNewStyles
              = isJust sTYLECHANGERECORD_new
+       putFlag sTYLECHANGERECORD_stateNewStyles
        let sTYLECHANGERECORD_stateLineStyle
              = isJust sTYLECHANGERECORD_lineStyle
+       putFlag sTYLECHANGERECORD_stateLineStyle
        let sTYLECHANGERECORD_stateFillStyle1
              = isJust sTYLECHANGERECORD_fillStyle1
+       putFlag sTYLECHANGERECORD_stateFillStyle1
        let sTYLECHANGERECORD_stateFillStyle0
              = isJust sTYLECHANGERECORD_fillStyle0
+       putFlag sTYLECHANGERECORD_stateFillStyle0
        let sTYLECHANGERECORD_stateMoveTo = isJust sTYLECHANGERECORD_move
+       putFlag sTYLECHANGERECORD_stateMoveTo
        case sTYLECHANGERECORD_move of
            Just x -> if True /= (sTYLECHANGERECORD_stateMoveTo) then
                        inconsistent else
@@ -4082,6 +4146,7 @@ putDefineShape4 DefineShape4{..}
        putRECT defineShape4_shapeBounds
        putRECT defineShape4_edgeBounds
        let _defineShape4_reserved = 0
+       putUB 5 _defineShape4_reserved
        putFlag defineShape4_usesFillWindingRule
        putFlag defineShape4_usesNonScalingStrokes
        putFlag defineShape4_usesScalingStrokes
@@ -4112,6 +4177,7 @@ putGRADIENT gRADIENT_shapeVer GRADIENT{..}
   = do putUB 2 gRADIENT_spreadMode
        putUB 2 gRADIENT_interpolationMode
        let gRADIENT_numGradients = genericLength gRADIENT_gradientRecords
+       putUB 4 gRADIENT_numGradients
        if
          genericLength gRADIENT_gradientRecords /= (gRADIENT_numGradients)
          then inconsistent else
@@ -4143,6 +4209,7 @@ putFOCALGRADIENT fOCALGRADIENT_shapeVer FOCALGRADIENT{..}
        putUB 2 fOCALGRADIENT_interpolationMode
        let fOCALGRADIENT_numGradients
              = genericLength fOCALGRADIENT_gradientRecords
+       putUB 4 fOCALGRADIENT_numGradients
        if
          genericLength fOCALGRADIENT_gradientRecords /=
            (fOCALGRADIENT_numGradients)
@@ -4230,6 +4297,7 @@ putDefineBitsJPEG3 DefineBitsJPEG3{..}
   = do putUI16 defineBitsJPEG3_characterID
        let defineBitsJPEG3_alphaDataOffset
              = genericLength defineBitsJPEG3_imageData
+       putUI32 defineBitsJPEG3_alphaDataOffset
        if
          genericLength defineBitsJPEG3_imageData /=
            (defineBitsJPEG3_alphaDataOffset)
@@ -4309,6 +4377,7 @@ putDefineBitsJPEG4 DefineBitsJPEG4{..}
   = do putUI16 defineBitsJPEG4_characterID
        let defineBitsJPEG4_alphaDataOffset
              = genericLength defineBitsJPEG4_imageData
+       putUI32 defineBitsJPEG4_alphaDataOffset
        putUI16 defineBitsJPEG4_deblockParam
        if
          genericLength defineBitsJPEG4_imageData /=
@@ -4373,6 +4442,7 @@ putDefineMorphShape2 DefineMorphShape2{..}
        putRECT defineMorphShape2_startEdgeBounds
        putRECT defineMorphShape2_endEdgeBounds
        let _defineMorphShape2_reserved = 0
+       putUB 6 _defineMorphShape2_reserved
        putFlag defineMorphShape2_usesNonScalingStrokes
        putFlag defineMorphShape2_usesScalingStrokes
        putUI32 defineMorphShape2_offset
@@ -4563,10 +4633,12 @@ putMORPHLINESTYLE2 MORPHLINESTYLE2{..}
        putUB 2 mORPHLINESTYLE2_startCapStyle
        putUB 2 mORPHLINESTYLE2_joinStyle
        let mORPHLINESTYLE2_hasFillFlag = isJust mORPHLINESTYLE2_fillType
+       putFlag mORPHLINESTYLE2_hasFillFlag
        putFlag mORPHLINESTYLE2_noHScaleFlag
        putFlag mORPHLINESTYLE2_noVScaleFlag
        putFlag mORPHLINESTYLE2_pixelHintingFlag
        let _mORPHLINESTYLE2_reserved = 0
+       putUB 5 _mORPHLINESTYLE2_reserved
        putFlag mORPHLINESTYLE2_noClose
        putUB 2 mORPHLINESTYLE2_endCapStyle
        case mORPHLINESTYLE2_miterLimitFactor of
@@ -4644,12 +4716,14 @@ putDefineFontInfo DefineFontInfo{..}
   = do putUI16 defineFontInfo_fontID
        let defineFontInfo_fontNameLen
              = genericLength defineFontInfo_fontName
+       putUI8 defineFontInfo_fontNameLen
        if
          genericLength defineFontInfo_fontName /=
            (defineFontInfo_fontNameLen)
          then inconsistent else
          mapM_ (\ x -> putUI8 x) defineFontInfo_fontName
        let _defineFontInfo_fontFlagsReserved = 0
+       putUB 2 _defineFontInfo_fontFlagsReserved
        putFlag defineFontInfo_fontFlagsSmallText
        putFlag defineFontInfo_fontFlagsShiftJIS
        putFlag defineFontInfo_fontFlagsANSI
@@ -4657,6 +4731,7 @@ putDefineFontInfo DefineFontInfo{..}
        putFlag defineFontInfo_fontFlagsBold
        let defineFontInfo_fontFlagsWideCodes
              = isLeft defineFontInfo_codeTable
+       putFlag defineFontInfo_fontFlagsWideCodes
        case defineFontInfo_codeTable of
            Left x -> if True /= (defineFontInfo_fontFlagsWideCodes) then
                        inconsistent else mapM_ (\ x -> putUI16 x) x
@@ -4688,12 +4763,14 @@ putDefineFontInfo2 DefineFontInfo2{..}
   = do putUI16 defineFontInfo2_fontID
        let defineFontInfo2_fontNameLen
              = genericLength defineFontInfo2_fontName
+       putUI8 defineFontInfo2_fontNameLen
        if
          genericLength defineFontInfo2_fontName /=
            (defineFontInfo2_fontNameLen)
          then inconsistent else
          mapM_ (\ x -> putUI8 x) defineFontInfo2_fontName
        let _defineFontInfo2_fontFlagsReserved = 0
+       putUB 2 _defineFontInfo2_fontFlagsReserved
        putFlag defineFontInfo2_fontFlagsSmallText
        putFlag defineFontInfo2_fontFlagsShiftJIS
        putFlag defineFontInfo2_fontFlagsANSI
@@ -4761,19 +4838,25 @@ getDefineFont2
 putDefineFont2 DefineFont2{..}
   = do putUI16 defineFont2_fontID
        let defineFont2_fontFlagsHasLayout = isJust defineFont2_fontLayout
+       putFlag defineFont2_fontFlagsHasLayout
        putFlag defineFont2_fontFlagsShiftJIS
        putFlag defineFont2_fontFlagsSmallText
        putFlag defineFont2_fontFlagsANSI
+       let defineFont2_fontFlagsWideOffsets
+             = isLeft defineFont2_offsetTable
        putFlag defineFont2_fontFlagsWideOffsets
        let defineFont2_fontFlagsWideCodes = isLeft defineFont2_codeTable
+       putFlag defineFont2_fontFlagsWideCodes
        putFlag defineFont2_fontFlagsItalic
        putFlag defineFont2_fontFlagsBold
        putLANGCODE defineFont2_languageCode
        let defineFont2_fontNameLen = genericLength defineFont2_fontName
+       putUI8 defineFont2_fontNameLen
        if genericLength defineFont2_fontName /= (defineFont2_fontNameLen)
          then inconsistent else mapM_ (\ x -> putUI8 x) defineFont2_fontName
        let defineFont2_numGlyphs
              = genericLength defineFont2_glyphShapeTable
+       putUI16 defineFont2_numGlyphs
        case defineFont2_offsetTable of
            Left x -> if True /= (defineFont2_fontFlagsWideOffsets) then
                        inconsistent else
@@ -4905,17 +4988,23 @@ getDefineFont3
 putDefineFont3 DefineFont3{..}
   = do putUI16 defineFont3_fontID
        let defineFont3_fontFlagsHasLayout = isJust defineFont3_fontLayout
+       putFlag defineFont3_fontFlagsHasLayout
        putFlag defineFont3_fontFlagsShiftJIS
        putFlag defineFont3_fontFlagsSmallText
        putFlag defineFont3_fontFlagsANSI
+       let defineFont3_fontFlagsWideOffsets
+             = isLeft defineFont3_offsetTable
        putFlag defineFont3_fontFlagsWideOffsets
        putFlag defineFont3_fontFlagsWideCodes
        putFlag defineFont3_fontFlagsItalic
        putFlag defineFont3_fontFlagsBold
        putLANGCODE defineFont3_languageCode
        let defineFont3_fontNameLen = genericLength defineFont3_fontName
+       putUI8 defineFont3_fontNameLen
        if genericLength defineFont3_fontName /= (defineFont3_fontNameLen)
          then inconsistent else mapM_ (\ x -> putUI8 x) defineFont3_fontName
+       let defineFont3_numGlyphs
+             = genericLength defineFont3_glyphShapeTable
        putUI16 defineFont3_numGlyphs
        case defineFont3_offsetTable of
            Left x -> if True /= (defineFont3_fontFlagsWideOffsets) then
@@ -5000,6 +5089,7 @@ putDefineFontAlignZones DefineFontAlignZones{..}
   = do putUI16 defineFontAlignZones_fontID
        putUB 2 defineFontAlignZones_cSMTableHint
        let _defineFontAlignZones_reserved = 0
+       putUB 6 _defineFontAlignZones_reserved
        mapM_ (\ x -> putZONERECORD x) defineFontAlignZones_zoneTable
        return ()
 
@@ -5020,10 +5110,12 @@ getZONERECORD
        return (ZONERECORD{..})
 putZONERECORD ZONERECORD{..}
   = do let zONERECORD_numZoneData = genericLength zONERECORD_zoneData
+       putUI8 zONERECORD_numZoneData
        if genericLength zONERECORD_zoneData /= (zONERECORD_numZoneData)
          then inconsistent else
          mapM_ (\ x -> putZONEDATA x) zONERECORD_zoneData
        let _zONERECORD_reserved = 0
+       putUB 6 _zONERECORD_reserved
        putFlag zONERECORD_zoneMaskY
        putFlag zONERECORD_zoneMaskX
        return ()
@@ -5143,7 +5235,6 @@ in the specification) because GLYPHENTRY may be of a size which is not a multipl
 \begin{code}
  
 data TEXTRECORD = TEXTRECORD{tEXTRECORD_textRecordType :: Bool,
-                             tEXTRECORD_styleFlagsHasFont :: Bool,
                              tEXTRECORD_fontID :: Maybe UI16,
                              tEXTRECORD_textColor :: Maybe (Either RGBA RGB),
                              tEXTRECORD_xOffset :: Maybe SI16, tEXTRECORD_yOffset :: Maybe SI16,
@@ -5177,10 +5268,15 @@ putTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
   tEXTRECORD_advanceBits TEXTRECORD{..}
   = do putFlag tEXTRECORD_textRecordType
        let _tEXTRECORD_styleFlagsReserved = 0
+       putUB 3 _tEXTRECORD_styleFlagsReserved
+       let tEXTRECORD_styleFlagsHasFont = isJust tEXTRECORD_fontID
        putFlag tEXTRECORD_styleFlagsHasFont
        let tEXTRECORD_styleFlagsHasColor = isJust tEXTRECORD_textColor
+       putFlag tEXTRECORD_styleFlagsHasColor
        let tEXTRECORD_styleFlagsHasYOffset = isJust tEXTRECORD_yOffset
+       putFlag tEXTRECORD_styleFlagsHasYOffset
        let tEXTRECORD_styleFlagsHasXOffset = isJust tEXTRECORD_xOffset
+       putFlag tEXTRECORD_styleFlagsHasXOffset
        case tEXTRECORD_fontID of
            Just x -> if True /= (tEXTRECORD_styleFlagsHasFont) then
                        inconsistent else putUI16 x
@@ -5212,6 +5308,7 @@ putTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
            Nothing -> if False /= (tEXTRECORD_styleFlagsHasFont) then
                         inconsistent else return ()
        let tEXTRECORD_glyphCount = genericLength tEXTRECORD_glyphEntries
+       putUI8 tEXTRECORD_glyphCount
        if genericLength tEXTRECORD_glyphEntries /= (tEXTRECORD_glyphCount)
          then inconsistent else
          mapM_
@@ -5219,6 +5316,7 @@ putTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
               putGLYPHENTRY tEXTRECORD_glyphBits tEXTRECORD_advanceBits x)
            tEXTRECORD_glyphEntries
        let _tEXTRECORD_padding = 0
+       flushBits
        return ()
 
 \end{code}
@@ -5313,16 +5411,22 @@ putDefineEditText DefineEditText{..}
   = do putUI16 defineEditText_characterID
        putRECT defineEditText_bounds
        let defineEditText_hasText = isJust defineEditText_initialText
+       putFlag defineEditText_hasText
        putFlag defineEditText_wordWrap
        putFlag defineEditText_multiline
        putFlag defineEditText_password
        putFlag defineEditText_readOnly
        let defineEditText_hasTextColor = isJust defineEditText_textColor
+       putFlag defineEditText_hasTextColor
        let defineEditText_hasMaxLength = isJust defineEditText_maxLength
+       putFlag defineEditText_hasMaxLength
+       let defineEditText_hasFont = isJust defineEditText_fontID
        putFlag defineEditText_hasFont
        let defineEditText_hasFontClass = isJust defineEditText_fontClass
+       putFlag defineEditText_hasFontClass
        putFlag defineEditText_autoSize
        let defineEditText_hasLayout = isJust defineEditText_layout
+       putFlag defineEditText_hasLayout
        putFlag defineEditText_noSelect
        putFlag defineEditText_border
        putFlag defineEditText_wasStatic
@@ -5396,9 +5500,11 @@ putCSMTextSettings CSMTextSettings{..}
        putUB 2 cSMTextSettings_useFlashType
        putUB 3 cSMTextSettings_gridFit
        let _cSMTextSettings_reserved = 0
+       putUB 3 _cSMTextSettings_reserved
        putFLOAT cSMTextSettings_thickness
        putFLOAT cSMTextSettings_sharpness
        let _cSMTextSettings_reserved = 0
+       putUI8 _cSMTextSettings_reserved
        return ()
 
 \end{code}
@@ -5417,6 +5523,7 @@ getDefineFont4
 putDefineFont4 DefineFont4{..}
   = do putUI16 defineFont4_fontID
        let _defineFont4_fontFlagsReserved = 0
+       putUB 5 _defineFont4_fontFlagsReserved
        putFlag defineFont4_fontFlagsHasFontData
        putFlag defineFont4_fontFlagsItalic
        putFlag defineFont4_fontFlagsBold
@@ -5507,12 +5614,17 @@ getSOUNDINFO
        return (SOUNDINFO{..})
 putSOUNDINFO SOUNDINFO{..}
   = do let _sOUNDINFO_reserved = 0
+       putUB 2 _sOUNDINFO_reserved
        putFlag sOUNDINFO_syncStop
        putFlag sOUNDINFO_syncNoMultiple
        let sOUNDINFO_hasEnvelope = isJust sOUNDINFO_env
+       putFlag sOUNDINFO_hasEnvelope
        let sOUNDINFO_hasLoops = isJust sOUNDINFO_loopCount
+       putFlag sOUNDINFO_hasLoops
        let sOUNDINFO_hasOutPoint = isJust sOUNDINFO_outPoint
+       putFlag sOUNDINFO_hasOutPoint
        let sOUNDINFO_hasInPoint = isJust sOUNDINFO_inPoint
+       putFlag sOUNDINFO_hasInPoint
        case sOUNDINFO_inPoint of
            Just x -> if True /= (sOUNDINFO_hasInPoint) then inconsistent else
                        putUI32 x
@@ -5591,6 +5703,7 @@ getSoundStreamHead
        return (SoundStreamHead{..})
 putSoundStreamHead SoundStreamHead{..}
   = do let _soundStreamHead_reserved = 0
+       putUB 4 _soundStreamHead_reserved
        putUB 2 soundStreamHead_playbackSoundRate
        putFlag soundStreamHead_playbackSoundSize
        putFlag soundStreamHead_playbackSoundType
@@ -5627,6 +5740,7 @@ getSoundStreamHead2
        return (SoundStreamHead2{..})
 putSoundStreamHead2 SoundStreamHead2{..}
   = do let _soundStreamHead2_reserved = 0
+       putUB 4 _soundStreamHead2_reserved
        putUB 2 soundStreamHead2_playbackSoundRate
        putFlag soundStreamHead2_playbackSoundSize
        putFlag soundStreamHead2_playbackSoundType
@@ -5722,6 +5836,7 @@ getBUTTONRECORD bUTTONRECORD_buttonVer
        return (BUTTONRECORD{..})
 putBUTTONRECORD bUTTONRECORD_buttonVer BUTTONRECORD{..}
   = do let _bUTTONRECORD_buttonReserved = 0
+       putUB 2 _bUTTONRECORD_buttonReserved
        putFlag bUTTONRECORD_buttonHasBlendMode
        putFlag bUTTONRECORD_buttonHasFilterList
        putFlag bUTTONRECORD_buttonStateHitTest
@@ -5809,6 +5924,7 @@ getDefineButton2
 putDefineButton2 DefineButton2{..}
   = do putUI16 defineButton2_buttonId
        let _defineButton2_reservedFlags = 0
+       putUB 7 _defineButton2_reservedFlags
        putFlag defineButton2_trackAsMenu
        putUI16 defineButton2_actionOffset
        putBUTTONRECORDS 2 defineButton2_characters
@@ -5993,6 +6109,7 @@ putDefineVideoStream DefineVideoStream{..}
        putUI16 defineVideoStream_width
        putUI16 defineVideoStream_height
        let _defineVideoStream_videoFlagsReserved = 0
+       putUB 4 _defineVideoStream_videoFlagsReserved
        putUB 3 defineVideoStream_videoFlagsDeblocking
        putFlag defineVideoStream_videoFlagsSmoothing
        putUI8 defineVideoStream_codecID
@@ -6029,6 +6146,7 @@ getDefineBinaryData
 putDefineBinaryData DefineBinaryData{..}
   = do putUI16 defineBinaryData_tag
        let _defineBinaryData_reserved = 0
+       putUI32 _defineBinaryData_reserved
        putLazyByteString defineBinaryData_data
        return ()
 
