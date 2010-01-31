@@ -1,15 +1,18 @@
-{-# LANGUAGE NamedFieldPuns, PatternGuards, DeriveDataTypeable #-}
+{-# LANGUAGE NamedFieldPuns, PatternGuards, DeriveDataTypeable, FlexibleContexts #-}
 module Main where
 
 import Control.Arrow (first)
 import Control.Monad
+import Control.Monad.Writer
 
 import Data.Char
 import Data.Data (Data, Typeable)
+import Data.Generics.Uniplate.Data
 import Data.List
 import Data.List.Split (split, keepDelimsR, condense, oneOf)
 import Data.Maybe
 import qualified Data.Map as M
+import qualified Data.Set as S
 
 import System.Environment
 import System.IO
@@ -159,6 +162,11 @@ type_cond_maybe (IfThenType { type_cond })     = Just (True, type_cond)
 type_cond_maybe (IfThenElseType { type_cond }) = Just (False, type_cond)
 type_cond_maybe _                              = Nothing
 
+freeFields :: (Biplate from FieldExpr) => from -> S.Set FieldName
+freeFields = execWriter . transformBiM go
+  where go e@(FieldE fn) = tell (S.singleton fn) >> return e
+        go e             = return e
+
 parseFile :: String -> [Chunk]
 parseFile contents = goNo [] (lines contents)
   where
@@ -292,13 +300,14 @@ identifyComposites :: [Field] -> [Field]
 identifyComposites [] = []
 identifyComposites (f:fs)
   
-  -- TODO: should really only do this combining if the fields are not in scope later on
   | IfThenType cond typ <- field_type f
   , f <- f { field_type = typ }
   , (fs1, fs2) <- spanMaybe (\f' -> case field_type f' of IfThenType cond' typ' | cond' == cond -> Just (f' { field_type = typ' }); _ -> Nothing) fs
   , not (null fs1)
-  , let composite_typ  = IfThenType cond $ CompositeType $ f : fs1
-        composite_name = compositeName (map field_name $ f:fs1)
+  , let field_names1 = map field_name $ f:fs1
+        composite_typ  = IfThenType cond $ CompositeType $ f : fs1
+        composite_name = compositeName field_names1
+  , all (\field_name1 -> S.notMember field_name1 (freeFields fs2)) field_names1
   = Field composite_name composite_typ "" Nothing : identifyComposites fs2
   
   | otherwise
@@ -351,6 +360,15 @@ identifyExclusions (f:fs)
   
   | otherwise
   = f : identifyExclusions fs
+
+
+-- We can exclude fields if we can:
+--  At the time we need to bring the field into scope
+--  * Unconditionally produce some value for the field
+--  At later use sites
+--  * Check the consistency of the values inferred there with the one we assumed
+--  * This consistency check may be trivial (e.g. if the field was used
+--    in producing the initial value)
 
 
 recordToDecls :: Record -> (SpecialInfo, [Decl])
