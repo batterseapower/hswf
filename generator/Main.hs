@@ -119,11 +119,14 @@ data Field = Field {
     field_excluded :: Maybe WhyExcluded
   } deriving (Show, Typeable, Data)
 
-data WhyExcluded = IsReserved | IsPresenceFlag FieldName | IsSelectFlag FieldName | IsLength FieldName
+data WhyExcluded = IsReserved | IsPresenceFlag FieldName | IsSelectFlag FieldName | IsLength FieldName | IsBitLength BitTyConName FieldName
                  deriving (Show, Typeable, Data)
 
+data BitTyConName = UB | SB | FB
+                  deriving (Show, Typeable, Data)
+
 data TyCon = TyCon String [FieldExpr]
-           | BitsTyCon String FieldExpr
+           | BitsTyCon BitTyConName FieldExpr
            deriving (Show, Typeable, Data)
 
 data Type = TyConType { type_tycon :: TyCon }
@@ -229,11 +232,11 @@ conditional = do
 
 tycon = do
     tc <- many1 alphaNum
-    if tc `elem` ["UB", "SB", "FB"]
-     then do
+    case lookup tc [("UB", UB), ("SB", SB), ("FB", FB)] of
+      Just btc -> do
         e <- between (char '[') (char ']' >> spaces) expr
-        return $ BitsTyCon tc e
-     else do
+        return $ BitsTyCon btc e
+      Nothing -> do
         mb_args <- optionMaybe arguments; spaces
         return $ TyCon tc (fromMaybe [] mb_args)
 
@@ -288,6 +291,8 @@ simplify = map simplifyOne
 identifyComposites :: [Field] -> [Field]
 identifyComposites [] = []
 identifyComposites (f:fs)
+  
+  -- TODO: should really only do this combining if the fields are not in scope later on
   | IfThenType cond typ <- field_type f
   , f <- f { field_type = typ }
   , (fs1, fs2) <- spanMaybe (\f' -> case field_type f' of IfThenType cond' typ' | cond' == cond -> Just (f' { field_type = typ' }); _ -> Nothing) fs
@@ -295,6 +300,7 @@ identifyComposites (f:fs)
   , let composite_typ  = IfThenType cond $ CompositeType $ f : fs1
         composite_name = compositeName (map field_name $ f:fs1)
   = Field composite_name composite_typ "" Nothing : identifyComposites fs2
+  
   | otherwise
   = f : identifyComposites fs
 
@@ -429,15 +435,15 @@ typeToSyntax defuser typ = case typ of
           LHE.TyCon (qname tycon))
       where args_syns = map (fieldExprToSyntax defuser) args
 
-    TyConType (BitsTyCon "UB" (LitE 1))
+    TyConType (BitsTyCon UB (LitE 1))
       -> (var "getFlag",
           App $ var "putFlag",
           LHE.TyCon (qname "Bool"))
 
-    TyConType (BitsTyCon tycon_name lenexpr)
-      -> (App (var $ "get" ++ tycon_name) lenexpr_syn,
-          App $ App (var $ "put" ++ tycon_name) lenexpr_syn,
-          LHE.TyCon (qname tycon_name))
+    TyConType (BitsTyCon btc lenexpr)
+      -> (App (var $ "get" ++ show btc) lenexpr_syn,
+          App $ App (var $ "put" ++ show btc) lenexpr_syn,
+          LHE.TyCon (qname $ show btc))
       where lenexpr_syn = fieldExprToSyntax defuser lenexpr
 
     TupleType typs
