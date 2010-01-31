@@ -49,21 +49,29 @@ unParseChunk _ (NonRecordChunk ls)
 unParseChunk _ (RecordChunk r)
   = (specialinfo, codeBlock decls)
   where (specialinfo, decls) = recordToDecls $ r { record_fields = identifyExclusions $ identifyComposites $ simplify $ record_fields r }
-unParseChunk (getter_special, putter_special, _) (GenFunctionsChunk gen)
-  = (emptySpecialInfo, codeBlock [getter_decl, putter_decl])
-  where varName = map toLower (show gen)
+unParseChunk (dispatcher_special, _) (GenFunctionsChunk gen)
+  = (emptySpecialInfo, codeBlock [getter_decl, putter_decl, types_decl])
+  where
+    dispatcher_decl dispatching dispatcher = FunBind [Match noSrcLoc (Ident $ "generated" ++ show gen ++ dispatching) [PVar (Ident var_name)] Nothing (UnGuardedRhs $ dispatcher var_name) (BDecls [])]
+      where var_name = map toLower (show gen)
     
-        getter_decl = FunBind [Match noSrcLoc (Ident $ "generated" ++ show gen ++ "Getters") [PVar (Ident varName)] Nothing (UnGuardedRhs dispatcher) (BDecls [])]
-          where
-            dispatcher = Case (var varName) (alts ++ [default_alt])
-            alts = [Alt noSrcLoc pat (UnGuardedAlt (App (con "Just") (Var gettername))) (BDecls []) | (pat, gettername) <- M.findWithDefault [] gen getter_special]
-            default_alt = Alt noSrcLoc PWildCard (UnGuardedAlt (con "Nothing")) (BDecls [])
+    getter_decl = dispatcher_decl "Getters" dispatcher
+      where
+        dispatcher x = Case (var x) (alts ++ [default_alt])
+        alts = [Alt noSrcLoc (PLit lit) (UnGuardedAlt (App (con "Just") (Var gettername))) (BDecls []) | (lit, gettername, _, _) <- M.findWithDefault [] gen dispatcher_special]
+        default_alt = Alt noSrcLoc PWildCard (UnGuardedAlt (con "Nothing")) (BDecls [])
 
-        putter_decl = FunBind [Match noSrcLoc (Ident $ "generated" ++ show gen ++ "Putters") [PVar (Ident varName)] Nothing (UnGuardedRhs dispatcher) (BDecls [])]
-          where
-            dispatcher = Case (var varName) alts
-            alts = [Alt noSrcLoc pat (UnGuardedAlt (App (Var puttername) (var varName))) (BDecls []) | (pat, puttername) <- M.findWithDefault [] gen putter_special]
-unParseChunk (_, _, datacon_special) (GenConstructorsChunk gen)
+    putter_decl = dispatcher_decl "Putters" dispatcher
+      where
+        dispatcher x = Case (var x) (alts x)
+        alts x = [Alt noSrcLoc pat (UnGuardedAlt (App (Var puttername) (var x))) (BDecls []) | (_, _, pat, puttername) <- M.findWithDefault [] gen dispatcher_special]
+
+    types_decl = dispatcher_decl "Types" dispatcher
+      where
+        dispatcher x = Case (var x) alts
+        alts = [Alt noSrcLoc pat (UnGuardedAlt (Lit lit)) (BDecls []) | (lit, _, pat, _) <- M.findWithDefault [] gen dispatcher_special]
+
+unParseChunk (_, datacon_special) (GenConstructorsChunk gen)
   = (emptySpecialInfo, ["         " ++ (if firstalt then "=" else "|") ++ LHEP.prettyPrint datacon | (firstalt, datacon) <- (exhaustive : repeat False) `zip` datacons])
   where exhaustive = gen == ShapeRecord
         datacons = M.findWithDefault [] gen datacon_special
@@ -74,15 +82,18 @@ codeBlock ls = "\\begin{code}" : map LHEP.prettyPrint ls ++ ["", "\\end{code}"]
 data Generatable = Tag | Action | ShapeRecord
                  deriving (Eq, Ord, Show)
 
-type SpecialInfo = (M.Map Generatable [(Pat, QName)], -- Dispatch to getter with given name
-                    M.Map Generatable [(Pat, QName)], -- Dispatch to putter with given name
-                    M.Map Generatable [QualConDecl]) -- Output specified data constructor
+type SpecialInfo
+  = (M.Map Generatable [(Literal, QName, Pat, QName)],
+      -- Upon Lit, dispatch to getter with given QName, producing something
+      -- matched by the Pat by the putter at QName
+     M.Map Generatable [QualConDecl])
+       -- Output specified data constructor
 
-emptySpecialInfo = (M.empty, M.empty, M.empty)
+emptySpecialInfo = (M.empty, M.empty)
 
 unionSpecialInfos :: [SpecialInfo] -> SpecialInfo
-unionSpecialInfos sis = case unzip3 sis of
-    (si1s, si2s, si3s) -> (M.unionsWith (++) si1s, M.unionsWith (++) si2s, M.unionsWith (++) si3s)
+unionSpecialInfos sis = case unzip sis of
+    (si1s, si2s) -> (M.unionsWith (++) si1s, M.unionsWith (++) si2s)
 
 
 data Chunk = NonRecordChunk [String]
@@ -334,8 +345,7 @@ recordToDecls (Record { record_name, record_params, record_fields })
   | (Field "Header" (Type [TyCon "RECORDHEADER" []] Once) comment Nothing):record_fields <- record_fields
   , let tag_type = read $ drop (length "Tag type = ") comment
   , (datacon, datacon_name, getter, getter_name, putter, putter_name) <- process record_fields
-  = ((M.singleton Tag [(PLit (Int tag_type), getter_name)],
-      M.singleton Tag [(PRec datacon_name [PFieldWildcard], putter_name)],
+  = ((M.singleton Tag [(Int tag_type, getter_name, PRec datacon_name [PFieldWildcard], putter_name)],
       M.singleton Tag [datacon]),
      [getter, putter])
   
@@ -343,18 +353,17 @@ recordToDecls (Record { record_name, record_params, record_fields })
   , field_name == record_name
   , [(action_code, _)] <- readHex $ drop (length "ActionCode = 0x") comment
   , (datacon, datacon_name, getter, getter_name, putter, putter_name) <- process record_fields
-  = ((M.singleton Action [(PLit (Int action_code), getter_name)],
-      M.singleton Action [(PRec datacon_name [PFieldWildcard], putter_name)],
+  = ((M.singleton Action [(Int action_code, getter_name, PRec datacon_name [PFieldWildcard], putter_name)],
       M.singleton Action [datacon]),
      [getter, putter])
   
   | record_name `elem` ["STYLECHANGERECORD", "STRAIGHTEDGERECORD", "CURVEDEDGERECORD"]
   , (datacon, _, getter, _, putter, _) <- process record_fields
-  = ((M.empty, M.empty, M.singleton ShapeRecord [datacon]),
+  = ((M.empty, M.singleton ShapeRecord [datacon]),
      [getter, putter])
   
   | (datacon, _, getter, _, putter, _) <- process record_fields
-  = ((M.empty, M.empty, M.empty),
+  = ((M.empty, M.empty),
      [DataDecl noSrcLoc DataType [] (Ident record_name) [] [datacon] derivng, getter, putter])
   where
     derivng = [(qname "Eq", []), (qname "Show", []), (qname "Typeable", []), (qname "Data", [])]

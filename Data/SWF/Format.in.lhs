@@ -25,7 +25,7 @@ TODOS
   * In particular, the zlib compressed fields in the image chapter
   * Perhaps also those embedding sound and video formats
 3) Reduce semantic junk
-  * RECORDHEADER/ACTIONHEADER entries
+  * ACTIONHEADER entries
   * NBits fields
 4) Asserts to validate semantic junk is in agreement with each other in all custom data types
 5) Simplify away generated consistency checks that are trivially true
@@ -373,7 +373,7 @@ putSTRING = putLazyByteStringNul
 p18: Language code
 \begin{code}
 
-data LANGCODE = NoLanguage | LatinLanguage | JapaneseLanguage | KoreanLanguage | SimplifiedChineseLanguage | TraditionalChineseLanguage | UnrecognizedLanguage UI8
+data LANGCODE = NoLanguage | LatinLanguage | JapaneseLanguage | KoreanLanguage | SimplifiedChineseLanguage | TraditionalChineseLanguage | UnknownLanguage UI8
               deriving (Eq, Show, Typeable, Data)
 
 getLANGCODE :: SwfGet LANGCODE
@@ -386,7 +386,7 @@ getLANGCODE = do
       3 -> KoreanLanguage
       4 -> SimplifiedChineseLanguage
       5 -> TraditionalChineseLanguage
-      _ -> UnrecognizedLanguage n
+      _ -> UnknownLanguage n
 
 putLANGCODE :: LANGCODE -> SwfPut
 putLANGCODE lc = case lc of
@@ -396,7 +396,7 @@ putLANGCODE lc = case lc of
     KoreanLanguage             -> putUI8 3
     SimplifiedChineseLanguage  -> putUI8 4
     TraditionalChineseLanguage -> putUI8 5
-    UnrecognizedLanguage x     -> putUI8 x
+    UnknownLanguage x          -> putUI8 x
 
 \end{code}
 
@@ -501,7 +501,7 @@ Chapter 2: SWF Structure Summary
 p25: The SWF header
 \begin{code}
 
-data Swf = Swf { compressed :: Bool, version :: UI8, fileLength :: UI32 {- after decompression -}, frameSize :: RECT {- Twips -}, frameRate :: FIXED8, frameCount :: UI16, tags :: [RECORD] }
+data Swf = Swf { compressed :: Bool, version :: UI8, fileLength :: UI32 {- after decompression -}, frameSize :: RECT {- Twips -}, frameRate :: FIXED8, frameCount :: UI16, tags :: [Tag] }
          deriving (Eq, Show, Typeable, Data)
 
 getSwf :: ByteString -> Swf
@@ -520,7 +520,7 @@ getSwf bs = runSwfGet emptySwfEnv bs $ do
         -- TODO: assert XMin/YMin are 0
         frameRate <- getFIXED8
         frameCount <- getUI16
-        tags <- getToEnd getRECORD
+        tags <- getToEnd getTag
         return Swf {..}
 
 putSwf :: Swf -> ByteString
@@ -535,7 +535,7 @@ putSwf swf = runSwfPut emptySwfEnv $ do
         putRECT $ frameSize swf
         putFIXED8 $ frameRate swf
         putUI16 $ frameCount swf
-        mapM_ putRECORD $ tags swf
+        mapM_ putTag $ tags swf
 
 \end{code}
 
@@ -564,34 +564,38 @@ Chapter 3: The Display List
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 \begin{code}
 
-data RECORD = RECORD { rECORD_recordHeader :: RECORDHEADER, rECORD_recordTag :: Tag }
-            deriving (Eq, Show, Typeable, Data)
-
-data Tag = UnknownTag ByteString
+data Tag = UnknownTag { unknownTag_tagType :: UI16, unknownTag_data :: ByteString }
          | DefineFont { defineFont_fontID :: UI16, defineFont_glyphShapeTable :: [SHAPE] }
 \genconstructors{tag}
          deriving (Eq, Show, Typeable, Data)
 
-getRECORD = do
-    rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
+getTag = do
+    RECORDHEADER {..} <- getRECORDHEADER
 
     let mb_getter = case rECORDHEADER_tagType of
           10 -> Just getDefineFont
           _  -> generatedTagGetters rECORDHEADER_tagType
 
-    rECORD_recordTag <- nestSwfGet (fromIntegral rECORDHEADER_tagLength) $ case mb_getter of
-      Nothing     -> fmap UnknownTag getRemainingLazyByteString
-      Just getter -> getter
+    nestSwfGet (fromIntegral rECORDHEADER_tagLength) $ case mb_getter of
+        Just getter -> getter
+        Nothing -> do
+            let unknownTag_tagType = rECORDHEADER_tagType
+            unknownTag_data <- getRemainingLazyByteString
+            return $ UnknownTag {..}
 
-    return $ RECORD {..}
+putTag tag = do
+    (rECORDHEADER_tagLength, put) <- nestSwfPut $ case tag of
+        UnknownTag {..} -> putLazyByteString unknownTag_data
+        DefineFont {}   -> putDefineFont tag
+        _               -> generatedTagPutters tag
+  
+    let rECORDHEADER_tagType = tagType tag
+    putRECORDHEADER $ RECORDHEADER {..}
+    put
 
-putRECORD (RECORD{..}) = do
-    putRECORDHEADER rECORD_recordHeader
-    
-    case rECORD_recordTag of
-        UnknownTag bs   -> putLazyByteString bs
-        DefineFont {}   -> putDefineFont rECORD_recordTag
-        _               -> generatedTagPutters rECORD_recordTag
+tagType (UnknownTag {..}) = unknownTag_tagType
+tagType (DefineFont {})   = 10
+tagType tag               = generatedTagTypes tag
 
 \end{code}
 
@@ -2217,6 +2221,7 @@ type SHAPERECORDS = [SHAPERECORD]
         go _ _ [] = do
           putFlag False
           putUB 5 0
+          flushBits
         go fillBits lineBits (r:rs) = do
           (fillBits, lineBits) <- case r of
             STRAIGHTEDGERECORD {} -> putFlag True >> putFlag True >> putSTRAIGHTEDGERECORD r >> return (fillBits, lineBits)
@@ -3201,7 +3206,7 @@ Field       Type         Comment
 Header      RECORDHEADER Tag type = 39
 SpriteID    UI16         Character ID of sprite
 FrameCount  UI16         Number of frames in sprite
-ControlTags RECORD[]     A series of tags
+ControlTags Tag[]        A series of tags
 \end{record}
 
 

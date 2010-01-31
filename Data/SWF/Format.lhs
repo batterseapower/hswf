@@ -27,9 +27,8 @@ TODOS
 3) Reduce semantic junk
   * RECORDHEADER/ACTIONHEADER entries
   * NBits fields
-4) Asserts to validate safety of throwing away info like Reserved in custom data types
-5) Asserts to validate semantic junk is in agreement with each other in all custom data types
-6) Simplify away generated consistency checks that are trivially true
+4) Asserts to validate semantic junk is in agreement with each other in all custom data types
+5) Simplify away generated consistency checks that are trivially true
 
 
 Roundtripping
@@ -390,7 +389,7 @@ putSTRING = putLazyByteStringNul
 p18: Language code
 \begin{code}
 
-data LANGCODE = NoLanguage | LatinLanguage | JapaneseLanguage | KoreanLanguage | SimplifiedChineseLanguage | TraditionalChineseLanguage | UnrecognizedLanguage UI8
+data LANGCODE = NoLanguage | LatinLanguage | JapaneseLanguage | KoreanLanguage | SimplifiedChineseLanguage | TraditionalChineseLanguage | UnknownLanguage UI8
               deriving (Eq, Show, Typeable, Data)
 
 getLANGCODE :: SwfGet LANGCODE
@@ -403,7 +402,7 @@ getLANGCODE = do
       3 -> KoreanLanguage
       4 -> SimplifiedChineseLanguage
       5 -> TraditionalChineseLanguage
-      _ -> UnrecognizedLanguage n
+      _ -> UnknownLanguage n
 
 putLANGCODE :: LANGCODE -> SwfPut
 putLANGCODE lc = case lc of
@@ -413,7 +412,7 @@ putLANGCODE lc = case lc of
     KoreanLanguage             -> putUI8 3
     SimplifiedChineseLanguage  -> putUI8 4
     TraditionalChineseLanguage -> putUI8 5
-    UnrecognizedLanguage x     -> putUI8 x
+    UnknownLanguage x          -> putUI8 x
 
 \end{code}
 
@@ -712,7 +711,7 @@ Chapter 2: SWF Structure Summary
 p25: The SWF header
 \begin{code}
 
-data Swf = Swf { compressed :: Bool, version :: UI8, fileLength :: UI32 {- after decompression -}, frameSize :: RECT {- Twips -}, frameRate :: FIXED8, frameCount :: UI16, tags :: [RECORD] }
+data Swf = Swf { compressed :: Bool, version :: UI8, fileLength :: UI32 {- after decompression -}, frameSize :: RECT {- Twips -}, frameRate :: FIXED8, frameCount :: UI16, tags :: [Tag] }
          deriving (Eq, Show, Typeable, Data)
 
 getSwf :: ByteString -> Swf
@@ -731,7 +730,7 @@ getSwf bs = runSwfGet emptySwfEnv bs $ do
         -- TODO: assert XMin/YMin are 0
         frameRate <- getFIXED8
         frameCount <- getUI16
-        tags <- getToEnd getRECORD
+        tags <- getToEnd getTag
         return Swf {..}
 
 putSwf :: Swf -> ByteString
@@ -746,7 +745,7 @@ putSwf swf = runSwfPut emptySwfEnv $ do
         putRECT $ frameSize swf
         putFIXED8 $ frameRate swf
         putUI16 $ frameCount swf
-        mapM_ putRECORD $ tags swf
+        mapM_ putTag $ tags swf
 
 \end{code}
 
@@ -775,10 +774,7 @@ Chapter 3: The Display List
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 \begin{code}
 
-data RECORD = RECORD { rECORD_recordHeader :: RECORDHEADER, rECORD_recordTag :: Tag }
-            deriving (Eq, Show, Typeable, Data)
-
-data Tag = UnknownTag ByteString
+data Tag = UnknownTag { unknownTag_tagType :: UI16, unknownTag_data :: ByteString }
          | DefineFont { defineFont_fontID :: UI16, defineFont_glyphShapeTable :: [SHAPE] }
          |  PlaceObject{placeObject_characterId :: UI16,
               placeObject_depth :: UI16, placeObject_matrix :: MATRIX,
@@ -1041,8 +1037,7 @@ data Tag = UnknownTag ByteString
                     defineButtonSound_buttonSoundChar3 :: UI16,
                     defineButtonSound_buttonSoundInfo3 :: Maybe SOUNDINFO}
          |  DefineSprite{defineSprite_spriteID :: UI16,
-               defineSprite_frameCount :: UI16,
-               defineSprite_controlTags :: [RECORD]}
+               defineSprite_frameCount :: UI16, defineSprite_controlTags :: [Tag]}
          |  DefineVideoStream{defineVideoStream_characterID :: UI16,
                     defineVideoStream_numFrames :: UI16,
                     defineVideoStream_width :: UI16, defineVideoStream_height :: UI16,
@@ -1055,26 +1050,33 @@ data Tag = UnknownTag ByteString
                    defineBinaryData_data :: ByteString}
          deriving (Eq, Show, Typeable, Data)
 
-getRECORD = do
-    rECORD_recordHeader@(RECORDHEADER {..}) <- getRECORDHEADER
+getTag = do
+    RECORDHEADER {..} <- getRECORDHEADER
 
     let mb_getter = case rECORDHEADER_tagType of
           10 -> Just getDefineFont
           _  -> generatedTagGetters rECORDHEADER_tagType
 
-    rECORD_recordTag <- nestSwfGet (fromIntegral rECORDHEADER_tagLength) $ case mb_getter of
-      Nothing     -> fmap UnknownTag getRemainingLazyByteString
-      Just getter -> getter
+    nestSwfGet (fromIntegral rECORDHEADER_tagLength) $ case mb_getter of
+        Just getter -> getter
+        Nothing -> do
+            let unknownTag_tagType = rECORDHEADER_tagType
+            unknownTag_data <- getRemainingLazyByteString
+            return $ UnknownTag {..}
 
-    return $ RECORD {..}
+putTag tag = do
+    (rECORDHEADER_tagLength, put) <- nestSwfPut $ case tag of
+        UnknownTag {..} -> putLazyByteString unknownTag_data
+        DefineFont {}   -> putDefineFont tag
+        _               -> generatedTagPutters tag
+  
+    let rECORDHEADER_tagType = tagType tag
+    putRECORDHEADER $ RECORDHEADER {..}
+    put
 
-putRECORD (RECORD{..}) = do
-    putRECORDHEADER rECORD_recordHeader
-    
-    case rECORD_recordTag of
-        UnknownTag bs   -> putLazyByteString bs
-        DefineFont {}   -> putDefineFont rECORD_recordTag
-        _               -> generatedTagPutters rECORD_recordTag
+tagType (UnknownTag {..}) = unknownTag_tagType
+tagType (DefineFont {})   = 10
+tagType tag               = generatedTagTypes tag
 
 \end{code}
 
@@ -1211,6 +1213,71 @@ generatedTagPutters tag
         DefineVideoStream{..} -> putDefineVideoStream tag
         StreamID{..} -> putStreamID tag
         DefineBinaryData{..} -> putDefineBinaryData tag
+generatedTagTypes tag
+  = case tag of
+        PlaceObject{..} -> 4
+        PlaceObject2{..} -> 26
+        PlaceObject3{..} -> 70
+        RemoveObject{..} -> 5
+        RemoveObject2{..} -> 28
+        ShowFrame{..} -> 1
+        SetBackgroundColor{..} -> 9
+        FrameLabel{..} -> 43
+        Protect{..} -> 24
+        End{..} -> 0
+        ExportAssets{..} -> 56
+        ImportAssets{..} -> 57
+        EnableDebugger{..} -> 58
+        EnableDebugger2{..} -> 64
+        ScriptLimits{..} -> 65
+        SetTabIndex{..} -> 66
+        FileAttributes{..} -> 69
+        ImportAssets2{..} -> 71
+        SymbolClass{..} -> 76
+        Metadata{..} -> 77
+        DefineScalingGrid{..} -> 78
+        DefineSceneAndFrameLabelData{..} -> 86
+        DoAction{..} -> 12
+        DoInitAction{..} -> 59
+        DoABC{..} -> 82
+        DefineShape{..} -> 2
+        DefineShape2{..} -> 22
+        DefineShape3{..} -> 32
+        DefineShape4{..} -> 83
+        DefineBits{..} -> 6
+        JPEGTables{..} -> 8
+        DefineBitsJPEG2{..} -> 21
+        DefineBitsJPEG3{..} -> 35
+        DefineBitsLossless{..} -> 20
+        DefineBitsLossless2{..} -> 36
+        DefineBitsJPEG4{..} -> 90
+        DefineMorphShape{..} -> 46
+        DefineMorphShape2{..} -> 84
+        DefineFontInfo{..} -> 13
+        DefineFontInfo2{..} -> 62
+        DefineFont2{..} -> 48
+        DefineFont3{..} -> 75
+        DefineFontAlignZones{..} -> 73
+        DefineFontName{..} -> 88
+        DefineText{..} -> 11
+        DefineText2{..} -> 33
+        DefineEditText{..} -> 37
+        CSMTextSettings{..} -> 74
+        DefineFont4{..} -> 91
+        DefineSound{..} -> 14
+        StartSound{..} -> 15
+        StartSound2{..} -> 89
+        SoundStreamHead{..} -> 18
+        SoundStreamHead2{..} -> 45
+        SoundStreamBlock{..} -> 19
+        DefineButton{..} -> 7
+        DefineButton2{..} -> 34
+        DefineButtonCxform{..} -> 23
+        DefineButtonSound{..} -> 17
+        DefineSprite{..} -> 39
+        DefineVideoStream{..} -> 60
+        StreamID{..} -> 61
+        DefineBinaryData{..} -> 87
 
 \end{code}
 
@@ -2712,6 +2779,106 @@ generatedActionPutters action
         ActionImplementsOp{..} -> putActionImplementsOp action
         ActionTry{..} -> putActionTry action
         ActionThrow{..} -> putActionThrow action
+generatedActionTypes action
+  = case action of
+        ActionGotoFrame{..} -> 129
+        ActionGetURL{..} -> 131
+        ActionNextFrame{..} -> 4
+        ActionPreviousFrame{..} -> 5
+        ActionPlay{..} -> 6
+        ActionStop{..} -> 7
+        ActionToggleQuality{..} -> 8
+        ActionStopSounds{..} -> 9
+        ActionWaitForFrame{..} -> 138
+        ActionSetTarget{..} -> 139
+        ActionGoToLabel{..} -> 140
+        ActionPop{..} -> 23
+        ActionAdd{..} -> 10
+        ActionSubtract{..} -> 11
+        ActionMultiply{..} -> 12
+        ActionDivide{..} -> 13
+        ActionEquals{..} -> 14
+        ActionLess{..} -> 15
+        ActionAnd{..} -> 16
+        ActionOr{..} -> 17
+        ActionNot{..} -> 18
+        ActionStringEquals{..} -> 19
+        ActionStringLength{..} -> 20
+        ActionStringAdd{..} -> 33
+        ActionStringExtract{..} -> 21
+        ActionStringLess{..} -> 41
+        ActionMBStringLength{..} -> 49
+        ActionMBStringExtract{..} -> 53
+        ActionToInteger{..} -> 24
+        ActionCharToAscii{..} -> 50
+        ActionAsciiToChar{..} -> 51
+        ActionMBCharToAscii{..} -> 54
+        ActionMBAsciiToChar{..} -> 55
+        ActionJump{..} -> 153
+        ActionIf{..} -> 157
+        ActionCall{..} -> 158
+        ActionGetVariable{..} -> 28
+        ActionSetVariable{..} -> 29
+        ActionGetURL2{..} -> 154
+        ActionGotoFrame2{..} -> 159
+        ActionSetTarget2{..} -> 32
+        ActionGetProperty{..} -> 34
+        ActionSetProperty{..} -> 35
+        ActionCloneSprite{..} -> 36
+        ActionRemoveSprite{..} -> 37
+        ActionStartDrag{..} -> 39
+        ActionEndDrag{..} -> 40
+        ActionWaitForFrame2{..} -> 141
+        ActionTrace{..} -> 38
+        ActionGetTime{..} -> 52
+        ActionRandomNumber{..} -> 48
+        ActionCallFunction{..} -> 61
+        ActionCallMethod{..} -> 82
+        ActionConstantPool{..} -> 136
+        ActionDefineFunction{..} -> 155
+        ActionDefineLocal{..} -> 60
+        ActionDefineLocal2{..} -> 65
+        ActionDelete{..} -> 58
+        ActionDelete2{..} -> 59
+        ActionEnumerate{..} -> 70
+        ActionEquals2{..} -> 73
+        ActionGetMember{..} -> 78
+        ActionInitArray{..} -> 66
+        ActionInitObject{..} -> 67
+        ActionNewMethod{..} -> 83
+        ActionNewObject{..} -> 64
+        ActionSetMember{..} -> 79
+        ActionTargetPath{..} -> 69
+        ActionWith{..} -> 148
+        ActionToNumber{..} -> 74
+        ActionToString{..} -> 75
+        ActionTypeOf{..} -> 68
+        ActionAdd2{..} -> 71
+        ActionLess2{..} -> 72
+        ActionModulo{..} -> 63
+        ActionBitAnd{..} -> 96
+        ActionBitLShift{..} -> 99
+        ActionBitOr{..} -> 97
+        ActionBitRShift{..} -> 100
+        ActionBitURShift{..} -> 101
+        ActionBitXor{..} -> 98
+        ActionDecrement{..} -> 81
+        ActionIncrement{..} -> 80
+        ActionPushDuplicate{..} -> 76
+        ActionReturn{..} -> 62
+        ActionStackSwap{..} -> 77
+        ActionStoreRegister{..} -> 135
+        ActionInstanceOf{..} -> 84
+        ActionEnumerate2{..} -> 85
+        ActionStrictEquals{..} -> 102
+        ActionGreater{..} -> 103
+        ActionStringGreater{..} -> 104
+        ActionDefineFunction2{..} -> 142
+        ActionExtends{..} -> 105
+        ActionCastOp{..} -> 43
+        ActionImplementsOp{..} -> 44
+        ActionTry{..} -> 143
+        ActionThrow{..} -> 42
 
 \end{code}
 
@@ -3940,6 +4107,7 @@ type SHAPERECORDS = [SHAPERECORD]
         go _ _ [] = do
           putFlag False
           putUB 5 0
+          flushBits
         go fillBits lineBits (r:rs) = do
           (fillBits, lineBits) <- case r of
             STRAIGHTEDGERECORD {} -> putFlag True >> putFlag True >> putSTRAIGHTEDGERECORD r >> return (fillBits, lineBits)
@@ -6134,12 +6302,12 @@ p233: DefineSprite
 getDefineSprite
   = do defineSprite_spriteID <- getUI16
        defineSprite_frameCount <- getUI16
-       defineSprite_controlTags <- getToEnd getRECORD
+       defineSprite_controlTags <- getToEnd getTag
        return (DefineSprite{..})
 putDefineSprite DefineSprite{..}
   = do putUI16 defineSprite_spriteID
        putUI16 defineSprite_frameCount
-       mapM_ (\ x -> putRECORD x) defineSprite_controlTags
+       mapM_ (\ x -> putTag x) defineSprite_controlTags
        return ()
 
 \end{code}
