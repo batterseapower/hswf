@@ -412,61 +412,67 @@ recordToDecls (Record { record_name, record_params, record_fields })
         getter = FunBind [Match noSrcLoc getter_name params_bndrs Nothing (UnGuardedRhs getexpr) (BDecls [])]
         
         putter_name = Ident $ "put" ++ record_name
-        putter = FunBind [Match noSrcLoc putter_name (params_bndrs ++ [PRec datacon_name [PFieldWildcard]]) Nothing (UnGuardedRhs putexpr) (BDecls [])]
+        putter = FunBind [Match noSrcLoc putter_name (params_bndrs ++ [PRec datacon_name [PFieldWildcard]]) Nothing (UnGuardedRhs (putexpr (ExpTypeSig noSrcLoc (var "x") (LHE.TyCon datacon_name)))) (BDecls [])]
         
-        (present_fields, getexpr, putexpr) = fieldsToSyntax defuser record_fields (\_ -> RecConstr (qname record_name) [FieldWildcard])
+        (present_fields, getexpr, putexpr) = fieldsToSyntax defuser how_accessed record_fields (\_ -> RecConstr (qname record_name) [FieldWildcard])
+        how_accessed hint mb_xs = map (fmap (\x -> App (Var $ UnQual $ x) hint)) mb_xs
 
-fieldsToSyntax :: (FieldName -> Name) -> [Field] -> ([Name] -> Exp) -> ([(Name, LHE.Type)], Exp, Exp)
-fieldsToSyntax defuser fields finish
+fieldsToSyntax :: (FieldName -> Name) -> (HintExp -> [Maybe Name] -> [Maybe HintExp]) -> [Field] -> ([Name] -> Exp) -> ([(Name, LHE.Type)], Exp, HintExp -> Exp)
+fieldsToSyntax defuser how_accessed fields finish
   = (present_fields,
      Do $ getter_stmts ++ [Qualifier $ App (var "return") $ finish (map fst present_fields)],
-     Do $ putter_stmts ++ [Qualifier $ App (var "return") (Tuple [])])
+     \hint -> Do $ concat (map ($ hint) putter_stmtss) ++ [Qualifier $ App (var "return") (Tuple [])])
   where
-    present_fields = catMaybes mb_present_fieldss
-    putter_stmts = concat putter_stmtss
-    (mb_present_fieldss, getter_stmts, putter_stmtss) = unzip3 $ map (fieldToSyntax defuser) fields
+    present_fields = catMaybes mb_present_fields
+    (mb_present_fields, getter_stmts, putter_stmtss) = unzip3 $ zipWith (\i field -> fieldToSyntax defuser (\hint -> how_accessed hint (map (fmap fst) mb_present_fields) !! i) field) [0..] fields
 
-fieldToSyntax :: (FieldName -> Name) -> Field -> (Maybe (Name, LHE.Type), Stmt, [Stmt])
-fieldToSyntax defuser field = case field_excluded field of
-    Just we | IsReserved <- we -> (Nothing, Qualifier (App (var "discardReserved") getexp), putter_stmts)
+fieldToSyntax :: (FieldName -> Name) -> (HintExp -> Maybe HintExp) -> Field -> (Maybe (Name, LHE.Type), Stmt, HintExp -> [Stmt])
+fieldToSyntax defuser locate_hint field = case field_excluded field of
+    Just we | IsReserved <- we -> (Nothing, Qualifier (discardReserved_ getexp), putter_stmts)
             | otherwise        -> (Nothing, Generator noSrcLoc (PVar bndr) getexp, putter_stmts)
-            where putter_stmts = [LetStmt (BDecls [PatBind noSrcLoc (PVar bndr) Nothing (UnGuardedRhs $ whyExcludedToSyntax defuser we) (BDecls [])]),
-                                  Qualifier $ putexp (Var (UnQual bndr))]
-    Nothing -> (Just (bndr, ty), Generator noSrcLoc (PVar bndr) getexp, [Qualifier $ putexp (Var (UnQual bndr))])
+            where -- NB: the hint passed to the putter may be meaningful even though this
+                  -- is an excluded field, e.g. if its an excluded field that contains the
+                  -- the number of repititions in a list, and we overflow the maximum...
+                  putter_stmts hint = [LetStmt (BDecls [PatBind noSrcLoc (PVar bndr) Nothing (UnGuardedRhs $ whyExcludedToSyntax defuser we) (BDecls [])]),
+                                       Qualifier $ putexp (fromMaybe hint $ locate_hint hint) (Var (UnQual bndr))]
+    Nothing -> (Just (bndr, ty), Generator noSrcLoc (PVar bndr) getexp, \hint -> [Qualifier $ putexp (fromMaybe hint $ locate_hint hint) (Var (UnQual bndr))])
   where
     bndr = defuser (field_name field)
     (getexp, putexp, ty) = typeToSyntax defuser (field_type field)
 
-typeToSyntax :: (FieldName -> Name) -> Type -> (Exp, Exp -> Exp, LHE.Type)
+typeToSyntax :: (FieldName -> Name) -> Type -> (Exp, HintExp -> Exp -> Exp, LHE.Type)
 typeToSyntax defuser typ = case typ of
     TyConType (TyCon "PADDING8" [])
       -> (var "byteAlign",
            -- Rather nasty hack here to deal with PADDING8. If we don't provide the expression
            -- to "put" into this field with a type, GHC will complain about ambiguous type variables,
            -- but flushBits doesn't need any value at all. Solution: force it to have a particular type.
-          \e -> App (App (var "const") (var "flushBits")) (ExpTypeSig noSrcLoc e $ TyTuple Boxed []),
+          \_ e -> App (App (var "const") (var "flushBits")) (ExpTypeSig noSrcLoc e $ TyTuple Boxed []),
           TyTuple Boxed [])
     
     TyConType (TyCon tycon args)
       -> (apps (var $ "get" ++ tycon) args_syns,
-          App $ apps (var $ "put" ++ tycon) args_syns,
+          \_ -> App $ apps (var $ "put" ++ tycon) args_syns,
           LHE.TyCon (qname tycon))
       where args_syns = map (fieldExprToSyntax defuser) args
 
     TyConType (BitsTyCon UB (LitE 1))
       -> (var "getFlag",
-          App $ var "putFlag",
+          \_ -> App $ var "putFlag",
           LHE.TyCon (qname "Bool"))
 
     TyConType (BitsTyCon btc lenexpr)
       -> (App (var $ "get" ++ show btc) lenexpr_syn,
-          App $ App (var $ "put" ++ show btc) lenexpr_syn,
+          \hint e -> If (InfixApp (required_syn e) (qop "<=") lenexpr_syn)
+                        (App (App (var $ "put" ++ show btc) lenexpr_syn) e)
+                        (inconsistent_ hint (concat_ [str "Bit count incorrect: required ", show_ (required_syn e), str " bits to store the value ", show_ e, str ", but only have available ", show_ lenexpr_syn])),
           LHE.TyCon (qname $ show btc))
       where lenexpr_syn = fieldExprToSyntax defuser lenexpr
+            required_syn e = App (var $ "requiredBits" ++ show btc) e
 
     TupleType typs
       -> (lift_ (Con con : getters),
-          \e -> caseTuple_ nelems e $ \xs -> Do $ zipWith (\putter x -> Qualifier $ putter (Var $ UnQual x)) putters xs,
+          \hint e -> caseTuple_ nelems e $ \xs -> Do $ zipWith3 (\i putter x -> Qualifier $ putter (nth_ i hint) (Var $ UnQual x)) [0..] putters xs,
           TyTuple Boxed tys)
       where (getters, putters, tys) = unzip3 $ map (typeToSyntax defuser) typs
             nelems = length typs
@@ -475,23 +481,30 @@ typeToSyntax defuser typ = case typ of
 
     CompositeType fields
       -> (getter,
-          \e -> caseTupleKnownNames_ present_bndrs e putter,
+          \hint e -> caseTupleKnownNames_ present_bndrs e (putter hint),
           TyTuple Boxed present_typs)
       where (present_bndrs, present_typs) = unzip present_fields
-            (present_fields, getter, putter) = fieldsToSyntax defuser fields (Tuple . map (Var . UnQual))
+            (present_fields, getter, putter) = fieldsToSyntax defuser how_accessed fields (Tuple . map (Var . UnQual))
+            
+            how_accessed hint mb_xs = map (fmap (\i -> nth_ i hint)) (match (map isJust mb_xs) [0..])
+              where
+                match :: [Bool] -> [a] -> [Maybe a]
+                match []         []     = []
+                match (True:fs)  (x:xs) = Just x : match fs xs
+                match (False:fs) xs     = Nothing : match fs xs
 
     IfThenType condexpr typ
       -> (App (App (var "maybeHas") condexprsyn) getexp,
-          \e -> caseMaybeGuarded_ e (checkConsistencyAltsTrue_  condexprsyn . putexp)
-                                    (checkConsistencyAltsFalse_ condexprsyn $ App (var "return") (Tuple [])),
+          \hint e -> caseMaybeGuarded_ e (checkConsistencyAltsTrue_  hint ("Should have a Just iff "    ++ prettyExp condexprsyn ++ " is True")  condexprsyn . putexp (App (var "fromJust") hint))
+                                         (checkConsistencyAltsFalse_ hint ("Should have a Nothing iff " ++ prettyExp condexprsyn ++ " is False") condexprsyn $ App (var "return") (Tuple [])),
           maybeTy_ ty)
       where condexprsyn = fieldExprToSyntax defuser condexpr
             (getexp, putexp, ty) = typeToSyntax defuser typ
     
     IfThenElseType condexpr typt typf
       -> (If condexprsyn (fmap_ (con "Left") getexpt) (fmap_ (con "Right") getexpf),
-          \e -> caseEitherGuarded_ e (checkConsistencyAltsTrue_  condexprsyn . putexpt)
-                                     (checkConsistencyAltsFalse_ condexprsyn . putexpf),
+          \hint e -> caseEitherGuarded_ e (checkConsistencyAltsTrue_  hint ("Should have a Left iff "  ++ prettyExp condexprsyn ++ " is True")  condexprsyn . putexpt (App (var "fromLeft") hint))
+                                          (checkConsistencyAltsFalse_ hint ("Should have a Right iff " ++ prettyExp condexprsyn ++ " is False") condexprsyn . putexpf (App (var "fromRight") hint)),
           eitherTy_ tyt tyf)
       where condexprsyn = fieldExprToSyntax defuser condexpr
             (getexpt, putexpt, tyt) = typeToSyntax defuser typt
@@ -499,22 +512,22 @@ typeToSyntax defuser typ = case typ of
     
     RepeatType (TyConType (TyCon "BYTE" [])) RepeatsUntilEnd
       -> (var "getRemainingLazyByteString",
-          App $ var "putLazyByteString",
+          \_ -> App $ var "putLazyByteString",
           LHE.TyCon (qname "ByteString"))
     
     RepeatType typ repeats -> case repeats of
         NumberOfTimes lenexpr
           -> (App (App (var "genericReplicateM") lenexprsyn) onegenexp,
-              \e -> checkConsistency_ (App (var "genericLength") e) lenexprsyn $ mapM__ (reifyLambda oneputexp) e, -- TODO: check consistency
+              \hint e -> checkConsistency_ hint ("Mismatch with the required length: " ++ prettyExp lenexprsyn) (App (var "genericLength") e) lenexprsyn $ mapM__ (reifyLambda (oneputexp (hint `bangBang_` var "n"))) e, -- TODO: check consistency
               TyList onety)
           where lenexprsyn = fieldExprToSyntax defuser lenexpr
         OptionallyAtEnd
           -> (App (App (var "maybeHasM") (App (App (var "fmap") (var "not")) (var "isEmpty"))) onegenexp,
-              \e -> caseMaybe_ e oneputexp (App (var "return") (Tuple [])),
+              \hint e -> caseMaybe_ e (oneputexp (fromMaybe_ hint)) (App (var "return") (Tuple [])),
               maybeTy_ onety)
         RepeatsUntilEnd
           -> (App (var "getToEnd") onegenexp,
-              mapM__ (reifyLambda oneputexp),
+              \hint -> mapM__ (reifyLambda $ oneputexp (hint `bangBang_` var "n")),
               TyList onety)
       where (onegenexp, oneputexp, onety) = typeToSyntax defuser typ
 
@@ -540,6 +553,21 @@ simplifyFieldExpr True (UnOpE Not e) = UnOpE Not (simplifyFieldExpr True e)
 simplifyFieldExpr _    e = e
 
 
+type HintExp = Exp
+
+prettyExp :: Exp -> String
+prettyExp = LHEP.prettyPrintStyleMode (LHEP.style { LHEP.mode = LHEP.OneLineMode }) LHEP.defaultMode
+
+reifyHintExp :: HintExp -> Exp
+reifyHintExp = str . prettyExp
+
+inconsistent_ :: HintExp -> Exp -> Exp
+inconsistent_ hint what = App (App (var "inconsistent") (reifyHintExp hint)) what
+
+discardReserved_ :: Exp -> Exp
+discardReserved_ = App (App (var "discardReserved") (str "_reserved (x :: ?)")) -- TODO
+
+
 defuseFieldName record_name field_name = Ident $ toVarName record_name ++ '_':toVarName field_name
   where toVarName (c:s) = toLower c : s
 
@@ -549,18 +577,30 @@ eitherTy_ ty1 ty2 = TyApp (TyApp (LHE.TyCon (qname "Either")) ty1) ty2
 
 fmap_ efun efunctor = App (App (var "fmap") efun) efunctor
 mapM__ ef exs = App (App (var "mapM_") ef) exs
+bangBang_ e1 e2 = InfixApp e1 (qop "!!") e2
+fromMaybe_ = App (var "fromMaybe")
+concat_ = foldr1 append_
+append_ e1 e2 = InfixApp e1 (qop "++") e2
+show_ = App (var "show")
+
+
+nth_ :: Integer -> Exp -> Exp
+nth_ n
+  | n < genericLength nms = App (var (nms !! fromInteger n))
+  | otherwise             = \e -> e `bangBang_` (Lit $ Int n)
+  where nms = ["fst", "snd", "thd", "frth", "ffth", "sxth", "svnth"]
 
 reifyLambda oneputexp = Lambda noSrcLoc [PVar $ Ident "x"] (oneputexp $ var "x")
 
-checkConsistency_ ehave ecomputed eresult
-  = If (InfixApp ehave (qop "/=") (Paren ecomputed)) (var "inconsistent") eresult
+checkConsistency_ hint why ehave ecomputed eresult
+  = If (InfixApp ehave (qop "/=") (Paren ecomputed)) (inconsistent_ hint (concat_ [str why, show_ ehave, str " /= ", show_ ecomputed])) eresult
 
-checkConsistencyAltsTrue_ ecomputed eresult
+checkConsistencyAltsTrue_ hint why ecomputed eresult
   = GuardedAlts [GuardedAlt noSrcLoc [Qualifier ecomputed]         eresult,
-                 GuardedAlt noSrcLoc [Qualifier (var "otherwise")] (var "inconsistent")]
+                 GuardedAlt noSrcLoc [Qualifier (var "otherwise")] (inconsistent_ hint (str why))]
 
-checkConsistencyAltsFalse_ ecomputed eresult
-  = GuardedAlts [GuardedAlt noSrcLoc [Qualifier ecomputed]         (var "inconsistent"),
+checkConsistencyAltsFalse_ hint why ecomputed eresult
+  = GuardedAlts [GuardedAlt noSrcLoc [Qualifier ecomputed]         (inconsistent_ hint (str why)),
                  GuardedAlt noSrcLoc [Qualifier (var "otherwise")] eresult]
 
 caseMaybe_ e e_just e_nothing = caseMaybeGuarded_ e (UnGuardedAlt . e_just) (UnGuardedAlt e_nothing)
@@ -582,6 +622,7 @@ caseTupleKnownNames_ xs e e_branch
   = Case e [Alt noSrcLoc (PTuple (map PVar xs)) (UnGuardedAlt e_branch) (BDecls [])]
 
 
+str = Lit . String
 var = Var . UnQual . Ident
 qname = UnQual . Ident
 qop = QVarOp . UnQual . Symbol

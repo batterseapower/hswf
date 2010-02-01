@@ -366,7 +366,8 @@ putSB :: Integral a => a -> SB -> SwfPut
 putSB nbits = putBits nbits . signretract nbits
 
 requiredBitsSB :: Integral a => SB -> a
-requiredBitsSB = (+1) . ceiling . logBase 2 . (+1) . fromIntegral . abs
+requiredBitsSB 0 = 0
+requiredBitsSB x = (+1) . ceiling . logBase 2 . (+1) . fromIntegral . abs $ x
 
 \end{code}
 
@@ -503,14 +504,43 @@ getRECT
        rECT_xmax <- getSB rECT_nbits
        rECT_ymin <- getSB rECT_nbits
        rECT_ymax <- getSB rECT_nbits
-       discardReserved byteAlign
+       discardReserved "_reserved (x :: ?)" byteAlign
        return (RECT{..})
 putRECT RECT{..}
-  = do putUB 5 rECT_nbits
-       putSB rECT_nbits rECT_xmin
-       putSB rECT_nbits rECT_xmax
-       putSB rECT_nbits rECT_ymin
-       putSB rECT_nbits rECT_ymax
+  = do if requiredBitsUB rECT_nbits <= 5 then putUB 5 rECT_nbits else
+         inconsistent "rECT_nbits (x :: RECT)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB rECT_nbits) ++
+                " bits to store the value " ++
+                  show rECT_nbits ++ ", but only have available " ++ show 5)
+       if requiredBitsSB rECT_xmin <= rECT_nbits then
+         putSB rECT_nbits rECT_xmin else
+         inconsistent "rECT_xmin (x :: RECT)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsSB rECT_xmin) ++
+                " bits to store the value " ++
+                  show rECT_xmin ++ ", but only have available " ++ show rECT_nbits)
+       if requiredBitsSB rECT_xmax <= rECT_nbits then
+         putSB rECT_nbits rECT_xmax else
+         inconsistent "rECT_xmax (x :: RECT)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsSB rECT_xmax) ++
+                " bits to store the value " ++
+                  show rECT_xmax ++ ", but only have available " ++ show rECT_nbits)
+       if requiredBitsSB rECT_ymin <= rECT_nbits then
+         putSB rECT_nbits rECT_ymin else
+         inconsistent "rECT_ymin (x :: RECT)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsSB rECT_ymin) ++
+                " bits to store the value " ++
+                  show rECT_ymin ++ ", but only have available " ++ show rECT_nbits)
+       if requiredBitsSB rECT_ymax <= rECT_nbits then
+         putSB rECT_nbits rECT_ymax else
+         inconsistent "rECT_ymax (x :: RECT)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsSB rECT_ymax) ++
+                " bits to store the value " ++
+                  show rECT_ymax ++ ", but only have available " ++ show rECT_nbits)
        let rECT_padding = reservedDefault
        const flushBits (rECT_padding :: ())
        return ()
@@ -541,7 +571,7 @@ getMATRIX
        mATRIX_translateBits <- getUB 5
        mATRIX_translateX <- getSB mATRIX_translateBits
        mATRIX_translateY <- getSB mATRIX_translateBits
-       discardReserved byteAlign
+       discardReserved "_reserved (x :: ?)" byteAlign
        return (MATRIX{..})
 putMATRIX MATRIX{..}
   = do let mATRIX_hasScale = isJust mATRIX_scale
@@ -549,17 +579,92 @@ putMATRIX MATRIX{..}
        case mATRIX_scale of
            Just x | mATRIX_hasScale ->
                     case x of
-                        (mATRIX_scaleBits, mATRIX_scaleX, mATRIX_scaleY) -> do putUB 5
-                                                                                 mATRIX_scaleBits
-                                                                               putFB
-                                                                                 mATRIX_scaleBits
-                                                                                 mATRIX_scaleX
-                                                                               putFB
-                                                                                 mATRIX_scaleBits
-                                                                                 mATRIX_scaleY
+                        (mATRIX_scaleBits, mATRIX_scaleX, mATRIX_scaleY) -> do if
+                                                                                 requiredBitsUB
+                                                                                   mATRIX_scaleBits
+                                                                                   <= 5
+                                                                                 then
+                                                                                 putUB 5
+                                                                                   mATRIX_scaleBits
+                                                                                 else
+                                                                                 inconsistent
+                                                                                   "fst (fromJust (mATRIX_scale (x :: MATRIX)))"
+                                                                                   ("Bit count incorrect: required "
+                                                                                      ++
+                                                                                      show
+                                                                                        (requiredBitsUB
+                                                                                           mATRIX_scaleBits)
+                                                                                        ++
+                                                                                        " bits to store the value "
+                                                                                          ++
+                                                                                          show
+                                                                                            mATRIX_scaleBits
+                                                                                            ++
+                                                                                            ", but only have available "
+                                                                                              ++
+                                                                                              show
+                                                                                                5)
+                                                                               if
+                                                                                 requiredBitsFB
+                                                                                   mATRIX_scaleX
+                                                                                   <=
+                                                                                   mATRIX_scaleBits
+                                                                                 then
+                                                                                 putFB
+                                                                                   mATRIX_scaleBits
+                                                                                   mATRIX_scaleX
+                                                                                 else
+                                                                                 inconsistent
+                                                                                   "snd (fromJust (mATRIX_scale (x :: MATRIX)))"
+                                                                                   ("Bit count incorrect: required "
+                                                                                      ++
+                                                                                      show
+                                                                                        (requiredBitsFB
+                                                                                           mATRIX_scaleX)
+                                                                                        ++
+                                                                                        " bits to store the value "
+                                                                                          ++
+                                                                                          show
+                                                                                            mATRIX_scaleX
+                                                                                            ++
+                                                                                            ", but only have available "
+                                                                                              ++
+                                                                                              show
+                                                                                                mATRIX_scaleBits)
+                                                                               if
+                                                                                 requiredBitsFB
+                                                                                   mATRIX_scaleY
+                                                                                   <=
+                                                                                   mATRIX_scaleBits
+                                                                                 then
+                                                                                 putFB
+                                                                                   mATRIX_scaleBits
+                                                                                   mATRIX_scaleY
+                                                                                 else
+                                                                                 inconsistent
+                                                                                   "thd (fromJust (mATRIX_scale (x :: MATRIX)))"
+                                                                                   ("Bit count incorrect: required "
+                                                                                      ++
+                                                                                      show
+                                                                                        (requiredBitsFB
+                                                                                           mATRIX_scaleY)
+                                                                                        ++
+                                                                                        " bits to store the value "
+                                                                                          ++
+                                                                                          show
+                                                                                            mATRIX_scaleY
+                                                                                            ++
+                                                                                            ", but only have available "
+                                                                                              ++
+                                                                                              show
+                                                                                                mATRIX_scaleBits)
                                                                                return ()
-                  | otherwise -> inconsistent
-           Nothing | mATRIX_hasScale -> inconsistent
+                  | otherwise ->
+                    inconsistent "mATRIX_scale (x :: MATRIX)"
+                      "Should have a Just iff mATRIX_hasScale is True"
+           Nothing | mATRIX_hasScale ->
+                     inconsistent "mATRIX_scale (x :: MATRIX)"
+                       "Should have a Nothing iff mATRIX_hasScale is False"
                    | otherwise -> return ()
        let mATRIX_hasRotate = isJust mATRIX_rotate
        putFlag mATRIX_hasRotate
@@ -567,16 +672,76 @@ putMATRIX MATRIX{..}
            Just x | mATRIX_hasRotate ->
                     case x of
                         (mATRIX_rotateBits, mATRIX_rotateSkew0,
-                         mATRIX_rotateSkew1) -> do putUB 5 mATRIX_rotateBits
-                                                   putFB mATRIX_rotateBits mATRIX_rotateSkew0
-                                                   putFB mATRIX_rotateBits mATRIX_rotateSkew1
+                         mATRIX_rotateSkew1) -> do if requiredBitsUB mATRIX_rotateBits <= 5
+                                                     then putUB 5 mATRIX_rotateBits else
+                                                     inconsistent
+                                                       "fst (fromJust (mATRIX_rotate (x :: MATRIX)))"
+                                                       ("Bit count incorrect: required " ++
+                                                          show (requiredBitsUB mATRIX_rotateBits) ++
+                                                            " bits to store the value " ++
+                                                              show mATRIX_rotateBits ++
+                                                                ", but only have available " ++
+                                                                  show 5)
+                                                   if
+                                                     requiredBitsFB mATRIX_rotateSkew0 <=
+                                                       mATRIX_rotateBits
+                                                     then putFB mATRIX_rotateBits mATRIX_rotateSkew0
+                                                     else
+                                                     inconsistent
+                                                       "snd (fromJust (mATRIX_rotate (x :: MATRIX)))"
+                                                       ("Bit count incorrect: required " ++
+                                                          show (requiredBitsFB mATRIX_rotateSkew0)
+                                                            ++
+                                                            " bits to store the value " ++
+                                                              show mATRIX_rotateSkew0 ++
+                                                                ", but only have available " ++
+                                                                  show mATRIX_rotateBits)
+                                                   if
+                                                     requiredBitsFB mATRIX_rotateSkew1 <=
+                                                       mATRIX_rotateBits
+                                                     then putFB mATRIX_rotateBits mATRIX_rotateSkew1
+                                                     else
+                                                     inconsistent
+                                                       "thd (fromJust (mATRIX_rotate (x :: MATRIX)))"
+                                                       ("Bit count incorrect: required " ++
+                                                          show (requiredBitsFB mATRIX_rotateSkew1)
+                                                            ++
+                                                            " bits to store the value " ++
+                                                              show mATRIX_rotateSkew1 ++
+                                                                ", but only have available " ++
+                                                                  show mATRIX_rotateBits)
                                                    return ()
-                  | otherwise -> inconsistent
-           Nothing | mATRIX_hasRotate -> inconsistent
+                  | otherwise ->
+                    inconsistent "mATRIX_rotate (x :: MATRIX)"
+                      "Should have a Just iff mATRIX_hasRotate is True"
+           Nothing | mATRIX_hasRotate ->
+                     inconsistent "mATRIX_rotate (x :: MATRIX)"
+                       "Should have a Nothing iff mATRIX_hasRotate is False"
                    | otherwise -> return ()
-       putUB 5 mATRIX_translateBits
-       putSB mATRIX_translateBits mATRIX_translateX
-       putSB mATRIX_translateBits mATRIX_translateY
+       if requiredBitsUB mATRIX_translateBits <= 5 then
+         putUB 5 mATRIX_translateBits else
+         inconsistent "mATRIX_translateBits (x :: MATRIX)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB mATRIX_translateBits) ++
+                " bits to store the value " ++
+                  show mATRIX_translateBits ++
+                    ", but only have available " ++ show 5)
+       if requiredBitsSB mATRIX_translateX <= mATRIX_translateBits then
+         putSB mATRIX_translateBits mATRIX_translateX else
+         inconsistent "mATRIX_translateX (x :: MATRIX)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsSB mATRIX_translateX) ++
+                " bits to store the value " ++
+                  show mATRIX_translateX ++
+                    ", but only have available " ++ show mATRIX_translateBits)
+       if requiredBitsSB mATRIX_translateY <= mATRIX_translateBits then
+         putSB mATRIX_translateBits mATRIX_translateY else
+         inconsistent "mATRIX_translateY (x :: MATRIX)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsSB mATRIX_translateY) ++
+                " bits to store the value " ++
+                  show mATRIX_translateY ++
+                    ", but only have available " ++ show mATRIX_translateBits)
        let mATRIX_padding = reservedDefault
        const flushBits (mATRIX_padding :: ())
        return ()
@@ -606,35 +771,124 @@ getCXFORM
                                cXFORM_blueAddTerm <- getSB cXFORM_nbits
                                return
                                  (cXFORM_redAddTerm, cXFORM_greenAddTerm, cXFORM_blueAddTerm))
-       discardReserved byteAlign
+       discardReserved "_reserved (x :: ?)" byteAlign
        return (CXFORM{..})
 putCXFORM CXFORM{..}
   = do let cXFORM_hasAddTerms = isJust cXFORM_addTerm
        putFlag cXFORM_hasAddTerms
        let cXFORM_hasMultTerms = isJust cXFORM_multTerm
        putFlag cXFORM_hasMultTerms
-       putUB 4 cXFORM_nbits
+       if requiredBitsUB cXFORM_nbits <= 4 then putUB 4 cXFORM_nbits else
+         inconsistent "cXFORM_nbits (x :: CXFORM)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB cXFORM_nbits) ++
+                " bits to store the value " ++
+                  show cXFORM_nbits ++ ", but only have available " ++ show 4)
        case cXFORM_multTerm of
            Just x | cXFORM_hasMultTerms ->
                     case x of
                         (cXFORM_redMultTerm, cXFORM_greenMultTerm,
-                         cXFORM_blueMultTerm) -> do putSB cXFORM_nbits cXFORM_redMultTerm
-                                                    putSB cXFORM_nbits cXFORM_greenMultTerm
-                                                    putSB cXFORM_nbits cXFORM_blueMultTerm
+                         cXFORM_blueMultTerm) -> do if
+                                                      requiredBitsSB cXFORM_redMultTerm <=
+                                                        cXFORM_nbits
+                                                      then putSB cXFORM_nbits cXFORM_redMultTerm
+                                                      else
+                                                      inconsistent
+                                                        "fst (fromJust (cXFORM_multTerm (x :: CXFORM)))"
+                                                        ("Bit count incorrect: required " ++
+                                                           show (requiredBitsSB cXFORM_redMultTerm)
+                                                             ++
+                                                             " bits to store the value " ++
+                                                               show cXFORM_redMultTerm ++
+                                                                 ", but only have available " ++
+                                                                   show cXFORM_nbits)
+                                                    if
+                                                      requiredBitsSB cXFORM_greenMultTerm <=
+                                                        cXFORM_nbits
+                                                      then putSB cXFORM_nbits cXFORM_greenMultTerm
+                                                      else
+                                                      inconsistent
+                                                        "snd (fromJust (cXFORM_multTerm (x :: CXFORM)))"
+                                                        ("Bit count incorrect: required " ++
+                                                           show
+                                                             (requiredBitsSB cXFORM_greenMultTerm)
+                                                             ++
+                                                             " bits to store the value " ++
+                                                               show cXFORM_greenMultTerm ++
+                                                                 ", but only have available " ++
+                                                                   show cXFORM_nbits)
+                                                    if
+                                                      requiredBitsSB cXFORM_blueMultTerm <=
+                                                        cXFORM_nbits
+                                                      then putSB cXFORM_nbits cXFORM_blueMultTerm
+                                                      else
+                                                      inconsistent
+                                                        "thd (fromJust (cXFORM_multTerm (x :: CXFORM)))"
+                                                        ("Bit count incorrect: required " ++
+                                                           show (requiredBitsSB cXFORM_blueMultTerm)
+                                                             ++
+                                                             " bits to store the value " ++
+                                                               show cXFORM_blueMultTerm ++
+                                                                 ", but only have available " ++
+                                                                   show cXFORM_nbits)
                                                     return ()
-                  | otherwise -> inconsistent
-           Nothing | cXFORM_hasMultTerms -> inconsistent
+                  | otherwise ->
+                    inconsistent "cXFORM_multTerm (x :: CXFORM)"
+                      "Should have a Just iff cXFORM_hasMultTerms is True"
+           Nothing | cXFORM_hasMultTerms ->
+                     inconsistent "cXFORM_multTerm (x :: CXFORM)"
+                       "Should have a Nothing iff cXFORM_hasMultTerms is False"
                    | otherwise -> return ()
        case cXFORM_addTerm of
            Just x | cXFORM_hasAddTerms ->
                     case x of
                         (cXFORM_redAddTerm, cXFORM_greenAddTerm,
-                         cXFORM_blueAddTerm) -> do putSB cXFORM_nbits cXFORM_redAddTerm
-                                                   putSB cXFORM_nbits cXFORM_greenAddTerm
-                                                   putSB cXFORM_nbits cXFORM_blueAddTerm
+                         cXFORM_blueAddTerm) -> do if
+                                                     requiredBitsSB cXFORM_redAddTerm <=
+                                                       cXFORM_nbits
+                                                     then putSB cXFORM_nbits cXFORM_redAddTerm else
+                                                     inconsistent
+                                                       "fst (fromJust (cXFORM_addTerm (x :: CXFORM)))"
+                                                       ("Bit count incorrect: required " ++
+                                                          show (requiredBitsSB cXFORM_redAddTerm) ++
+                                                            " bits to store the value " ++
+                                                              show cXFORM_redAddTerm ++
+                                                                ", but only have available " ++
+                                                                  show cXFORM_nbits)
+                                                   if
+                                                     requiredBitsSB cXFORM_greenAddTerm <=
+                                                       cXFORM_nbits
+                                                     then putSB cXFORM_nbits cXFORM_greenAddTerm
+                                                     else
+                                                     inconsistent
+                                                       "snd (fromJust (cXFORM_addTerm (x :: CXFORM)))"
+                                                       ("Bit count incorrect: required " ++
+                                                          show (requiredBitsSB cXFORM_greenAddTerm)
+                                                            ++
+                                                            " bits to store the value " ++
+                                                              show cXFORM_greenAddTerm ++
+                                                                ", but only have available " ++
+                                                                  show cXFORM_nbits)
+                                                   if
+                                                     requiredBitsSB cXFORM_blueAddTerm <=
+                                                       cXFORM_nbits
+                                                     then putSB cXFORM_nbits cXFORM_blueAddTerm else
+                                                     inconsistent
+                                                       "thd (fromJust (cXFORM_addTerm (x :: CXFORM)))"
+                                                       ("Bit count incorrect: required " ++
+                                                          show (requiredBitsSB cXFORM_blueAddTerm)
+                                                            ++
+                                                            " bits to store the value " ++
+                                                              show cXFORM_blueAddTerm ++
+                                                                ", but only have available " ++
+                                                                  show cXFORM_nbits)
                                                    return ()
-                  | otherwise -> inconsistent
-           Nothing | cXFORM_hasAddTerms -> inconsistent
+                  | otherwise ->
+                    inconsistent "cXFORM_addTerm (x :: CXFORM)"
+                      "Should have a Just iff cXFORM_hasAddTerms is True"
+           Nothing | cXFORM_hasAddTerms ->
+                     inconsistent "cXFORM_addTerm (x :: CXFORM)"
+                       "Should have a Nothing iff cXFORM_hasAddTerms is False"
                    | otherwise -> return ()
        let cXFORM_padding = reservedDefault
        const flushBits (cXFORM_padding :: ())
@@ -675,7 +929,7 @@ getCXFORMWITHALPHA
                                           (cXFORMWITHALPHA_redAddTerm, cXFORMWITHALPHA_greenAddTerm,
                                            cXFORMWITHALPHA_blueAddTerm,
                                            cXFORMWITHALPHA_alphaAddTerm))
-       discardReserved byteAlign
+       discardReserved "_reserved (x :: ?)" byteAlign
        return (CXFORMWITHALPHA{..})
 putCXFORMWITHALPHA CXFORMWITHALPHA{..}
   = do let cXFORMWITHALPHA_hasAddTerms
@@ -683,40 +937,246 @@ putCXFORMWITHALPHA CXFORMWITHALPHA{..}
        putFlag cXFORMWITHALPHA_hasAddTerms
        let cXFORMWITHALPHA_hasMultTerms = isJust cXFORMWITHALPHA_multTerm
        putFlag cXFORMWITHALPHA_hasMultTerms
-       putUB 4 cXFORMWITHALPHA_nbits
+       if requiredBitsUB cXFORMWITHALPHA_nbits <= 4 then
+         putUB 4 cXFORMWITHALPHA_nbits else
+         inconsistent "cXFORMWITHALPHA_nbits (x :: CXFORMWITHALPHA)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB cXFORMWITHALPHA_nbits) ++
+                " bits to store the value " ++
+                  show cXFORMWITHALPHA_nbits ++
+                    ", but only have available " ++ show 4)
        case cXFORMWITHALPHA_multTerm of
            Just x | cXFORMWITHALPHA_hasMultTerms ->
                     case x of
                         (cXFORMWITHALPHA_redMultTerm, cXFORMWITHALPHA_greenMultTerm,
                          cXFORMWITHALPHA_blueMultTerm,
-                         cXFORMWITHALPHA_alphaMultTerm) -> do putSB cXFORMWITHALPHA_nbits
-                                                                cXFORMWITHALPHA_redMultTerm
-                                                              putSB cXFORMWITHALPHA_nbits
-                                                                cXFORMWITHALPHA_greenMultTerm
-                                                              putSB cXFORMWITHALPHA_nbits
-                                                                cXFORMWITHALPHA_blueMultTerm
-                                                              putSB cXFORMWITHALPHA_nbits
-                                                                cXFORMWITHALPHA_alphaMultTerm
+                         cXFORMWITHALPHA_alphaMultTerm) -> do if
+                                                                requiredBitsSB
+                                                                  cXFORMWITHALPHA_redMultTerm
+                                                                  <= cXFORMWITHALPHA_nbits
+                                                                then
+                                                                putSB cXFORMWITHALPHA_nbits
+                                                                  cXFORMWITHALPHA_redMultTerm
+                                                                else
+                                                                inconsistent
+                                                                  "fst (fromJust (cXFORMWITHALPHA_multTerm (x :: CXFORMWITHALPHA)))"
+                                                                  ("Bit count incorrect: required "
+                                                                     ++
+                                                                     show
+                                                                       (requiredBitsSB
+                                                                          cXFORMWITHALPHA_redMultTerm)
+                                                                       ++
+                                                                       " bits to store the value "
+                                                                         ++
+                                                                         show
+                                                                           cXFORMWITHALPHA_redMultTerm
+                                                                           ++
+                                                                           ", but only have available "
+                                                                             ++
+                                                                             show
+                                                                               cXFORMWITHALPHA_nbits)
+                                                              if
+                                                                requiredBitsSB
+                                                                  cXFORMWITHALPHA_greenMultTerm
+                                                                  <= cXFORMWITHALPHA_nbits
+                                                                then
+                                                                putSB cXFORMWITHALPHA_nbits
+                                                                  cXFORMWITHALPHA_greenMultTerm
+                                                                else
+                                                                inconsistent
+                                                                  "snd (fromJust (cXFORMWITHALPHA_multTerm (x :: CXFORMWITHALPHA)))"
+                                                                  ("Bit count incorrect: required "
+                                                                     ++
+                                                                     show
+                                                                       (requiredBitsSB
+                                                                          cXFORMWITHALPHA_greenMultTerm)
+                                                                       ++
+                                                                       " bits to store the value "
+                                                                         ++
+                                                                         show
+                                                                           cXFORMWITHALPHA_greenMultTerm
+                                                                           ++
+                                                                           ", but only have available "
+                                                                             ++
+                                                                             show
+                                                                               cXFORMWITHALPHA_nbits)
+                                                              if
+                                                                requiredBitsSB
+                                                                  cXFORMWITHALPHA_blueMultTerm
+                                                                  <= cXFORMWITHALPHA_nbits
+                                                                then
+                                                                putSB cXFORMWITHALPHA_nbits
+                                                                  cXFORMWITHALPHA_blueMultTerm
+                                                                else
+                                                                inconsistent
+                                                                  "thd (fromJust (cXFORMWITHALPHA_multTerm (x :: CXFORMWITHALPHA)))"
+                                                                  ("Bit count incorrect: required "
+                                                                     ++
+                                                                     show
+                                                                       (requiredBitsSB
+                                                                          cXFORMWITHALPHA_blueMultTerm)
+                                                                       ++
+                                                                       " bits to store the value "
+                                                                         ++
+                                                                         show
+                                                                           cXFORMWITHALPHA_blueMultTerm
+                                                                           ++
+                                                                           ", but only have available "
+                                                                             ++
+                                                                             show
+                                                                               cXFORMWITHALPHA_nbits)
+                                                              if
+                                                                requiredBitsSB
+                                                                  cXFORMWITHALPHA_alphaMultTerm
+                                                                  <= cXFORMWITHALPHA_nbits
+                                                                then
+                                                                putSB cXFORMWITHALPHA_nbits
+                                                                  cXFORMWITHALPHA_alphaMultTerm
+                                                                else
+                                                                inconsistent
+                                                                  "frth (fromJust (cXFORMWITHALPHA_multTerm (x :: CXFORMWITHALPHA)))"
+                                                                  ("Bit count incorrect: required "
+                                                                     ++
+                                                                     show
+                                                                       (requiredBitsSB
+                                                                          cXFORMWITHALPHA_alphaMultTerm)
+                                                                       ++
+                                                                       " bits to store the value "
+                                                                         ++
+                                                                         show
+                                                                           cXFORMWITHALPHA_alphaMultTerm
+                                                                           ++
+                                                                           ", but only have available "
+                                                                             ++
+                                                                             show
+                                                                               cXFORMWITHALPHA_nbits)
                                                               return ()
-                  | otherwise -> inconsistent
-           Nothing | cXFORMWITHALPHA_hasMultTerms -> inconsistent
+                  | otherwise ->
+                    inconsistent "cXFORMWITHALPHA_multTerm (x :: CXFORMWITHALPHA)"
+                      "Should have a Just iff cXFORMWITHALPHA_hasMultTerms is True"
+           Nothing | cXFORMWITHALPHA_hasMultTerms ->
+                     inconsistent "cXFORMWITHALPHA_multTerm (x :: CXFORMWITHALPHA)"
+                       "Should have a Nothing iff cXFORMWITHALPHA_hasMultTerms is False"
                    | otherwise -> return ()
        case cXFORMWITHALPHA_addTerm of
            Just x | cXFORMWITHALPHA_hasAddTerms ->
                     case x of
                         (cXFORMWITHALPHA_redAddTerm, cXFORMWITHALPHA_greenAddTerm,
-                         cXFORMWITHALPHA_blueAddTerm,
-                         cXFORMWITHALPHA_alphaAddTerm) -> do putSB cXFORMWITHALPHA_nbits
-                                                               cXFORMWITHALPHA_redAddTerm
-                                                             putSB cXFORMWITHALPHA_nbits
-                                                               cXFORMWITHALPHA_greenAddTerm
-                                                             putSB cXFORMWITHALPHA_nbits
-                                                               cXFORMWITHALPHA_blueAddTerm
-                                                             putSB cXFORMWITHALPHA_nbits
-                                                               cXFORMWITHALPHA_alphaAddTerm
-                                                             return ()
-                  | otherwise -> inconsistent
-           Nothing | cXFORMWITHALPHA_hasAddTerms -> inconsistent
+                         cXFORMWITHALPHA_blueAddTerm, cXFORMWITHALPHA_alphaAddTerm) -> do if
+                                                                                            requiredBitsSB
+                                                                                              cXFORMWITHALPHA_redAddTerm
+                                                                                              <=
+                                                                                              cXFORMWITHALPHA_nbits
+                                                                                            then
+                                                                                            putSB
+                                                                                              cXFORMWITHALPHA_nbits
+                                                                                              cXFORMWITHALPHA_redAddTerm
+                                                                                            else
+                                                                                            inconsistent
+                                                                                              "fst (fromJust (cXFORMWITHALPHA_addTerm (x :: CXFORMWITHALPHA)))"
+                                                                                              ("Bit count incorrect: required "
+                                                                                                 ++
+                                                                                                 show
+                                                                                                   (requiredBitsSB
+                                                                                                      cXFORMWITHALPHA_redAddTerm)
+                                                                                                   ++
+                                                                                                   " bits to store the value "
+                                                                                                     ++
+                                                                                                     show
+                                                                                                       cXFORMWITHALPHA_redAddTerm
+                                                                                                       ++
+                                                                                                       ", but only have available "
+                                                                                                         ++
+                                                                                                         show
+                                                                                                           cXFORMWITHALPHA_nbits)
+                                                                                          if
+                                                                                            requiredBitsSB
+                                                                                              cXFORMWITHALPHA_greenAddTerm
+                                                                                              <=
+                                                                                              cXFORMWITHALPHA_nbits
+                                                                                            then
+                                                                                            putSB
+                                                                                              cXFORMWITHALPHA_nbits
+                                                                                              cXFORMWITHALPHA_greenAddTerm
+                                                                                            else
+                                                                                            inconsistent
+                                                                                              "snd (fromJust (cXFORMWITHALPHA_addTerm (x :: CXFORMWITHALPHA)))"
+                                                                                              ("Bit count incorrect: required "
+                                                                                                 ++
+                                                                                                 show
+                                                                                                   (requiredBitsSB
+                                                                                                      cXFORMWITHALPHA_greenAddTerm)
+                                                                                                   ++
+                                                                                                   " bits to store the value "
+                                                                                                     ++
+                                                                                                     show
+                                                                                                       cXFORMWITHALPHA_greenAddTerm
+                                                                                                       ++
+                                                                                                       ", but only have available "
+                                                                                                         ++
+                                                                                                         show
+                                                                                                           cXFORMWITHALPHA_nbits)
+                                                                                          if
+                                                                                            requiredBitsSB
+                                                                                              cXFORMWITHALPHA_blueAddTerm
+                                                                                              <=
+                                                                                              cXFORMWITHALPHA_nbits
+                                                                                            then
+                                                                                            putSB
+                                                                                              cXFORMWITHALPHA_nbits
+                                                                                              cXFORMWITHALPHA_blueAddTerm
+                                                                                            else
+                                                                                            inconsistent
+                                                                                              "thd (fromJust (cXFORMWITHALPHA_addTerm (x :: CXFORMWITHALPHA)))"
+                                                                                              ("Bit count incorrect: required "
+                                                                                                 ++
+                                                                                                 show
+                                                                                                   (requiredBitsSB
+                                                                                                      cXFORMWITHALPHA_blueAddTerm)
+                                                                                                   ++
+                                                                                                   " bits to store the value "
+                                                                                                     ++
+                                                                                                     show
+                                                                                                       cXFORMWITHALPHA_blueAddTerm
+                                                                                                       ++
+                                                                                                       ", but only have available "
+                                                                                                         ++
+                                                                                                         show
+                                                                                                           cXFORMWITHALPHA_nbits)
+                                                                                          if
+                                                                                            requiredBitsSB
+                                                                                              cXFORMWITHALPHA_alphaAddTerm
+                                                                                              <=
+                                                                                              cXFORMWITHALPHA_nbits
+                                                                                            then
+                                                                                            putSB
+                                                                                              cXFORMWITHALPHA_nbits
+                                                                                              cXFORMWITHALPHA_alphaAddTerm
+                                                                                            else
+                                                                                            inconsistent
+                                                                                              "frth (fromJust (cXFORMWITHALPHA_addTerm (x :: CXFORMWITHALPHA)))"
+                                                                                              ("Bit count incorrect: required "
+                                                                                                 ++
+                                                                                                 show
+                                                                                                   (requiredBitsSB
+                                                                                                      cXFORMWITHALPHA_alphaAddTerm)
+                                                                                                   ++
+                                                                                                   " bits to store the value "
+                                                                                                     ++
+                                                                                                     show
+                                                                                                       cXFORMWITHALPHA_alphaAddTerm
+                                                                                                       ++
+                                                                                                       ", but only have available "
+                                                                                                         ++
+                                                                                                         show
+                                                                                                           cXFORMWITHALPHA_nbits)
+                                                                                          return ()
+                  | otherwise ->
+                    inconsistent "cXFORMWITHALPHA_addTerm (x :: CXFORMWITHALPHA)"
+                      "Should have a Just iff cXFORMWITHALPHA_hasAddTerms is True"
+           Nothing | cXFORMWITHALPHA_hasAddTerms ->
+                     inconsistent "cXFORMWITHALPHA_addTerm (x :: CXFORMWITHALPHA)"
+                       "Should have a Nothing iff cXFORMWITHALPHA_hasAddTerms is False"
                    | otherwise -> return ()
        let cXFORMWITHALPHA_padding = reservedDefault
        const flushBits (cXFORMWITHALPHA_padding :: ())
@@ -740,8 +1200,8 @@ getSwf bs = runSwfGet emptySwfEnv bs $ do
     compressed <- case lookup (fromIntegral signature_1) [(ord 'F', False), (ord 'C', True)] of
         Just c  -> return c
         Nothing -> fail "SWF signature byte 1 unrecognised"
-    discardKnown (fromIntegral $ ord 'W') getUI8 -- "SWF signature byte 2 wrong"
-    discardKnown (fromIntegral $ ord 'S') getUI8 -- "SWF signature byte 3 wrong"
+    discardKnown "_signature2 (x :: Swf)" "The 2nd SWF signature byte must be W" (fromIntegral $ ord 'W') getUI8
+    discardKnown "_signature3 (x :: Swf)" "The 3rd SWF signature byte must be F" (fromIntegral $ ord 'S') getUI8
     version <- getUI8
     fileLength <- getUI32
     
@@ -1375,39 +1835,67 @@ putPlaceObject2 PlaceObject2{..}
        putUI16 placeObject2_depth
        case placeObject2_characterId of
            Just x | placeObject2_placeFlagHasCharacter -> putUI16 x
-                  | otherwise -> inconsistent
-           Nothing | placeObject2_placeFlagHasCharacter -> inconsistent
+                  | otherwise ->
+                    inconsistent "placeObject2_characterId (x :: PlaceObject2)"
+                      "Should have a Just iff placeObject2_placeFlagHasCharacter is True"
+           Nothing | placeObject2_placeFlagHasCharacter ->
+                     inconsistent "placeObject2_characterId (x :: PlaceObject2)"
+                       "Should have a Nothing iff placeObject2_placeFlagHasCharacter is False"
                    | otherwise -> return ()
        case placeObject2_matrix of
            Just x | placeObject2_placeFlagHasMatrix -> putMATRIX x
-                  | otherwise -> inconsistent
-           Nothing | placeObject2_placeFlagHasMatrix -> inconsistent
+                  | otherwise ->
+                    inconsistent "placeObject2_matrix (x :: PlaceObject2)"
+                      "Should have a Just iff placeObject2_placeFlagHasMatrix is True"
+           Nothing | placeObject2_placeFlagHasMatrix ->
+                     inconsistent "placeObject2_matrix (x :: PlaceObject2)"
+                       "Should have a Nothing iff placeObject2_placeFlagHasMatrix is False"
                    | otherwise -> return ()
        case placeObject2_colorTransform of
            Just x | placeObject2_placeFlagHasColorTransform ->
                     putCXFORMWITHALPHA x
-                  | otherwise -> inconsistent
-           Nothing | placeObject2_placeFlagHasColorTransform -> inconsistent
+                  | otherwise ->
+                    inconsistent "placeObject2_colorTransform (x :: PlaceObject2)"
+                      "Should have a Just iff placeObject2_placeFlagHasColorTransform is True"
+           Nothing | placeObject2_placeFlagHasColorTransform ->
+                     inconsistent "placeObject2_colorTransform (x :: PlaceObject2)"
+                       "Should have a Nothing iff placeObject2_placeFlagHasColorTransform is False"
                    | otherwise -> return ()
        case placeObject2_ratio of
            Just x | placeObject2_placeFlagHasRatio -> putUI16 x
-                  | otherwise -> inconsistent
-           Nothing | placeObject2_placeFlagHasRatio -> inconsistent
+                  | otherwise ->
+                    inconsistent "placeObject2_ratio (x :: PlaceObject2)"
+                      "Should have a Just iff placeObject2_placeFlagHasRatio is True"
+           Nothing | placeObject2_placeFlagHasRatio ->
+                     inconsistent "placeObject2_ratio (x :: PlaceObject2)"
+                       "Should have a Nothing iff placeObject2_placeFlagHasRatio is False"
                    | otherwise -> return ()
        case placeObject2_name of
            Just x | placeObject2_placeFlagHasName -> putSTRING x
-                  | otherwise -> inconsistent
-           Nothing | placeObject2_placeFlagHasName -> inconsistent
+                  | otherwise ->
+                    inconsistent "placeObject2_name (x :: PlaceObject2)"
+                      "Should have a Just iff placeObject2_placeFlagHasName is True"
+           Nothing | placeObject2_placeFlagHasName ->
+                     inconsistent "placeObject2_name (x :: PlaceObject2)"
+                       "Should have a Nothing iff placeObject2_placeFlagHasName is False"
                    | otherwise -> return ()
        case placeObject2_clipDepth of
            Just x | placeObject2_placeFlagHasClipDepth -> putUI16 x
-                  | otherwise -> inconsistent
-           Nothing | placeObject2_placeFlagHasClipDepth -> inconsistent
+                  | otherwise ->
+                    inconsistent "placeObject2_clipDepth (x :: PlaceObject2)"
+                      "Should have a Just iff placeObject2_placeFlagHasClipDepth is True"
+           Nothing | placeObject2_placeFlagHasClipDepth ->
+                     inconsistent "placeObject2_clipDepth (x :: PlaceObject2)"
+                       "Should have a Nothing iff placeObject2_placeFlagHasClipDepth is False"
                    | otherwise -> return ()
        case placeObject2_clipActions of
            Just x | placeObject2_placeFlagHasClipActions -> putCLIPACTIONS x
-                  | otherwise -> inconsistent
-           Nothing | placeObject2_placeFlagHasClipActions -> inconsistent
+                  | otherwise ->
+                    inconsistent "placeObject2_clipActions (x :: PlaceObject2)"
+                      "Should have a Just iff placeObject2_placeFlagHasClipActions is True"
+           Nothing | placeObject2_placeFlagHasClipActions ->
+                     inconsistent "placeObject2_clipActions (x :: PlaceObject2)"
+                       "Should have a Nothing iff placeObject2_placeFlagHasClipActions is False"
                    | otherwise -> return ()
        return ()
 
@@ -1420,7 +1908,7 @@ data CLIPACTIONS = CLIPACTIONS{cLIPACTIONS_allEventFlags ::
                                cLIPACTIONS_clipActionRecords :: CLIPACTIONRECORDS}
                  deriving (Eq, Show, Typeable, Data)
 getCLIPACTIONS
-  = do discardReserved getUI16
+  = do discardReserved "_reserved (x :: ?)" getUI16
        cLIPACTIONS_allEventFlags <- getCLIPEVENTFLAGS
        cLIPACTIONS_clipActionRecords <- getCLIPACTIONRECORDS
        return (CLIPACTIONS{..})
@@ -1468,7 +1956,9 @@ getCLIPACTIONRECORD = do
 putCLIPACTIONRECORD (CLIPACTIONRECORD {..}) = do
     putCLIPEVENTFLAGS cLIPACTIONRECORD_eventFlags
     (len, putrest) <- nestSwfPut $ do
-        when ((ClipEventKeyPress `elem` cLIPACTIONRECORD_eventFlags) `consistentWith` isJust cLIPACTIONRECORD_keyCode) $ do
+        when (consistentWith (inconsistent "cLIPACTIONRECORD_keyCode (x :: CLIPACTIONRECORD)" "Can have a cLIPACTIONRECORD_keyCode iff the ClipEventKeyPress flag is set")
+                             (ClipEventKeyPress `elem` cLIPACTIONRECORD_eventFlags)
+                             (isJust cLIPACTIONRECORD_keyCode)) $ do
             putUI8 (fromJust cLIPACTIONRECORD_keyCode)
         putACTIONRECORDS cLIPACTIONRECORD_actions
     putUI32 len
@@ -1487,7 +1977,7 @@ getPlaceObject3
        placeObject3_placeFlagHasMatrix <- getFlag
        placeObject3_placeFlagHasCharacter <- getFlag
        placeObject3_placeFlagMove <- getFlag
-       discardReserved (getUB 3)
+       discardReserved "_reserved (x :: ?)" (getUB 3)
        placeObject3_placeFlagHasImage <- getFlag
        placeObject3_placeFlagHasClassName <- getFlag
        placeObject3_placeFlagHasCacheAsBitmap <- getFlag
@@ -1548,7 +2038,14 @@ putPlaceObject3 PlaceObject3{..}
        putFlag placeObject3_placeFlagHasCharacter
        putFlag placeObject3_placeFlagMove
        let placeObject3_reserved = reservedDefault
-       putUB 3 placeObject3_reserved
+       if requiredBitsUB placeObject3_reserved <= 3 then
+         putUB 3 placeObject3_reserved else
+         inconsistent "x :: PlaceObject3"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB placeObject3_reserved) ++
+                " bits to store the value " ++
+                  show placeObject3_reserved ++
+                    ", but only have available " ++ show 3)
        putFlag placeObject3_placeFlagHasImage
        putFlag placeObject3_placeFlagHasClassName
        let placeObject3_placeFlagHasCacheAsBitmap
@@ -1567,63 +2064,107 @@ putPlaceObject3 PlaceObject3{..}
                       placeObject3_placeFlagHasImage &&
                         placeObject3_placeFlagHasCharacter
                     -> putSTRING x
-                  | otherwise -> inconsistent
+                  | otherwise ->
+                    inconsistent "placeObject3_className (x :: PlaceObject3)"
+                      "Should have a Just iff placeObject3_placeFlagHasClassName || placeObject3_placeFlagHasImage && placeObject3_placeFlagHasCharacter is True"
            Nothing |
                      placeObject3_placeFlagHasClassName ||
                        placeObject3_placeFlagHasImage &&
                          placeObject3_placeFlagHasCharacter
-                     -> inconsistent
+                     ->
+                     inconsistent "placeObject3_className (x :: PlaceObject3)"
+                       "Should have a Nothing iff placeObject3_placeFlagHasClassName || placeObject3_placeFlagHasImage && placeObject3_placeFlagHasCharacter is False"
                    | otherwise -> return ()
        case placeObject3_characterId of
            Just x | placeObject3_placeFlagHasCharacter -> putUI16 x
-                  | otherwise -> inconsistent
-           Nothing | placeObject3_placeFlagHasCharacter -> inconsistent
+                  | otherwise ->
+                    inconsistent "placeObject3_characterId (x :: PlaceObject3)"
+                      "Should have a Just iff placeObject3_placeFlagHasCharacter is True"
+           Nothing | placeObject3_placeFlagHasCharacter ->
+                     inconsistent "placeObject3_characterId (x :: PlaceObject3)"
+                       "Should have a Nothing iff placeObject3_placeFlagHasCharacter is False"
                    | otherwise -> return ()
        case placeObject3_matrix of
            Just x | placeObject3_placeFlagHasMatrix -> putMATRIX x
-                  | otherwise -> inconsistent
-           Nothing | placeObject3_placeFlagHasMatrix -> inconsistent
+                  | otherwise ->
+                    inconsistent "placeObject3_matrix (x :: PlaceObject3)"
+                      "Should have a Just iff placeObject3_placeFlagHasMatrix is True"
+           Nothing | placeObject3_placeFlagHasMatrix ->
+                     inconsistent "placeObject3_matrix (x :: PlaceObject3)"
+                       "Should have a Nothing iff placeObject3_placeFlagHasMatrix is False"
                    | otherwise -> return ()
        case placeObject3_colorTransform of
            Just x | placeObject3_placeFlagHasColorTransform ->
                     putCXFORMWITHALPHA x
-                  | otherwise -> inconsistent
-           Nothing | placeObject3_placeFlagHasColorTransform -> inconsistent
+                  | otherwise ->
+                    inconsistent "placeObject3_colorTransform (x :: PlaceObject3)"
+                      "Should have a Just iff placeObject3_placeFlagHasColorTransform is True"
+           Nothing | placeObject3_placeFlagHasColorTransform ->
+                     inconsistent "placeObject3_colorTransform (x :: PlaceObject3)"
+                       "Should have a Nothing iff placeObject3_placeFlagHasColorTransform is False"
                    | otherwise -> return ()
        case placeObject3_ratio of
            Just x | placeObject3_placeFlagHasRatio -> putUI16 x
-                  | otherwise -> inconsistent
-           Nothing | placeObject3_placeFlagHasRatio -> inconsistent
+                  | otherwise ->
+                    inconsistent "placeObject3_ratio (x :: PlaceObject3)"
+                      "Should have a Just iff placeObject3_placeFlagHasRatio is True"
+           Nothing | placeObject3_placeFlagHasRatio ->
+                     inconsistent "placeObject3_ratio (x :: PlaceObject3)"
+                       "Should have a Nothing iff placeObject3_placeFlagHasRatio is False"
                    | otherwise -> return ()
        case placeObject3_name of
            Just x | placeObject3_placeFlagHasName -> putSTRING x
-                  | otherwise -> inconsistent
-           Nothing | placeObject3_placeFlagHasName -> inconsistent
+                  | otherwise ->
+                    inconsistent "placeObject3_name (x :: PlaceObject3)"
+                      "Should have a Just iff placeObject3_placeFlagHasName is True"
+           Nothing | placeObject3_placeFlagHasName ->
+                     inconsistent "placeObject3_name (x :: PlaceObject3)"
+                       "Should have a Nothing iff placeObject3_placeFlagHasName is False"
                    | otherwise -> return ()
        case placeObject3_clipDepth of
            Just x | placeObject3_placeFlagHasClipDepth -> putUI16 x
-                  | otherwise -> inconsistent
-           Nothing | placeObject3_placeFlagHasClipDepth -> inconsistent
+                  | otherwise ->
+                    inconsistent "placeObject3_clipDepth (x :: PlaceObject3)"
+                      "Should have a Just iff placeObject3_placeFlagHasClipDepth is True"
+           Nothing | placeObject3_placeFlagHasClipDepth ->
+                     inconsistent "placeObject3_clipDepth (x :: PlaceObject3)"
+                       "Should have a Nothing iff placeObject3_placeFlagHasClipDepth is False"
                    | otherwise -> return ()
        case placeObject3_surfaceFilterList of
            Just x | placeObject3_placeFlagHasFilterList -> putFILTERLIST x
-                  | otherwise -> inconsistent
-           Nothing | placeObject3_placeFlagHasFilterList -> inconsistent
+                  | otherwise ->
+                    inconsistent "placeObject3_surfaceFilterList (x :: PlaceObject3)"
+                      "Should have a Just iff placeObject3_placeFlagHasFilterList is True"
+           Nothing | placeObject3_placeFlagHasFilterList ->
+                     inconsistent "placeObject3_surfaceFilterList (x :: PlaceObject3)"
+                       "Should have a Nothing iff placeObject3_placeFlagHasFilterList is False"
                    | otherwise -> return ()
        case placeObject3_blendMode of
            Just x | placeObject3_placeFlagHasBlendMode -> putBlendMode x
-                  | otherwise -> inconsistent
-           Nothing | placeObject3_placeFlagHasBlendMode -> inconsistent
+                  | otherwise ->
+                    inconsistent "placeObject3_blendMode (x :: PlaceObject3)"
+                      "Should have a Just iff placeObject3_placeFlagHasBlendMode is True"
+           Nothing | placeObject3_placeFlagHasBlendMode ->
+                     inconsistent "placeObject3_blendMode (x :: PlaceObject3)"
+                       "Should have a Nothing iff placeObject3_placeFlagHasBlendMode is False"
                    | otherwise -> return ()
        case placeObject3_bitmapCache of
            Just x | placeObject3_placeFlagHasCacheAsBitmap -> putUI8 x
-                  | otherwise -> inconsistent
-           Nothing | placeObject3_placeFlagHasCacheAsBitmap -> inconsistent
+                  | otherwise ->
+                    inconsistent "placeObject3_bitmapCache (x :: PlaceObject3)"
+                      "Should have a Just iff placeObject3_placeFlagHasCacheAsBitmap is True"
+           Nothing | placeObject3_placeFlagHasCacheAsBitmap ->
+                     inconsistent "placeObject3_bitmapCache (x :: PlaceObject3)"
+                       "Should have a Nothing iff placeObject3_placeFlagHasCacheAsBitmap is False"
                    | otherwise -> return ()
        case placeObject3_clipActions of
            Just x | placeObject3_placeFlagHasClipActions -> putCLIPACTIONS x
-                  | otherwise -> inconsistent
-           Nothing | placeObject3_placeFlagHasClipActions -> inconsistent
+                  | otherwise ->
+                    inconsistent "placeObject3_clipActions (x :: PlaceObject3)"
+                      "Should have a Just iff placeObject3_placeFlagHasClipActions is True"
+           Nothing | placeObject3_placeFlagHasClipActions ->
+                     inconsistent "placeObject3_clipActions (x :: PlaceObject3)"
+                       "Should have a Nothing iff placeObject3_placeFlagHasClipActions is False"
                    | otherwise -> return ()
        return ()
 
@@ -1717,8 +2258,10 @@ getCOLORMATRIXFILTER
        return (COLORMATRIXFILTER{..})
 putCOLORMATRIXFILTER COLORMATRIXFILTER{..}
   = do if genericLength cOLORMATRIXFILTER_matrix /= (20) then
-         inconsistent else
-         mapM_ (\ x -> putFLOAT x) cOLORMATRIXFILTER_matrix
+         inconsistent "cOLORMATRIXFILTER_matrix (x :: COLORMATRIXFILTER)"
+           ("Mismatch with the required length: 20" ++
+              show (genericLength cOLORMATRIXFILTER_matrix) ++ " /= " ++ show 20)
+         else mapM_ (\ x -> putFLOAT x) cOLORMATRIXFILTER_matrix
        return ()
 
 \end{code}
@@ -1745,7 +2288,7 @@ getCONVOLUTIONFILTER
                                      (cONVOLUTIONFILTER_matrixX * cONVOLUTIONFILTER_matrixY)
                                      getFLOAT
        cONVOLUTIONFILTER_defaultColor <- getRGBA
-       discardReserved (getUB 6)
+       discardReserved "_reserved (x :: ?)" (getUB 6)
        cONVOLUTIONFILTER_clamp <- getFlag
        cONVOLUTIONFILTER_preserveAlpha <- getFlag
        return (CONVOLUTIONFILTER{..})
@@ -1757,11 +2300,24 @@ putCONVOLUTIONFILTER CONVOLUTIONFILTER{..}
        if
          genericLength cONVOLUTIONFILTER_matrix /=
            (cONVOLUTIONFILTER_matrixX * cONVOLUTIONFILTER_matrixY)
-         then inconsistent else
-         mapM_ (\ x -> putFLOAT x) cONVOLUTIONFILTER_matrix
+         then
+         inconsistent "cONVOLUTIONFILTER_matrix (x :: CONVOLUTIONFILTER)"
+           ("Mismatch with the required length: cONVOLUTIONFILTER_matrixX * cONVOLUTIONFILTER_matrixY"
+              ++
+              show (genericLength cONVOLUTIONFILTER_matrix) ++
+                " /= " ++
+                  show (cONVOLUTIONFILTER_matrixX * cONVOLUTIONFILTER_matrixY))
+         else mapM_ (\ x -> putFLOAT x) cONVOLUTIONFILTER_matrix
        putRGBA cONVOLUTIONFILTER_defaultColor
        let cONVOLUTIONFILTER_reserved = reservedDefault
-       putUB 6 cONVOLUTIONFILTER_reserved
+       if requiredBitsUB cONVOLUTIONFILTER_reserved <= 6 then
+         putUB 6 cONVOLUTIONFILTER_reserved else
+         inconsistent "x :: CONVOLUTIONFILTER"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB cONVOLUTIONFILTER_reserved) ++
+                " bits to store the value " ++
+                  show cONVOLUTIONFILTER_reserved ++
+                    ", but only have available " ++ show 6)
        putFlag cONVOLUTIONFILTER_clamp
        putFlag cONVOLUTIONFILTER_preserveAlpha
        return ()
@@ -1778,14 +2334,26 @@ getBLURFILTER
   = do bLURFILTER_blurX <- getFIXED
        bLURFILTER_blurY <- getFIXED
        bLURFILTER_passes <- getUB 5
-       discardReserved (getUB 3)
+       discardReserved "_reserved (x :: ?)" (getUB 3)
        return (BLURFILTER{..})
 putBLURFILTER BLURFILTER{..}
   = do putFIXED bLURFILTER_blurX
        putFIXED bLURFILTER_blurY
-       putUB 5 bLURFILTER_passes
+       if requiredBitsUB bLURFILTER_passes <= 5 then
+         putUB 5 bLURFILTER_passes else
+         inconsistent "bLURFILTER_passes (x :: BLURFILTER)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB bLURFILTER_passes) ++
+                " bits to store the value " ++
+                  show bLURFILTER_passes ++ ", but only have available " ++ show 5)
        let bLURFILTER_reserved = reservedDefault
-       putUB 3 bLURFILTER_reserved
+       if requiredBitsUB bLURFILTER_reserved <= 3 then
+         putUB 3 bLURFILTER_reserved else
+         inconsistent "x :: BLURFILTER"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB bLURFILTER_reserved) ++
+                " bits to store the value " ++
+                  show bLURFILTER_reserved ++ ", but only have available " ++ show 3)
        return ()
 
 \end{code}
@@ -1827,7 +2395,14 @@ putDROPSHADOWFILTER DROPSHADOWFILTER{..}
        putFlag dROPSHADOWFILTER_innerShadow
        putFlag dROPSHADOWFILTER_knockout
        putFlag dROPSHADOWFILTER_compositeSource
-       putUB 5 dROPSHADOWFILTER_passes
+       if requiredBitsUB dROPSHADOWFILTER_passes <= 5 then
+         putUB 5 dROPSHADOWFILTER_passes else
+         inconsistent "dROPSHADOWFILTER_passes (x :: DROPSHADOWFILTER)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB dROPSHADOWFILTER_passes) ++
+                " bits to store the value " ++
+                  show dROPSHADOWFILTER_passes ++
+                    ", but only have available " ++ show 5)
        return ()
 
 \end{code}
@@ -1859,7 +2434,13 @@ putGLOWFILTER GLOWFILTER{..}
        putFlag gLOWFILTER_innerGlow
        putFlag gLOWFILTER_knockout
        putFlag gLOWFILTER_compositeSource
-       putUB 5 gLOWFILTER_passes
+       if requiredBitsUB gLOWFILTER_passes <= 5 then
+         putUB 5 gLOWFILTER_passes else
+         inconsistent "gLOWFILTER_passes (x :: GLOWFILTER)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB gLOWFILTER_passes) ++
+                " bits to store the value " ++
+                  show gLOWFILTER_passes ++ ", but only have available " ++ show 5)
        return ()
 
 \end{code}
@@ -1901,7 +2482,13 @@ putBEVELFILTER BEVELFILTER{..}
        putFlag bEVELFILTER_knockout
        putFlag bEVELFILTER_compositeSource
        putFlag bEVELFILTER_onTop
-       putUB 4 bEVELFILTER_passes
+       if requiredBitsUB bEVELFILTER_passes <= 4 then
+         putUB 4 bEVELFILTER_passes else
+         inconsistent "bEVELFILTER_passes (x :: BEVELFILTER)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB bEVELFILTER_passes) ++
+                " bits to store the value " ++
+                  show bEVELFILTER_passes ++ ", but only have available " ++ show 4)
        return ()
 
 \end{code}
@@ -1949,13 +2536,25 @@ putGRADIENTGLOWFILTER GRADIENTGLOWFILTER{..}
        if
          genericLength gRADIENTGLOWFILTER_gradientColors /=
            (gRADIENTGLOWFILTER_numColors)
-         then inconsistent else
-         mapM_ (\ x -> putRGBA x) gRADIENTGLOWFILTER_gradientColors
+         then
+         inconsistent
+           "gRADIENTGLOWFILTER_gradientColors (x :: GRADIENTGLOWFILTER)"
+           ("Mismatch with the required length: gRADIENTGLOWFILTER_numColors"
+              ++
+              show (genericLength gRADIENTGLOWFILTER_gradientColors) ++
+                " /= " ++ show gRADIENTGLOWFILTER_numColors)
+         else mapM_ (\ x -> putRGBA x) gRADIENTGLOWFILTER_gradientColors
        if
          genericLength gRADIENTGLOWFILTER_gradientRatio /=
            (gRADIENTGLOWFILTER_numColors)
-         then inconsistent else
-         mapM_ (\ x -> putUI8 x) gRADIENTGLOWFILTER_gradientRatio
+         then
+         inconsistent
+           "gRADIENTGLOWFILTER_gradientRatio (x :: GRADIENTGLOWFILTER)"
+           ("Mismatch with the required length: gRADIENTGLOWFILTER_numColors"
+              ++
+              show (genericLength gRADIENTGLOWFILTER_gradientRatio) ++
+                " /= " ++ show gRADIENTGLOWFILTER_numColors)
+         else mapM_ (\ x -> putUI8 x) gRADIENTGLOWFILTER_gradientRatio
        putFIXED gRADIENTGLOWFILTER_blurX
        putFIXED gRADIENTGLOWFILTER_blurY
        putFIXED gRADIENTGLOWFILTER_angle
@@ -1965,7 +2564,14 @@ putGRADIENTGLOWFILTER GRADIENTGLOWFILTER{..}
        putFlag gRADIENTGLOWFILTER_knockout
        putFlag gRADIENTGLOWFILTER_compositeSource
        putFlag gRADIENTGLOWFILTER_onTop
-       putUB 4 gRADIENTGLOWFILTER_passes
+       if requiredBitsUB gRADIENTGLOWFILTER_passes <= 4 then
+         putUB 4 gRADIENTGLOWFILTER_passes else
+         inconsistent "gRADIENTGLOWFILTER_passes (x :: GRADIENTGLOWFILTER)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB gRADIENTGLOWFILTER_passes) ++
+                " bits to store the value " ++
+                  show gRADIENTGLOWFILTER_passes ++
+                    ", but only have available " ++ show 4)
        return ()
 
 \end{code}
@@ -2012,13 +2618,25 @@ putGRADIENTBEVELFILTER GRADIENTBEVELFILTER{..}
        if
          genericLength gRADIENTBEVELFILTER_gradientColors /=
            (gRADIENTBEVELFILTER_numColors)
-         then inconsistent else
-         mapM_ (\ x -> putRGBA x) gRADIENTBEVELFILTER_gradientColors
+         then
+         inconsistent
+           "gRADIENTBEVELFILTER_gradientColors (x :: GRADIENTBEVELFILTER)"
+           ("Mismatch with the required length: gRADIENTBEVELFILTER_numColors"
+              ++
+              show (genericLength gRADIENTBEVELFILTER_gradientColors) ++
+                " /= " ++ show gRADIENTBEVELFILTER_numColors)
+         else mapM_ (\ x -> putRGBA x) gRADIENTBEVELFILTER_gradientColors
        if
          genericLength gRADIENTBEVELFILTER_gradientRatio /=
            (gRADIENTBEVELFILTER_numColors)
-         then inconsistent else
-         mapM_ (\ x -> putUI8 x) gRADIENTBEVELFILTER_gradientRatio
+         then
+         inconsistent
+           "gRADIENTBEVELFILTER_gradientRatio (x :: GRADIENTBEVELFILTER)"
+           ("Mismatch with the required length: gRADIENTBEVELFILTER_numColors"
+              ++
+              show (genericLength gRADIENTBEVELFILTER_gradientRatio) ++
+                " /= " ++ show gRADIENTBEVELFILTER_numColors)
+         else mapM_ (\ x -> putUI8 x) gRADIENTBEVELFILTER_gradientRatio
        putFIXED gRADIENTBEVELFILTER_blurX
        putFIXED gRADIENTBEVELFILTER_blurY
        putFIXED gRADIENTBEVELFILTER_angle
@@ -2028,7 +2646,15 @@ putGRADIENTBEVELFILTER GRADIENTBEVELFILTER{..}
        putFlag gRADIENTBEVELFILTER_knockout
        putFlag gRADIENTBEVELFILTER_compositeSource
        putFlag gRADIENTBEVELFILTER_onTop
-       putUB 4 gRADIENTBEVELFILTER_passes
+       if requiredBitsUB gRADIENTBEVELFILTER_passes <= 4 then
+         putUB 4 gRADIENTBEVELFILTER_passes else
+         inconsistent
+           "gRADIENTBEVELFILTER_passes (x :: GRADIENTBEVELFILTER)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB gRADIENTBEVELFILTER_passes) ++
+                " bits to store the value " ++
+                  show gRADIENTBEVELFILTER_passes ++
+                    ", but only have available " ++ show 4)
        return ()
 
 \end{code}
@@ -2066,9 +2692,9 @@ type CLIPEVENTFLAGS = [CLIPEVENTFLAG]
       if (version <= 5)
        then return cefs
        else do
-          discardReserved $ getUB 5
+          discardReserved "x :: CLIPEVENTFLAGS" $ getUB 5
           cefs <- foldM f cefs swf6_flags
-          discardReserved $ getUB 8
+          discardReserved "x :: CLIPEVENTFLAGS" $ getUB 8
           return cefs
 
     putter flags = do
@@ -2212,7 +2838,7 @@ putEnableDebugger EnableDebugger{..}
 p57: EnableDebugger2
 \begin{code}
 getEnableDebugger2
-  = do discardReserved getUI16
+  = do discardReserved "_reserved (x :: ?)" getUI16
        enableDebugger2_password <- getSTRING
        return (EnableDebugger2{..})
 putEnableDebugger2 EnableDebugger2{..}
@@ -2252,14 +2878,14 @@ putSetTabIndex SetTabIndex{..}
 p59: FileAttributes
 \begin{code}
 getFileAttributes
-  = do discardReserved getFlag
+  = do discardReserved "_reserved (x :: ?)" getFlag
        fileAttributes_useDirectBlit <- getFlag
        fileAttributes_useGPU <- getFlag
        fileAttributes_hasMetadata <- getFlag
        fileAttributes_actionScript3 <- getFlag
-       discardReserved (getUB 2)
+       discardReserved "_reserved (x :: ?)" (getUB 2)
        fileAttributes_useNetwork <- getFlag
-       discardReserved (getUB 24)
+       discardReserved "_reserved (x :: ?)" (getUB 24)
        return (FileAttributes{..})
 putFileAttributes FileAttributes{..}
   = do let fileAttributes_reserved = reservedDefault
@@ -2269,10 +2895,24 @@ putFileAttributes FileAttributes{..}
        putFlag fileAttributes_hasMetadata
        putFlag fileAttributes_actionScript3
        let fileAttributes_reserved = reservedDefault
-       putUB 2 fileAttributes_reserved
+       if requiredBitsUB fileAttributes_reserved <= 2 then
+         putUB 2 fileAttributes_reserved else
+         inconsistent "x :: FileAttributes"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB fileAttributes_reserved) ++
+                " bits to store the value " ++
+                  show fileAttributes_reserved ++
+                    ", but only have available " ++ show 2)
        putFlag fileAttributes_useNetwork
        let fileAttributes_reserved = reservedDefault
-       putUB 24 fileAttributes_reserved
+       if requiredBitsUB fileAttributes_reserved <= 24 then
+         putUB 24 fileAttributes_reserved else
+         inconsistent "x :: FileAttributes"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB fileAttributes_reserved) ++
+                " bits to store the value " ++
+                  show fileAttributes_reserved ++
+                    ", but only have available " ++ show 24)
        return ()
 
 \end{code}
@@ -2281,8 +2921,8 @@ p60: ImportAssets2
 \begin{code}
 getImportAssets2
   = do importAssets2_uRL <- getSTRING
-       discardReserved getUI8
-       discardReserved getUI8
+       discardReserved "_reserved (x :: ?)" getUI8
+       discardReserved "_reserved (x :: ?)" getUI8
        importAssets2_count <- getUI16
        importAssets2_tag1 <- getUI16
        importAssets2_name1 <- getSTRING
@@ -2316,7 +2956,12 @@ putSymbolClass SymbolClass{..}
              = genericLength symbolClass_tagsNames
        putUI16 symbolClass_numSymbols
        if genericLength symbolClass_tagsNames /= (symbolClass_numSymbols)
-         then inconsistent else
+         then
+         inconsistent "symbolClass_tagsNames (x :: SymbolClass)"
+           ("Mismatch with the required length: symbolClass_numSymbols" ++
+              show (genericLength symbolClass_tagsNames) ++
+                " /= " ++ show symbolClass_numSymbols)
+         else
          mapM_
            (\ x ->
               case x of
@@ -2370,7 +3015,14 @@ putDefineSceneAndFrameLabelData DefineSceneAndFrameLabelData{..}
        if
          genericLength defineSceneAndFrameLabelData_offsetNames /=
            (defineSceneAndFrameLabelData_sceneCount)
-         then inconsistent else
+         then
+         inconsistent
+           "defineSceneAndFrameLabelData_offsetNames (x :: DefineSceneAndFrameLabelData)"
+           ("Mismatch with the required length: defineSceneAndFrameLabelData_sceneCount"
+              ++
+              show (genericLength defineSceneAndFrameLabelData_offsetNames) ++
+                " /= " ++ show defineSceneAndFrameLabelData_sceneCount)
+         else
          mapM_
            (\ x ->
               case x of
@@ -2383,7 +3035,14 @@ putDefineSceneAndFrameLabelData DefineSceneAndFrameLabelData{..}
        if
          genericLength defineSceneAndFrameLabelData_frameNumLabels /=
            (defineSceneAndFrameLabelData_frameLabelCount)
-         then inconsistent else
+         then
+         inconsistent
+           "defineSceneAndFrameLabelData_frameNumLabels (x :: DefineSceneAndFrameLabelData)"
+           ("Mismatch with the required length: defineSceneAndFrameLabelData_frameLabelCount"
+              ++
+              show (genericLength defineSceneAndFrameLabelData_frameNumLabels) ++
+                " /= " ++ show defineSceneAndFrameLabelData_frameLabelCount)
+         else
          mapM_
            (\ x ->
               case x of
@@ -2440,7 +3099,9 @@ getACTIONRECORDHEADER = do
 
 putACTIONRECORDHEADER (ACTIONRECORDHEADER {..}) = do
     putUI8 aCTIONRECORDHEADER_actionCode
-    when (((aCTIONRECORDHEADER_actionCode .&. 0x80) /= 0) `consistentWith` isJust aCTIONRECORDHEADER_actionLength) $ do
+    when (consistentWith (inconsistent "aCTIONRECORDHEADER_actionLength (x :: ACTIONRECORDHEADER)" "You can have aCTIONRECORDHEADER_actionLength iff the top bit of aCTIONRECORDHEADER_actionCode is set")
+                         ((aCTIONRECORDHEADER_actionCode .&. 0x80) /= 0)
+                         (isJust aCTIONRECORDHEADER_actionLength)) $ do
         putUI16 (fromJust aCTIONRECORDHEADER_actionLength)
 
 data ACTIONRECORD = UnknownAction { unknownAction_actionCode :: UI8, unknownAction_data :: Maybe ByteString }
@@ -2584,7 +3245,9 @@ getACTIONRECORD = do
 
 putACTIONRECORD actionrecord = do
     (len, put) <- nestSwfPut $ case actionrecord of
-        UnknownAction {..} -> when (isJust unknownAction_data `consistentWith` (unknownAction_actionCode >= 0x80)) $
+        UnknownAction {..} -> when (consistentWith (inconsistent "unknownAction_data (x :: Tag)" "You can have unknownAction_data iff the top bit of unknownAction_actionCode is set")
+                                                   (isJust unknownAction_data)
+                                                   (unknownAction_actionCode >= 0x80)) $
                                 putLazyByteString $ fromJust unknownAction_data
         ActionPush {}      -> putActionPush actionrecord
         _                  -> generatedActionPutters actionrecord
@@ -3243,14 +3906,28 @@ p87: ActionGetURL2
 \begin{code}
 getActionGetURL2
   = do actionGetURL2_sendVarsMethod <- getUB 2
-       discardReserved (getUB 4)
+       discardReserved "_reserved (x :: ?)" (getUB 4)
        actionGetURL2_loadTargetFlag <- getFlag
        actionGetURL2_loadVariablesFlag <- getFlag
        return (ActionGetURL2{..})
 putActionGetURL2 ActionGetURL2{..}
-  = do putUB 2 actionGetURL2_sendVarsMethod
+  = do if requiredBitsUB actionGetURL2_sendVarsMethod <= 2 then
+         putUB 2 actionGetURL2_sendVarsMethod else
+         inconsistent "actionGetURL2_sendVarsMethod (x :: ActionGetURL2)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB actionGetURL2_sendVarsMethod) ++
+                " bits to store the value " ++
+                  show actionGetURL2_sendVarsMethod ++
+                    ", but only have available " ++ show 2)
        let actionGetURL2_reserved = reservedDefault
-       putUB 4 actionGetURL2_reserved
+       if requiredBitsUB actionGetURL2_reserved <= 4 then
+         putUB 4 actionGetURL2_reserved else
+         inconsistent "x :: ActionGetURL2"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB actionGetURL2_reserved) ++
+                " bits to store the value " ++
+                  show actionGetURL2_reserved ++
+                    ", but only have available " ++ show 4)
        putFlag actionGetURL2_loadTargetFlag
        putFlag actionGetURL2_loadVariablesFlag
        return ()
@@ -3260,7 +3937,7 @@ putActionGetURL2 ActionGetURL2{..}
 p88: ActionGotoFrame2
 \begin{code}
 getActionGotoFrame2
-  = do discardReserved (getUB 6)
+  = do discardReserved "_reserved (x :: ?)" (getUB 6)
        actionGotoFrame2_sceneBiasFlag <- getFlag
        actionGotoFrame2_playFlag <- getFlag
        actionGotoFrame2_sceneBias <- maybeHas
@@ -3269,15 +3946,26 @@ getActionGotoFrame2
        return (ActionGotoFrame2{..})
 putActionGotoFrame2 ActionGotoFrame2{..}
   = do let actionGotoFrame2_reserved = reservedDefault
-       putUB 6 actionGotoFrame2_reserved
+       if requiredBitsUB actionGotoFrame2_reserved <= 6 then
+         putUB 6 actionGotoFrame2_reserved else
+         inconsistent "x :: ActionGotoFrame2"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB actionGotoFrame2_reserved) ++
+                " bits to store the value " ++
+                  show actionGotoFrame2_reserved ++
+                    ", but only have available " ++ show 6)
        let actionGotoFrame2_sceneBiasFlag
              = isJust actionGotoFrame2_sceneBias
        putFlag actionGotoFrame2_sceneBiasFlag
        putFlag actionGotoFrame2_playFlag
        case actionGotoFrame2_sceneBias of
            Just x | actionGotoFrame2_sceneBiasFlag -> putUI16 x
-                  | otherwise -> inconsistent
-           Nothing | actionGotoFrame2_sceneBiasFlag -> inconsistent
+                  | otherwise ->
+                    inconsistent "actionGotoFrame2_sceneBias (x :: ActionGotoFrame2)"
+                      "Should have a Just iff actionGotoFrame2_sceneBiasFlag is True"
+           Nothing | actionGotoFrame2_sceneBiasFlag ->
+                     inconsistent "actionGotoFrame2_sceneBias (x :: ActionGotoFrame2)"
+                       "Should have a Nothing iff actionGotoFrame2_sceneBiasFlag is False"
                    | otherwise -> return ()
        return ()
 
@@ -3393,8 +4081,13 @@ putActionConstantPool ActionConstantPool{..}
        if
          genericLength actionConstantPool_constantPool /=
            (actionConstantPool_count)
-         then inconsistent else
-         mapM_ (\ x -> putSTRING x) actionConstantPool_constantPool
+         then
+         inconsistent
+           "actionConstantPool_constantPool (x :: ActionConstantPool)"
+           ("Mismatch with the required length: actionConstantPool_count" ++
+              show (genericLength actionConstantPool_constantPool) ++
+                " /= " ++ show actionConstantPool_count)
+         else mapM_ (\ x -> putSTRING x) actionConstantPool_constantPool
        return ()
 
 \end{code}
@@ -3417,8 +4110,14 @@ putActionDefineFunction ActionDefineFunction{..}
        if
          genericLength actionDefineFunction_params /=
            (actionDefineFunction_numParams)
-         then inconsistent else
-         mapM_ (\ x -> putSTRING x) actionDefineFunction_params
+         then
+         inconsistent
+           "actionDefineFunction_params (x :: ActionDefineFunction)"
+           ("Mismatch with the required length: actionDefineFunction_numParams"
+              ++
+              show (genericLength actionDefineFunction_params) ++
+                " /= " ++ show actionDefineFunction_numParams)
+         else mapM_ (\ x -> putSTRING x) actionDefineFunction_params
        putUI16 actionDefineFunction_codeSize
        return ()
 
@@ -3718,7 +4417,7 @@ getActionDefineFunction2
        actionDefineFunction2_preloadArgumentsFlag <- getFlag
        actionDefineFunction2_suppressThisFlag <- getFlag
        actionDefineFunction2_preloadThisFlag <- getFlag
-       discardReserved (getUB 7)
+       discardReserved "_reserved (x :: ?)" (getUB 7)
        actionDefineFunction2_preloadGlobalFlag <- getFlag
        actionDefineFunction2_parameters <- genericReplicateM
                                              actionDefineFunction2_numParams
@@ -3740,12 +4439,26 @@ putActionDefineFunction2 ActionDefineFunction2{..}
        putFlag actionDefineFunction2_suppressThisFlag
        putFlag actionDefineFunction2_preloadThisFlag
        let actionDefineFunction2_reserved = reservedDefault
-       putUB 7 actionDefineFunction2_reserved
+       if requiredBitsUB actionDefineFunction2_reserved <= 7 then
+         putUB 7 actionDefineFunction2_reserved else
+         inconsistent "x :: ActionDefineFunction2"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB actionDefineFunction2_reserved) ++
+                " bits to store the value " ++
+                  show actionDefineFunction2_reserved ++
+                    ", but only have available " ++ show 7)
        putFlag actionDefineFunction2_preloadGlobalFlag
        if
          genericLength actionDefineFunction2_parameters /=
            (actionDefineFunction2_numParams)
-         then inconsistent else
+         then
+         inconsistent
+           "actionDefineFunction2_parameters (x :: ActionDefineFunction2)"
+           ("Mismatch with the required length: actionDefineFunction2_numParams"
+              ++
+              show (genericLength actionDefineFunction2_parameters) ++
+                " /= " ++ show actionDefineFunction2_numParams)
+         else
          mapM_ (\ x -> putREGISTERPARAM x) actionDefineFunction2_parameters
        putUI16 actionDefineFunction2_codeSize
        return ()
@@ -3792,7 +4505,7 @@ putActionImplementsOp ActionImplementsOp{..} = do return ()
 p121: ActionTy
 \begin{code}
 getActionTry
-  = do discardReserved (getUB 5)
+  = do discardReserved "_reserved (x :: ?)" (getUB 5)
        actionTry_catchInRegisterFlag <- getFlag
        actionTry_finallyBlockFlag <- getFlag
        actionTry_catchBlockFlag <- getFlag
@@ -3810,7 +4523,13 @@ getActionTry
        return (ActionTry{..})
 putActionTry ActionTry{..}
   = do let actionTry_reserved = reservedDefault
-       putUB 5 actionTry_reserved
+       if requiredBitsUB actionTry_reserved <= 5 then
+         putUB 5 actionTry_reserved else
+         inconsistent "x :: ActionTry"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB actionTry_reserved) ++
+                " bits to store the value " ++
+                  show actionTry_reserved ++ ", but only have available " ++ show 5)
        let actionTry_catchInRegisterFlag = isJust actionTry_catchRegister
        putFlag actionTry_catchInRegisterFlag
        putFlag actionTry_finallyBlockFlag
@@ -3823,21 +4542,41 @@ putActionTry ActionTry{..}
        putUI16 actionTry_finallySize
        case actionTry_catchName of
            Just x | not actionTry_catchInRegisterFlag -> putSTRING x
-                  | otherwise -> inconsistent
-           Nothing | not actionTry_catchInRegisterFlag -> inconsistent
+                  | otherwise ->
+                    inconsistent "actionTry_catchName (x :: ActionTry)"
+                      "Should have a Just iff not actionTry_catchInRegisterFlag is True"
+           Nothing | not actionTry_catchInRegisterFlag ->
+                     inconsistent "actionTry_catchName (x :: ActionTry)"
+                       "Should have a Nothing iff not actionTry_catchInRegisterFlag is False"
                    | otherwise -> return ()
        case actionTry_catchRegister of
            Just x | actionTry_catchInRegisterFlag -> putUI8 x
-                  | otherwise -> inconsistent
-           Nothing | actionTry_catchInRegisterFlag -> inconsistent
+                  | otherwise ->
+                    inconsistent "actionTry_catchRegister (x :: ActionTry)"
+                      "Should have a Just iff actionTry_catchInRegisterFlag is True"
+           Nothing | actionTry_catchInRegisterFlag ->
+                     inconsistent "actionTry_catchRegister (x :: ActionTry)"
+                       "Should have a Nothing iff actionTry_catchInRegisterFlag is False"
                    | otherwise -> return ()
        if genericLength actionTry_tryBody /= (actionTry_trySize) then
-         inconsistent else mapM_ (\ x -> putUI8 x) actionTry_tryBody
+         inconsistent "actionTry_tryBody (x :: ActionTry)"
+           ("Mismatch with the required length: actionTry_trySize" ++
+              show (genericLength actionTry_tryBody) ++
+                " /= " ++ show actionTry_trySize)
+         else mapM_ (\ x -> putUI8 x) actionTry_tryBody
        if genericLength actionTry_catchBody /= (actionTry_catchSize) then
-         inconsistent else mapM_ (\ x -> putUI8 x) actionTry_catchBody
+         inconsistent "actionTry_catchBody (x :: ActionTry)"
+           ("Mismatch with the required length: actionTry_catchSize" ++
+              show (genericLength actionTry_catchBody) ++
+                " /= " ++ show actionTry_catchSize)
+         else mapM_ (\ x -> putUI8 x) actionTry_catchBody
        if genericLength actionTry_finallyBody /= (actionTry_finallySize)
-         then inconsistent else
-         mapM_ (\ x -> putUI8 x) actionTry_finallyBody
+         then
+         inconsistent "actionTry_finallyBody (x :: ActionTry)"
+           ("Mismatch with the required length: actionTry_finallySize" ++
+              show (genericLength actionTry_finallyBody) ++
+                " /= " ++ show actionTry_finallySize)
+         else mapM_ (\ x -> putUI8 x) actionTry_finallyBody
        return ()
 
 \end{code}
@@ -3913,9 +4652,9 @@ putFILLSTYLE shapeVer fs = case fs of
         putUI8 0x00
         case fILLSTYLE_color of
             Left rgb | shapeVer <= 2  -> putRGB rgb
-                     | otherwise      -> inconsistent
+                     | otherwise      -> inconsistent "fILLSTYLE_color (x :: FILLSTYLE)" "Must use RGBA rather than RGB records for shape version > 2"
             Right rgba | shapeVer > 2 -> putRGBA rgba
-                       | otherwise    -> inconsistent
+                       | otherwise    -> inconsistent "fILLSTYLE_color (x :: FILLSTYLE)" "Must use RGB rather than RGBA records for shape version <= 2"
     GradientFill {..} -> do
         putUI8 (case fILLSTYLE_linearRadial of Linear -> 0x10; Radial -> 0x12)
         putMATRIX fILLSTYLE_gradientMatrix
@@ -3949,9 +4688,9 @@ putLINESTYLEARRAY shapeVer ei_ls_ls2 = do
     when (count >= 0xFF) $ putUI16 (fromIntegral count)
     case ei_ls_ls2 of
         Left ls   | shapeVer <= 3 -> mapM_ (putLINESTYLE shapeVer) ls
-                  | otherwise     -> inconsistent
+                  | otherwise     -> inconsistent "x :: LINESTYLEARRAY" "Must use LINESTYLE2 rather than LINESTYLE for shape version > 3"
         Right ls2 | shapeVer > 3  -> mapM_ putLINESTYLE2 ls2
-                  | otherwise     -> inconsistent
+                  | otherwise     -> inconsistent "x :: LINESTYLEARRAY" "Must use LINESTYLE rather than LINESTYLE2 for shape version <= 3"
     
 
 data LINESTYLE = LINESTYLE { lINESTYLE_width :: UI16, lINESTYLE_color :: Either RGB RGBA }
@@ -3966,9 +4705,9 @@ putLINESTYLE shapeVer (LINESTYLE {..}) = do
     putUI16 lINESTYLE_width
     case lINESTYLE_color of
         Left rgb   | shapeVer <= 2 -> putRGB rgb
-                   | otherwise     -> inconsistent
+                   | otherwise     -> inconsistent "x :: LINESTYLE" "Must use RGBA rather than RGB for shape version > 2"
         Right rgba | shapeVer > 2  -> putRGBA rgba
-                   | otherwise     -> inconsistent
+                   | otherwise     -> inconsistent "x :: LINESTYLE" "Must use RGB rather than RGBA for shape version <= 2"
 
 \end{code}
 
@@ -3991,7 +4730,7 @@ getLINESTYLE2
        lINESTYLE2_noHScaleFlag <- getFlag
        lINESTYLE2_noVScaleFlag <- getFlag
        lINESTYLE2_pixelHintingFlag <- getFlag
-       discardReserved (getUB 5)
+       discardReserved "_reserved (x :: ?)" (getUB 5)
        lINESTYLE2_noClose <- getFlag
        lINESTYLE2_endCapStyle <- getUB 2
        lINESTYLE2_miterLimitFactor <- maybeHas (lINESTYLE2_joinStyle == 2)
@@ -4002,31 +4741,70 @@ getLINESTYLE2
        return (LINESTYLE2{..})
 putLINESTYLE2 LINESTYLE2{..}
   = do putUI16 lINESTYLE2_width
-       putUB 2 lINESTYLE2_startCapStyle
-       putUB 2 lINESTYLE2_joinStyle
+       if requiredBitsUB lINESTYLE2_startCapStyle <= 2 then
+         putUB 2 lINESTYLE2_startCapStyle else
+         inconsistent "lINESTYLE2_startCapStyle (x :: LINESTYLE2)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB lINESTYLE2_startCapStyle) ++
+                " bits to store the value " ++
+                  show lINESTYLE2_startCapStyle ++
+                    ", but only have available " ++ show 2)
+       if requiredBitsUB lINESTYLE2_joinStyle <= 2 then
+         putUB 2 lINESTYLE2_joinStyle else
+         inconsistent "lINESTYLE2_joinStyle (x :: LINESTYLE2)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB lINESTYLE2_joinStyle) ++
+                " bits to store the value " ++
+                  show lINESTYLE2_joinStyle ++
+                    ", but only have available " ++ show 2)
        let lINESTYLE2_hasFillFlag = isJust lINESTYLE2_fillType
        putFlag lINESTYLE2_hasFillFlag
        putFlag lINESTYLE2_noHScaleFlag
        putFlag lINESTYLE2_noVScaleFlag
        putFlag lINESTYLE2_pixelHintingFlag
        let lINESTYLE2_reserved = reservedDefault
-       putUB 5 lINESTYLE2_reserved
+       if requiredBitsUB lINESTYLE2_reserved <= 5 then
+         putUB 5 lINESTYLE2_reserved else
+         inconsistent "x :: LINESTYLE2"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB lINESTYLE2_reserved) ++
+                " bits to store the value " ++
+                  show lINESTYLE2_reserved ++ ", but only have available " ++ show 5)
        putFlag lINESTYLE2_noClose
-       putUB 2 lINESTYLE2_endCapStyle
+       if requiredBitsUB lINESTYLE2_endCapStyle <= 2 then
+         putUB 2 lINESTYLE2_endCapStyle else
+         inconsistent "lINESTYLE2_endCapStyle (x :: LINESTYLE2)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB lINESTYLE2_endCapStyle) ++
+                " bits to store the value " ++
+                  show lINESTYLE2_endCapStyle ++
+                    ", but only have available " ++ show 2)
        case lINESTYLE2_miterLimitFactor of
            Just x | lINESTYLE2_joinStyle == 2 -> putUI16 x
-                  | otherwise -> inconsistent
-           Nothing | lINESTYLE2_joinStyle == 2 -> inconsistent
+                  | otherwise ->
+                    inconsistent "lINESTYLE2_miterLimitFactor (x :: LINESTYLE2)"
+                      "Should have a Just iff lINESTYLE2_joinStyle == 2 is True"
+           Nothing | lINESTYLE2_joinStyle == 2 ->
+                     inconsistent "lINESTYLE2_miterLimitFactor (x :: LINESTYLE2)"
+                       "Should have a Nothing iff lINESTYLE2_joinStyle == 2 is False"
                    | otherwise -> return ()
        case lINESTYLE2_color of
            Just x | not lINESTYLE2_hasFillFlag -> putRGBA x
-                  | otherwise -> inconsistent
-           Nothing | not lINESTYLE2_hasFillFlag -> inconsistent
+                  | otherwise ->
+                    inconsistent "lINESTYLE2_color (x :: LINESTYLE2)"
+                      "Should have a Just iff not lINESTYLE2_hasFillFlag is True"
+           Nothing | not lINESTYLE2_hasFillFlag ->
+                     inconsistent "lINESTYLE2_color (x :: LINESTYLE2)"
+                       "Should have a Nothing iff not lINESTYLE2_hasFillFlag is False"
                    | otherwise -> return ()
        case lINESTYLE2_fillType of
            Just x | lINESTYLE2_hasFillFlag -> putFILLSTYLE 4 x
-                  | otherwise -> inconsistent
-           Nothing | lINESTYLE2_hasFillFlag -> inconsistent
+                  | otherwise ->
+                    inconsistent "lINESTYLE2_fillType (x :: LINESTYLE2)"
+                      "Should have a Just iff lINESTYLE2_hasFillFlag is True"
+           Nothing | lINESTYLE2_hasFillFlag ->
+                     inconsistent "lINESTYLE2_fillType (x :: LINESTYLE2)"
+                       "Should have a Nothing iff lINESTYLE2_hasFillFlag is False"
                    | otherwise -> return ()
        return ()
 
@@ -4046,8 +4824,20 @@ getSHAPE sHAPE_shapeVer
                                sHAPE_numLineBits
        return (SHAPE{..})
 putSHAPE sHAPE_shapeVer SHAPE{..}
-  = do putUB 4 sHAPE_numFillBits
-       putUB 4 sHAPE_numLineBits
+  = do if requiredBitsUB sHAPE_numFillBits <= 4 then
+         putUB 4 sHAPE_numFillBits else
+         inconsistent "sHAPE_numFillBits (x :: SHAPE)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB sHAPE_numFillBits) ++
+                " bits to store the value " ++
+                  show sHAPE_numFillBits ++ ", but only have available " ++ show 4)
+       if requiredBitsUB sHAPE_numLineBits <= 4 then
+         putUB 4 sHAPE_numLineBits else
+         inconsistent "sHAPE_numLineBits (x :: SHAPE)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB sHAPE_numLineBits) ++
+                " bits to store the value " ++
+                  show sHAPE_numLineBits ++ ", but only have available " ++ show 4)
        putSHAPERECORDS sHAPE_shapeVer sHAPE_numFillBits sHAPE_numLineBits
          sHAPE_shapeRecords
        return ()
@@ -4079,8 +4869,22 @@ putSHAPEWITHSTYLE sHAPEWITHSTYLE_shapeVer SHAPEWITHSTYLE{..}
   = do putFILLSTYLEARRAY sHAPEWITHSTYLE_shapeVer
          sHAPEWITHSTYLE_fillStyles
        putLINESTYLEARRAY sHAPEWITHSTYLE_shapeVer sHAPEWITHSTYLE_lineStyles
-       putUB 4 sHAPEWITHSTYLE_numFillBits
-       putUB 4 sHAPEWITHSTYLE_numLineBits
+       if requiredBitsUB sHAPEWITHSTYLE_numFillBits <= 4 then
+         putUB 4 sHAPEWITHSTYLE_numFillBits else
+         inconsistent "sHAPEWITHSTYLE_numFillBits (x :: SHAPEWITHSTYLE)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB sHAPEWITHSTYLE_numFillBits) ++
+                " bits to store the value " ++
+                  show sHAPEWITHSTYLE_numFillBits ++
+                    ", but only have available " ++ show 4)
+       if requiredBitsUB sHAPEWITHSTYLE_numLineBits <= 4 then
+         putUB 4 sHAPEWITHSTYLE_numLineBits else
+         inconsistent "sHAPEWITHSTYLE_numLineBits (x :: SHAPEWITHSTYLE)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB sHAPEWITHSTYLE_numLineBits) ++
+                " bits to store the value " ++
+                  show sHAPEWITHSTYLE_numLineBits ++
+                    ", but only have available " ++ show 4)
        putSHAPERECORDS sHAPEWITHSTYLE_shapeVer sHAPEWITHSTYLE_numFillBits
          sHAPEWITHSTYLE_numLineBits
          sHAPEWITHSTYLE_shapeRecords
@@ -4114,7 +4918,7 @@ type SHAPERECORDS = [SHAPERECORD]
               look <- lookAhead (getUB 5)
               if look == 0
                then do
-                 discardKnown 0 $ getUB 5
+                 discardKnown "x :: SHAPERECORDS" "SHAPERECORDS array should be 0 terminated" 0 $ getUB 5
                  -- NB: align the SHAPERECORD array only at the end!
                  byteAlign
                  return []
@@ -4220,33 +5024,140 @@ putSTYLECHANGERECORD sTYLECHANGERECORD_shapeVer
            Just x | sTYLECHANGERECORD_stateMoveTo ->
                     case x of
                         (sTYLECHANGERECORD_moveBits, sTYLECHANGERECORD_moveDeltaX,
-                         sTYLECHANGERECORD_moveDeltaY) -> do putUB 5
-                                                               sTYLECHANGERECORD_moveBits
-                                                             putSB sTYLECHANGERECORD_moveBits
-                                                               sTYLECHANGERECORD_moveDeltaX
-                                                             putSB sTYLECHANGERECORD_moveBits
-                                                               sTYLECHANGERECORD_moveDeltaY
+                         sTYLECHANGERECORD_moveDeltaY) -> do if
+                                                               requiredBitsUB
+                                                                 sTYLECHANGERECORD_moveBits
+                                                                 <= 5
+                                                               then
+                                                               putUB 5 sTYLECHANGERECORD_moveBits
+                                                               else
+                                                               inconsistent
+                                                                 "fst (fromJust (sTYLECHANGERECORD_move (x :: STYLECHANGERECORD)))"
+                                                                 ("Bit count incorrect: required "
+                                                                    ++
+                                                                    show
+                                                                      (requiredBitsUB
+                                                                         sTYLECHANGERECORD_moveBits)
+                                                                      ++
+                                                                      " bits to store the value " ++
+                                                                        show
+                                                                          sTYLECHANGERECORD_moveBits
+                                                                          ++
+                                                                          ", but only have available "
+                                                                            ++ show 5)
+                                                             if
+                                                               requiredBitsSB
+                                                                 sTYLECHANGERECORD_moveDeltaX
+                                                                 <= sTYLECHANGERECORD_moveBits
+                                                               then
+                                                               putSB sTYLECHANGERECORD_moveBits
+                                                                 sTYLECHANGERECORD_moveDeltaX
+                                                               else
+                                                               inconsistent
+                                                                 "snd (fromJust (sTYLECHANGERECORD_move (x :: STYLECHANGERECORD)))"
+                                                                 ("Bit count incorrect: required "
+                                                                    ++
+                                                                    show
+                                                                      (requiredBitsSB
+                                                                         sTYLECHANGERECORD_moveDeltaX)
+                                                                      ++
+                                                                      " bits to store the value " ++
+                                                                        show
+                                                                          sTYLECHANGERECORD_moveDeltaX
+                                                                          ++
+                                                                          ", but only have available "
+                                                                            ++
+                                                                            show
+                                                                              sTYLECHANGERECORD_moveBits)
+                                                             if
+                                                               requiredBitsSB
+                                                                 sTYLECHANGERECORD_moveDeltaY
+                                                                 <= sTYLECHANGERECORD_moveBits
+                                                               then
+                                                               putSB sTYLECHANGERECORD_moveBits
+                                                                 sTYLECHANGERECORD_moveDeltaY
+                                                               else
+                                                               inconsistent
+                                                                 "thd (fromJust (sTYLECHANGERECORD_move (x :: STYLECHANGERECORD)))"
+                                                                 ("Bit count incorrect: required "
+                                                                    ++
+                                                                    show
+                                                                      (requiredBitsSB
+                                                                         sTYLECHANGERECORD_moveDeltaY)
+                                                                      ++
+                                                                      " bits to store the value " ++
+                                                                        show
+                                                                          sTYLECHANGERECORD_moveDeltaY
+                                                                          ++
+                                                                          ", but only have available "
+                                                                            ++
+                                                                            show
+                                                                              sTYLECHANGERECORD_moveBits)
                                                              return ()
-                  | otherwise -> inconsistent
-           Nothing | sTYLECHANGERECORD_stateMoveTo -> inconsistent
+                  | otherwise ->
+                    inconsistent "sTYLECHANGERECORD_move (x :: STYLECHANGERECORD)"
+                      "Should have a Just iff sTYLECHANGERECORD_stateMoveTo is True"
+           Nothing | sTYLECHANGERECORD_stateMoveTo ->
+                     inconsistent "sTYLECHANGERECORD_move (x :: STYLECHANGERECORD)"
+                       "Should have a Nothing iff sTYLECHANGERECORD_stateMoveTo is False"
                    | otherwise -> return ()
        case sTYLECHANGERECORD_fillStyle0 of
            Just x | sTYLECHANGERECORD_stateFillStyle0 ->
-                    putUB sTYLECHANGERECORD_fillBits x
-                  | otherwise -> inconsistent
-           Nothing | sTYLECHANGERECORD_stateFillStyle0 -> inconsistent
+                    if requiredBitsUB x <= sTYLECHANGERECORD_fillBits then
+                      putUB sTYLECHANGERECORD_fillBits x else
+                      inconsistent
+                        "fromJust (sTYLECHANGERECORD_fillStyle0 (x :: STYLECHANGERECORD))"
+                        ("Bit count incorrect: required " ++
+                           show (requiredBitsUB x) ++
+                             " bits to store the value " ++
+                               show x ++
+                                 ", but only have available " ++ show sTYLECHANGERECORD_fillBits)
+                  | otherwise ->
+                    inconsistent
+                      "sTYLECHANGERECORD_fillStyle0 (x :: STYLECHANGERECORD)"
+                      "Should have a Just iff sTYLECHANGERECORD_stateFillStyle0 is True"
+           Nothing | sTYLECHANGERECORD_stateFillStyle0 ->
+                     inconsistent
+                       "sTYLECHANGERECORD_fillStyle0 (x :: STYLECHANGERECORD)"
+                       "Should have a Nothing iff sTYLECHANGERECORD_stateFillStyle0 is False"
                    | otherwise -> return ()
        case sTYLECHANGERECORD_fillStyle1 of
            Just x | sTYLECHANGERECORD_stateFillStyle1 ->
-                    putUB sTYLECHANGERECORD_fillBits x
-                  | otherwise -> inconsistent
-           Nothing | sTYLECHANGERECORD_stateFillStyle1 -> inconsistent
+                    if requiredBitsUB x <= sTYLECHANGERECORD_fillBits then
+                      putUB sTYLECHANGERECORD_fillBits x else
+                      inconsistent
+                        "fromJust (sTYLECHANGERECORD_fillStyle1 (x :: STYLECHANGERECORD))"
+                        ("Bit count incorrect: required " ++
+                           show (requiredBitsUB x) ++
+                             " bits to store the value " ++
+                               show x ++
+                                 ", but only have available " ++ show sTYLECHANGERECORD_fillBits)
+                  | otherwise ->
+                    inconsistent
+                      "sTYLECHANGERECORD_fillStyle1 (x :: STYLECHANGERECORD)"
+                      "Should have a Just iff sTYLECHANGERECORD_stateFillStyle1 is True"
+           Nothing | sTYLECHANGERECORD_stateFillStyle1 ->
+                     inconsistent
+                       "sTYLECHANGERECORD_fillStyle1 (x :: STYLECHANGERECORD)"
+                       "Should have a Nothing iff sTYLECHANGERECORD_stateFillStyle1 is False"
                    | otherwise -> return ()
        case sTYLECHANGERECORD_lineStyle of
            Just x | sTYLECHANGERECORD_stateLineStyle ->
-                    putUB sTYLECHANGERECORD_lineBits x
-                  | otherwise -> inconsistent
-           Nothing | sTYLECHANGERECORD_stateLineStyle -> inconsistent
+                    if requiredBitsUB x <= sTYLECHANGERECORD_lineBits then
+                      putUB sTYLECHANGERECORD_lineBits x else
+                      inconsistent
+                        "fromJust (sTYLECHANGERECORD_lineStyle (x :: STYLECHANGERECORD))"
+                        ("Bit count incorrect: required " ++
+                           show (requiredBitsUB x) ++
+                             " bits to store the value " ++
+                               show x ++
+                                 ", but only have available " ++ show sTYLECHANGERECORD_lineBits)
+                  | otherwise ->
+                    inconsistent "sTYLECHANGERECORD_lineStyle (x :: STYLECHANGERECORD)"
+                      "Should have a Just iff sTYLECHANGERECORD_stateLineStyle is True"
+           Nothing | sTYLECHANGERECORD_stateLineStyle ->
+                     inconsistent "sTYLECHANGERECORD_lineStyle (x :: STYLECHANGERECORD)"
+                       "Should have a Nothing iff sTYLECHANGERECORD_stateLineStyle is False"
                    | otherwise -> return ()
        case sTYLECHANGERECORD_new of
            Just x | sTYLECHANGERECORD_stateNewStyles ->
@@ -4259,13 +5170,59 @@ putSTYLECHANGERECORD sTYLECHANGERECORD_shapeVer
                                                                  putLINESTYLEARRAY
                                                                    sTYLECHANGERECORD_shapeVer
                                                                    sTYLECHANGERECORD_newLineStyles
-                                                                 putUB 4
-                                                                   sTYLECHANGERECORD_newNumFillBits
-                                                                 putUB 4
-                                                                   sTYLECHANGERECORD_newNumLineBits
+                                                                 if
+                                                                   requiredBitsUB
+                                                                     sTYLECHANGERECORD_newNumFillBits
+                                                                     <= 4
+                                                                   then
+                                                                   putUB 4
+                                                                     sTYLECHANGERECORD_newNumFillBits
+                                                                   else
+                                                                   inconsistent
+                                                                     "thd (fromJust (sTYLECHANGERECORD_new (x :: STYLECHANGERECORD)))"
+                                                                     ("Bit count incorrect: required "
+                                                                        ++
+                                                                        show
+                                                                          (requiredBitsUB
+                                                                             sTYLECHANGERECORD_newNumFillBits)
+                                                                          ++
+                                                                          " bits to store the value "
+                                                                            ++
+                                                                            show
+                                                                              sTYLECHANGERECORD_newNumFillBits
+                                                                              ++
+                                                                              ", but only have available "
+                                                                                ++ show 4)
+                                                                 if
+                                                                   requiredBitsUB
+                                                                     sTYLECHANGERECORD_newNumLineBits
+                                                                     <= 4
+                                                                   then
+                                                                   putUB 4
+                                                                     sTYLECHANGERECORD_newNumLineBits
+                                                                   else
+                                                                   inconsistent
+                                                                     "frth (fromJust (sTYLECHANGERECORD_new (x :: STYLECHANGERECORD)))"
+                                                                     ("Bit count incorrect: required "
+                                                                        ++
+                                                                        show
+                                                                          (requiredBitsUB
+                                                                             sTYLECHANGERECORD_newNumLineBits)
+                                                                          ++
+                                                                          " bits to store the value "
+                                                                            ++
+                                                                            show
+                                                                              sTYLECHANGERECORD_newNumLineBits
+                                                                              ++
+                                                                              ", but only have available "
+                                                                                ++ show 4)
                                                                  return ()
-                  | otherwise -> inconsistent
-           Nothing | sTYLECHANGERECORD_stateNewStyles -> inconsistent
+                  | otherwise ->
+                    inconsistent "sTYLECHANGERECORD_new (x :: STYLECHANGERECORD)"
+                      "Should have a Just iff sTYLECHANGERECORD_stateNewStyles is True"
+           Nothing | sTYLECHANGERECORD_stateNewStyles ->
+                     inconsistent "sTYLECHANGERECORD_new (x :: STYLECHANGERECORD)"
+                       "Should have a Nothing iff sTYLECHANGERECORD_stateNewStyles is False"
                    | otherwise -> return ()
        return ()
 
@@ -4278,7 +5235,14 @@ getSTRAIGHTEDGERECORD
                                             sTRAIGHTEDGERECORD_numBits
        return (STRAIGHTEDGERECORD{..})
 putSTRAIGHTEDGERECORD STRAIGHTEDGERECORD{..}
-  = do putUB 4 sTRAIGHTEDGERECORD_numBits
+  = do if requiredBitsUB sTRAIGHTEDGERECORD_numBits <= 4 then
+         putUB 4 sTRAIGHTEDGERECORD_numBits else
+         inconsistent "sTRAIGHTEDGERECORD_numBits (x :: STRAIGHTEDGERECORD)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB sTRAIGHTEDGERECORD_numBits) ++
+                " bits to store the value " ++
+                  show sTRAIGHTEDGERECORD_numBits ++
+                    ", but only have available " ++ show 4)
        putStraightEdge sTRAIGHTEDGERECORD_numBits
          sTRAIGHTEDGERECORD_straightEdge
        return ()
@@ -4320,11 +5284,70 @@ getCURVEDEDGERECORD
                                           (cURVEDEDGERECORD_numBits + 2)
        return (CURVEDEDGERECORD{..})
 putCURVEDEDGERECORD CURVEDEDGERECORD{..}
-  = do putUB 4 cURVEDEDGERECORD_numBits
-       putSB (cURVEDEDGERECORD_numBits + 2) cURVEDEDGERECORD_controlDeltaX
-       putSB (cURVEDEDGERECORD_numBits + 2) cURVEDEDGERECORD_controlDeltaY
-       putSB (cURVEDEDGERECORD_numBits + 2) cURVEDEDGERECORD_anchorDeltaX
-       putSB (cURVEDEDGERECORD_numBits + 2) cURVEDEDGERECORD_anchorDeltaY
+  = do if requiredBitsUB cURVEDEDGERECORD_numBits <= 4 then
+         putUB 4 cURVEDEDGERECORD_numBits else
+         inconsistent "cURVEDEDGERECORD_numBits (x :: CURVEDEDGERECORD)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB cURVEDEDGERECORD_numBits) ++
+                " bits to store the value " ++
+                  show cURVEDEDGERECORD_numBits ++
+                    ", but only have available " ++ show 4)
+       if
+         requiredBitsSB cURVEDEDGERECORD_controlDeltaX <=
+           cURVEDEDGERECORD_numBits + 2
+         then
+         putSB (cURVEDEDGERECORD_numBits + 2) cURVEDEDGERECORD_controlDeltaX
+         else
+         inconsistent
+           "cURVEDEDGERECORD_controlDeltaX (x :: CURVEDEDGERECORD)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsSB cURVEDEDGERECORD_controlDeltaX) ++
+                " bits to store the value " ++
+                  show cURVEDEDGERECORD_controlDeltaX ++
+                    ", but only have available " ++
+                      show (cURVEDEDGERECORD_numBits + 2))
+       if
+         requiredBitsSB cURVEDEDGERECORD_controlDeltaY <=
+           cURVEDEDGERECORD_numBits + 2
+         then
+         putSB (cURVEDEDGERECORD_numBits + 2) cURVEDEDGERECORD_controlDeltaY
+         else
+         inconsistent
+           "cURVEDEDGERECORD_controlDeltaY (x :: CURVEDEDGERECORD)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsSB cURVEDEDGERECORD_controlDeltaY) ++
+                " bits to store the value " ++
+                  show cURVEDEDGERECORD_controlDeltaY ++
+                    ", but only have available " ++
+                      show (cURVEDEDGERECORD_numBits + 2))
+       if
+         requiredBitsSB cURVEDEDGERECORD_anchorDeltaX <=
+           cURVEDEDGERECORD_numBits + 2
+         then
+         putSB (cURVEDEDGERECORD_numBits + 2) cURVEDEDGERECORD_anchorDeltaX
+         else
+         inconsistent
+           "cURVEDEDGERECORD_anchorDeltaX (x :: CURVEDEDGERECORD)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsSB cURVEDEDGERECORD_anchorDeltaX) ++
+                " bits to store the value " ++
+                  show cURVEDEDGERECORD_anchorDeltaX ++
+                    ", but only have available " ++
+                      show (cURVEDEDGERECORD_numBits + 2))
+       if
+         requiredBitsSB cURVEDEDGERECORD_anchorDeltaY <=
+           cURVEDEDGERECORD_numBits + 2
+         then
+         putSB (cURVEDEDGERECORD_numBits + 2) cURVEDEDGERECORD_anchorDeltaY
+         else
+         inconsistent
+           "cURVEDEDGERECORD_anchorDeltaY (x :: CURVEDEDGERECORD)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsSB cURVEDEDGERECORD_anchorDeltaY) ++
+                " bits to store the value " ++
+                  show cURVEDEDGERECORD_anchorDeltaY ++
+                    ", but only have available " ++
+                      show (cURVEDEDGERECORD_numBits + 2))
        return ()
 
 \end{code}
@@ -4380,7 +5403,7 @@ getDefineShape4
   = do defineShape4_shapeId <- getUI16
        defineShape4_shapeBounds <- getRECT
        defineShape4_edgeBounds <- getRECT
-       discardReserved (getUB 5)
+       discardReserved "_reserved (x :: ?)" (getUB 5)
        defineShape4_usesFillWindingRule <- getFlag
        defineShape4_usesNonScalingStrokes <- getFlag
        defineShape4_usesScalingStrokes <- getFlag
@@ -4391,7 +5414,14 @@ putDefineShape4 DefineShape4{..}
        putRECT defineShape4_shapeBounds
        putRECT defineShape4_edgeBounds
        let defineShape4_reserved = reservedDefault
-       putUB 5 defineShape4_reserved
+       if requiredBitsUB defineShape4_reserved <= 5 then
+         putUB 5 defineShape4_reserved else
+         inconsistent "x :: DefineShape4"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB defineShape4_reserved) ++
+                " bits to store the value " ++
+                  show defineShape4_reserved ++
+                    ", but only have available " ++ show 5)
        putFlag defineShape4_usesFillWindingRule
        putFlag defineShape4_usesNonScalingStrokes
        putFlag defineShape4_usesScalingStrokes
@@ -4419,13 +5449,38 @@ getGRADIENT gRADIENT_shapeVer
                                      (getGRADRECORD gRADIENT_shapeVer)
        return (GRADIENT{..})
 putGRADIENT gRADIENT_shapeVer GRADIENT{..}
-  = do putUB 2 gRADIENT_spreadMode
-       putUB 2 gRADIENT_interpolationMode
+  = do if requiredBitsUB gRADIENT_spreadMode <= 2 then
+         putUB 2 gRADIENT_spreadMode else
+         inconsistent "gRADIENT_spreadMode (x :: GRADIENT)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB gRADIENT_spreadMode) ++
+                " bits to store the value " ++
+                  show gRADIENT_spreadMode ++ ", but only have available " ++ show 2)
+       if requiredBitsUB gRADIENT_interpolationMode <= 2 then
+         putUB 2 gRADIENT_interpolationMode else
+         inconsistent "gRADIENT_interpolationMode (x :: GRADIENT)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB gRADIENT_interpolationMode) ++
+                " bits to store the value " ++
+                  show gRADIENT_interpolationMode ++
+                    ", but only have available " ++ show 2)
        let gRADIENT_numGradients = genericLength gRADIENT_gradientRecords
-       putUB 4 gRADIENT_numGradients
+       if requiredBitsUB gRADIENT_numGradients <= 4 then
+         putUB 4 gRADIENT_numGradients else
+         inconsistent "x :: GRADIENT"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB gRADIENT_numGradients) ++
+                " bits to store the value " ++
+                  show gRADIENT_numGradients ++
+                    ", but only have available " ++ show 4)
        if
          genericLength gRADIENT_gradientRecords /= (gRADIENT_numGradients)
-         then inconsistent else
+         then
+         inconsistent "gRADIENT_gradientRecords (x :: GRADIENT)"
+           ("Mismatch with the required length: gRADIENT_numGradients" ++
+              show (genericLength gRADIENT_gradientRecords) ++
+                " /= " ++ show gRADIENT_numGradients)
+         else
          mapM_ (\ x -> putGRADRECORD gRADIENT_shapeVer x)
            gRADIENT_gradientRecords
        return ()
@@ -4450,15 +5505,41 @@ getFOCALGRADIENT fOCALGRADIENT_shapeVer
        fOCALGRADIENT_focalPoint <- getFIXED8
        return (FOCALGRADIENT{..})
 putFOCALGRADIENT fOCALGRADIENT_shapeVer FOCALGRADIENT{..}
-  = do putUB 2 fOCALGRADIENT_spreadMode
-       putUB 2 fOCALGRADIENT_interpolationMode
+  = do if requiredBitsUB fOCALGRADIENT_spreadMode <= 2 then
+         putUB 2 fOCALGRADIENT_spreadMode else
+         inconsistent "fOCALGRADIENT_spreadMode (x :: FOCALGRADIENT)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB fOCALGRADIENT_spreadMode) ++
+                " bits to store the value " ++
+                  show fOCALGRADIENT_spreadMode ++
+                    ", but only have available " ++ show 2)
+       if requiredBitsUB fOCALGRADIENT_interpolationMode <= 2 then
+         putUB 2 fOCALGRADIENT_interpolationMode else
+         inconsistent "fOCALGRADIENT_interpolationMode (x :: FOCALGRADIENT)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB fOCALGRADIENT_interpolationMode) ++
+                " bits to store the value " ++
+                  show fOCALGRADIENT_interpolationMode ++
+                    ", but only have available " ++ show 2)
        let fOCALGRADIENT_numGradients
              = genericLength fOCALGRADIENT_gradientRecords
-       putUB 4 fOCALGRADIENT_numGradients
+       if requiredBitsUB fOCALGRADIENT_numGradients <= 4 then
+         putUB 4 fOCALGRADIENT_numGradients else
+         inconsistent "x :: FOCALGRADIENT"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB fOCALGRADIENT_numGradients) ++
+                " bits to store the value " ++
+                  show fOCALGRADIENT_numGradients ++
+                    ", but only have available " ++ show 4)
        if
          genericLength fOCALGRADIENT_gradientRecords /=
            (fOCALGRADIENT_numGradients)
-         then inconsistent else
+         then
+         inconsistent "fOCALGRADIENT_gradientRecords (x :: FOCALGRADIENT)"
+           ("Mismatch with the required length: fOCALGRADIENT_numGradients" ++
+              show (genericLength fOCALGRADIENT_gradientRecords) ++
+                " /= " ++ show fOCALGRADIENT_numGradients)
+         else
          mapM_ (\ x -> putGRADRECORD fOCALGRADIENT_shapeVer x)
            fOCALGRADIENT_gradientRecords
        putFIXED8 fOCALGRADIENT_focalPoint
@@ -4481,9 +5562,9 @@ putGRADRECORD shapeVer (GRADRECORD {..}) = do
     putUI8 gRADRECORD_ratio
     case gRADRECORD_color of
         Left rgb   | shapeVer <= 2 -> putRGB rgb
-                   | otherwise     -> inconsistent
+                   | otherwise     -> inconsistent "x :: GRADRECORD" "Must use RGBA rather than RGB for shape version > 2"
         Right rgba | shapeVer > 2  -> putRGBA rgba
-                   | otherwise     -> inconsistent
+                   | otherwise     -> inconsistent "x :: GRADRECORD" "Must use RGB rather than RGBA for shape version <= 2"
 
 \end{code}
 
@@ -4546,8 +5627,13 @@ putDefineBitsJPEG3 DefineBitsJPEG3{..}
        if
          genericLength defineBitsJPEG3_imageData /=
            (defineBitsJPEG3_alphaDataOffset)
-         then inconsistent else
-         mapM_ (\ x -> putUI8 x) defineBitsJPEG3_imageData
+         then
+         inconsistent "defineBitsJPEG3_imageData (x :: DefineBitsJPEG3)"
+           ("Mismatch with the required length: defineBitsJPEG3_alphaDataOffset"
+              ++
+              show (genericLength defineBitsJPEG3_imageData) ++
+                " /= " ++ show defineBitsJPEG3_alphaDataOffset)
+         else mapM_ (\ x -> putUI8 x) defineBitsJPEG3_imageData
        putLazyByteString defineBitsJPEG3_bitmapAlphaData
        return ()
 
@@ -4572,8 +5658,14 @@ putDefineBitsLossless DefineBitsLossless{..}
        putUI16 defineBitsLossless_bitmapHeight
        case defineBitsLossless_bitmapColorTableSize of
            Just x | defineBitsLossless_bitmapFormat == 3 -> putUI8 x
-                  | otherwise -> inconsistent
-           Nothing | defineBitsLossless_bitmapFormat == 3 -> inconsistent
+                  | otherwise ->
+                    inconsistent
+                      "defineBitsLossless_bitmapColorTableSize (x :: DefineBitsLossless)"
+                      "Should have a Just iff defineBitsLossless_bitmapFormat == 3 is True"
+           Nothing | defineBitsLossless_bitmapFormat == 3 ->
+                     inconsistent
+                       "defineBitsLossless_bitmapColorTableSize (x :: DefineBitsLossless)"
+                       "Should have a Nothing iff defineBitsLossless_bitmapFormat == 3 is False"
                    | otherwise -> return ()
        putLazyByteString defineBitsLossless_zlibBitmapData
        return ()
@@ -4599,8 +5691,14 @@ putDefineBitsLossless2 DefineBitsLossless2{..}
        putUI16 defineBitsLossless2_bitmapHeight
        case defineBitsLossless2_bitmapColorTableSize of
            Just x | defineBitsLossless2_bitmapFormat == 3 -> putUI8 x
-                  | otherwise -> inconsistent
-           Nothing | defineBitsLossless2_bitmapFormat == 3 -> inconsistent
+                  | otherwise ->
+                    inconsistent
+                      "defineBitsLossless2_bitmapColorTableSize (x :: DefineBitsLossless2)"
+                      "Should have a Just iff defineBitsLossless2_bitmapFormat == 3 is True"
+           Nothing | defineBitsLossless2_bitmapFormat == 3 ->
+                     inconsistent
+                       "defineBitsLossless2_bitmapColorTableSize (x :: DefineBitsLossless2)"
+                       "Should have a Nothing iff defineBitsLossless2_bitmapFormat == 3 is False"
                    | otherwise -> return ()
        putLazyByteString defineBitsLossless2_zlibBitmapData
        return ()
@@ -4627,8 +5725,13 @@ putDefineBitsJPEG4 DefineBitsJPEG4{..}
        if
          genericLength defineBitsJPEG4_imageData /=
            (defineBitsJPEG4_alphaDataOffset)
-         then inconsistent else
-         mapM_ (\ x -> putUI8 x) defineBitsJPEG4_imageData
+         then
+         inconsistent "defineBitsJPEG4_imageData (x :: DefineBitsJPEG4)"
+           ("Mismatch with the required length: defineBitsJPEG4_alphaDataOffset"
+              ++
+              show (genericLength defineBitsJPEG4_imageData) ++
+                " /= " ++ show defineBitsJPEG4_alphaDataOffset)
+         else mapM_ (\ x -> putUI8 x) defineBitsJPEG4_imageData
        putLazyByteString defineBitsJPEG4_bitmapAlphaData
        return ()
 
@@ -4671,7 +5774,7 @@ getDefineMorphShape2
        defineMorphShape2_endBounds <- getRECT
        defineMorphShape2_startEdgeBounds <- getRECT
        defineMorphShape2_endEdgeBounds <- getRECT
-       discardReserved (getUB 6)
+       discardReserved "_reserved (x :: ?)" (getUB 6)
        defineMorphShape2_usesNonScalingStrokes <- getFlag
        defineMorphShape2_usesScalingStrokes <- getFlag
        defineMorphShape2_offset <- getUI32
@@ -4687,7 +5790,14 @@ putDefineMorphShape2 DefineMorphShape2{..}
        putRECT defineMorphShape2_startEdgeBounds
        putRECT defineMorphShape2_endEdgeBounds
        let defineMorphShape2_reserved = reservedDefault
-       putUB 6 defineMorphShape2_reserved
+       if requiredBitsUB defineMorphShape2_reserved <= 6 then
+         putUB 6 defineMorphShape2_reserved else
+         inconsistent "x :: DefineMorphShape2"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB defineMorphShape2_reserved) ++
+                " bits to store the value " ++
+                  show defineMorphShape2_reserved ++
+                    ", but only have available " ++ show 6)
        putFlag defineMorphShape2_usesNonScalingStrokes
        putFlag defineMorphShape2_usesScalingStrokes
        putUI32 defineMorphShape2_offset
@@ -4805,9 +5915,9 @@ putMORPHLINESTYLEARRAY morphVersion ei_mls_mls2 = do
     when (count >= 0xFF) $ putUI16 count
     case ei_mls_mls2 of
         Left mls | morphVersion == 1   -> mapM_ putMORPHLINESTYLE mls
-                 | otherwise           -> inconsistent
+                 | otherwise           -> inconsistent "x :: MORPHLINESTYLEARRAY" "Must use MORPHLINESTYLE2 rather than MORPHLINESTYLE1 for morph version 2"
         Right mls2 | morphVersion == 2 -> mapM_ putMORPHLINESTYLE2 mls2
-                   | otherwise         -> inconsistent
+                   | otherwise         -> inconsistent "x :: MORPHLINESTYLEARRAY" "Must use MORPHLINESTYLE rather than MORPHLINESTYLE2 for morph version 1"
 
 \end{code}
 
@@ -4859,7 +5969,7 @@ getMORPHLINESTYLE2
        mORPHLINESTYLE2_noHScaleFlag <- getFlag
        mORPHLINESTYLE2_noVScaleFlag <- getFlag
        mORPHLINESTYLE2_pixelHintingFlag <- getFlag
-       discardReserved (getUB 5)
+       discardReserved "_reserved (x :: ?)" (getUB 5)
        mORPHLINESTYLE2_noClose <- getFlag
        mORPHLINESTYLE2_endCapStyle <- getUB 2
        mORPHLINESTYLE2_miterLimitFactor <- maybeHas
@@ -4875,21 +5985,55 @@ getMORPHLINESTYLE2
 putMORPHLINESTYLE2 MORPHLINESTYLE2{..}
   = do putUI16 mORPHLINESTYLE2_startWidth
        putUI16 mORPHLINESTYLE2_endWidth
-       putUB 2 mORPHLINESTYLE2_startCapStyle
-       putUB 2 mORPHLINESTYLE2_joinStyle
+       if requiredBitsUB mORPHLINESTYLE2_startCapStyle <= 2 then
+         putUB 2 mORPHLINESTYLE2_startCapStyle else
+         inconsistent "mORPHLINESTYLE2_startCapStyle (x :: MORPHLINESTYLE2)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB mORPHLINESTYLE2_startCapStyle) ++
+                " bits to store the value " ++
+                  show mORPHLINESTYLE2_startCapStyle ++
+                    ", but only have available " ++ show 2)
+       if requiredBitsUB mORPHLINESTYLE2_joinStyle <= 2 then
+         putUB 2 mORPHLINESTYLE2_joinStyle else
+         inconsistent "mORPHLINESTYLE2_joinStyle (x :: MORPHLINESTYLE2)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB mORPHLINESTYLE2_joinStyle) ++
+                " bits to store the value " ++
+                  show mORPHLINESTYLE2_joinStyle ++
+                    ", but only have available " ++ show 2)
        let mORPHLINESTYLE2_hasFillFlag = isJust mORPHLINESTYLE2_fillType
        putFlag mORPHLINESTYLE2_hasFillFlag
        putFlag mORPHLINESTYLE2_noHScaleFlag
        putFlag mORPHLINESTYLE2_noVScaleFlag
        putFlag mORPHLINESTYLE2_pixelHintingFlag
        let mORPHLINESTYLE2_reserved = reservedDefault
-       putUB 5 mORPHLINESTYLE2_reserved
+       if requiredBitsUB mORPHLINESTYLE2_reserved <= 5 then
+         putUB 5 mORPHLINESTYLE2_reserved else
+         inconsistent "x :: MORPHLINESTYLE2"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB mORPHLINESTYLE2_reserved) ++
+                " bits to store the value " ++
+                  show mORPHLINESTYLE2_reserved ++
+                    ", but only have available " ++ show 5)
        putFlag mORPHLINESTYLE2_noClose
-       putUB 2 mORPHLINESTYLE2_endCapStyle
+       if requiredBitsUB mORPHLINESTYLE2_endCapStyle <= 2 then
+         putUB 2 mORPHLINESTYLE2_endCapStyle else
+         inconsistent "mORPHLINESTYLE2_endCapStyle (x :: MORPHLINESTYLE2)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB mORPHLINESTYLE2_endCapStyle) ++
+                " bits to store the value " ++
+                  show mORPHLINESTYLE2_endCapStyle ++
+                    ", but only have available " ++ show 2)
        case mORPHLINESTYLE2_miterLimitFactor of
            Just x | mORPHLINESTYLE2_joinStyle == 2 -> putUI16 x
-                  | otherwise -> inconsistent
-           Nothing | mORPHLINESTYLE2_joinStyle == 2 -> inconsistent
+                  | otherwise ->
+                    inconsistent
+                      "mORPHLINESTYLE2_miterLimitFactor (x :: MORPHLINESTYLE2)"
+                      "Should have a Just iff mORPHLINESTYLE2_joinStyle == 2 is True"
+           Nothing | mORPHLINESTYLE2_joinStyle == 2 ->
+                     inconsistent
+                       "mORPHLINESTYLE2_miterLimitFactor (x :: MORPHLINESTYLE2)"
+                       "Should have a Nothing iff mORPHLINESTYLE2_joinStyle == 2 is False"
                    | otherwise -> return ()
        case mORPHLINESTYLE2_color of
            Just x | not mORPHLINESTYLE2_hasFillFlag ->
@@ -4898,13 +6042,21 @@ putMORPHLINESTYLE2 MORPHLINESTYLE2{..}
                          mORPHLINESTYLE2_endColor) -> do putRGBA mORPHLINESTYLE2_startColor
                                                          putRGBA mORPHLINESTYLE2_endColor
                                                          return ()
-                  | otherwise -> inconsistent
-           Nothing | not mORPHLINESTYLE2_hasFillFlag -> inconsistent
+                  | otherwise ->
+                    inconsistent "mORPHLINESTYLE2_color (x :: MORPHLINESTYLE2)"
+                      "Should have a Just iff not mORPHLINESTYLE2_hasFillFlag is True"
+           Nothing | not mORPHLINESTYLE2_hasFillFlag ->
+                     inconsistent "mORPHLINESTYLE2_color (x :: MORPHLINESTYLE2)"
+                       "Should have a Nothing iff not mORPHLINESTYLE2_hasFillFlag is False"
                    | otherwise -> return ()
        case mORPHLINESTYLE2_fillType of
            Just x | mORPHLINESTYLE2_hasFillFlag -> putMORPHFILLSTYLE x
-                  | otherwise -> inconsistent
-           Nothing | mORPHLINESTYLE2_hasFillFlag -> inconsistent
+                  | otherwise ->
+                    inconsistent "mORPHLINESTYLE2_fillType (x :: MORPHLINESTYLE2)"
+                      "Should have a Just iff mORPHLINESTYLE2_hasFillFlag is True"
+           Nothing | mORPHLINESTYLE2_hasFillFlag ->
+                     inconsistent "mORPHLINESTYLE2_fillType (x :: MORPHLINESTYLE2)"
+                       "Should have a Nothing iff mORPHLINESTYLE2_hasFillFlag is False"
                    | otherwise -> return ()
        return ()
 
@@ -4946,7 +6098,7 @@ getDefineFontInfo
        defineFontInfo_fontName <- genericReplicateM
                                     defineFontInfo_fontNameLen
                                     getUI8
-       discardReserved (getUB 2)
+       discardReserved "_reserved (x :: ?)" (getUB 2)
        defineFontInfo_fontFlagsSmallText <- getFlag
        defineFontInfo_fontFlagsShiftJIS <- getFlag
        defineFontInfo_fontFlagsANSI <- getFlag
@@ -4965,10 +6117,21 @@ putDefineFontInfo DefineFontInfo{..}
        if
          genericLength defineFontInfo_fontName /=
            (defineFontInfo_fontNameLen)
-         then inconsistent else
-         mapM_ (\ x -> putUI8 x) defineFontInfo_fontName
+         then
+         inconsistent "defineFontInfo_fontName (x :: DefineFontInfo)"
+           ("Mismatch with the required length: defineFontInfo_fontNameLen" ++
+              show (genericLength defineFontInfo_fontName) ++
+                " /= " ++ show defineFontInfo_fontNameLen)
+         else mapM_ (\ x -> putUI8 x) defineFontInfo_fontName
        let defineFontInfo_fontFlagsReserved = reservedDefault
-       putUB 2 defineFontInfo_fontFlagsReserved
+       if requiredBitsUB defineFontInfo_fontFlagsReserved <= 2 then
+         putUB 2 defineFontInfo_fontFlagsReserved else
+         inconsistent "x :: DefineFontInfo"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB defineFontInfo_fontFlagsReserved) ++
+                " bits to store the value " ++
+                  show defineFontInfo_fontFlagsReserved ++
+                    ", but only have available " ++ show 2)
        putFlag defineFontInfo_fontFlagsSmallText
        putFlag defineFontInfo_fontFlagsShiftJIS
        putFlag defineFontInfo_fontFlagsANSI
@@ -4980,8 +6143,12 @@ putDefineFontInfo DefineFontInfo{..}
        case defineFontInfo_codeTable of
            Left x | defineFontInfo_fontFlagsWideCodes ->
                     mapM_ (\ x -> putUI16 x) x
-                  | otherwise -> inconsistent
-           Right x | defineFontInfo_fontFlagsWideCodes -> inconsistent
+                  | otherwise ->
+                    inconsistent "defineFontInfo_codeTable (x :: DefineFontInfo)"
+                      "Should have a Left iff defineFontInfo_fontFlagsWideCodes is True"
+           Right x | defineFontInfo_fontFlagsWideCodes ->
+                     inconsistent "defineFontInfo_codeTable (x :: DefineFontInfo)"
+                       "Should have a Right iff defineFontInfo_fontFlagsWideCodes is False"
                    | otherwise -> mapM_ (\ x -> putUI8 x) x
        return ()
 
@@ -4995,7 +6162,7 @@ getDefineFontInfo2
        defineFontInfo2_fontName <- genericReplicateM
                                      defineFontInfo2_fontNameLen
                                      getUI8
-       discardReserved (getUB 2)
+       discardReserved "_reserved (x :: ?)" (getUB 2)
        defineFontInfo2_fontFlagsSmallText <- getFlag
        defineFontInfo2_fontFlagsShiftJIS <- getFlag
        defineFontInfo2_fontFlagsANSI <- getFlag
@@ -5013,10 +6180,22 @@ putDefineFontInfo2 DefineFontInfo2{..}
        if
          genericLength defineFontInfo2_fontName /=
            (defineFontInfo2_fontNameLen)
-         then inconsistent else
-         mapM_ (\ x -> putUI8 x) defineFontInfo2_fontName
+         then
+         inconsistent "defineFontInfo2_fontName (x :: DefineFontInfo2)"
+           ("Mismatch with the required length: defineFontInfo2_fontNameLen"
+              ++
+              show (genericLength defineFontInfo2_fontName) ++
+                " /= " ++ show defineFontInfo2_fontNameLen)
+         else mapM_ (\ x -> putUI8 x) defineFontInfo2_fontName
        let defineFontInfo2_fontFlagsReserved = reservedDefault
-       putUB 2 defineFontInfo2_fontFlagsReserved
+       if requiredBitsUB defineFontInfo2_fontFlagsReserved <= 2 then
+         putUB 2 defineFontInfo2_fontFlagsReserved else
+         inconsistent "x :: DefineFontInfo2"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB defineFontInfo2_fontFlagsReserved) ++
+                " bits to store the value " ++
+                  show defineFontInfo2_fontFlagsReserved ++
+                    ", but only have available " ++ show 2)
        putFlag defineFontInfo2_fontFlagsSmallText
        putFlag defineFontInfo2_fontFlagsShiftJIS
        putFlag defineFontInfo2_fontFlagsANSI
@@ -5099,37 +6278,72 @@ putDefineFont2 DefineFont2{..}
        let defineFont2_fontNameLen = genericLength defineFont2_fontName
        putUI8 defineFont2_fontNameLen
        if genericLength defineFont2_fontName /= (defineFont2_fontNameLen)
-         then inconsistent else mapM_ (\ x -> putUI8 x) defineFont2_fontName
+         then
+         inconsistent "defineFont2_fontName (x :: DefineFont2)"
+           ("Mismatch with the required length: defineFont2_fontNameLen" ++
+              show (genericLength defineFont2_fontName) ++
+                " /= " ++ show defineFont2_fontNameLen)
+         else mapM_ (\ x -> putUI8 x) defineFont2_fontName
        let defineFont2_numGlyphs
              = genericLength defineFont2_glyphShapeTable
        putUI16 defineFont2_numGlyphs
        case defineFont2_offsetTable of
            Left x | defineFont2_fontFlagsWideOffsets ->
-                    if genericLength x /= (defineFont2_numGlyphs) then inconsistent
+                    if genericLength x /= (defineFont2_numGlyphs) then
+                      inconsistent
+                        "fromLeft (defineFont2_offsetTable (x :: DefineFont2))"
+                        ("Mismatch with the required length: defineFont2_numGlyphs" ++
+                           show (genericLength x) ++ " /= " ++ show defineFont2_numGlyphs)
                       else mapM_ (\ x -> putUI32 x) x
-                  | otherwise -> inconsistent
-           Right x | defineFont2_fontFlagsWideOffsets -> inconsistent
+                  | otherwise ->
+                    inconsistent "defineFont2_offsetTable (x :: DefineFont2)"
+                      "Should have a Left iff defineFont2_fontFlagsWideOffsets is True"
+           Right x | defineFont2_fontFlagsWideOffsets ->
+                     inconsistent "defineFont2_offsetTable (x :: DefineFont2)"
+                       "Should have a Right iff defineFont2_fontFlagsWideOffsets is False"
                    | otherwise ->
-                     if genericLength x /= (defineFont2_numGlyphs) then inconsistent
+                     if genericLength x /= (defineFont2_numGlyphs) then
+                       inconsistent
+                         "fromRight (defineFont2_offsetTable (x :: DefineFont2))"
+                         ("Mismatch with the required length: defineFont2_numGlyphs" ++
+                            show (genericLength x) ++ " /= " ++ show defineFont2_numGlyphs)
                        else mapM_ (\ x -> putUI16 x) x
        case defineFont2_codeTableOffset of
            Left x | defineFont2_fontFlagsWideOffsets -> putUI32 x
-                  | otherwise -> inconsistent
-           Right x | defineFont2_fontFlagsWideOffsets -> inconsistent
+                  | otherwise ->
+                    inconsistent "defineFont2_codeTableOffset (x :: DefineFont2)"
+                      "Should have a Left iff defineFont2_fontFlagsWideOffsets is True"
+           Right x | defineFont2_fontFlagsWideOffsets ->
+                     inconsistent "defineFont2_codeTableOffset (x :: DefineFont2)"
+                       "Should have a Right iff defineFont2_fontFlagsWideOffsets is False"
                    | otherwise -> putUI16 x
        if
          genericLength defineFont2_glyphShapeTable /=
            (defineFont2_numGlyphs)
-         then inconsistent else
-         mapM_ (\ x -> putSHAPE 3 x) defineFont2_glyphShapeTable
+         then
+         inconsistent "defineFont2_glyphShapeTable (x :: DefineFont2)"
+           ("Mismatch with the required length: defineFont2_numGlyphs" ++
+              show (genericLength defineFont2_glyphShapeTable) ++
+                " /= " ++ show defineFont2_numGlyphs)
+         else mapM_ (\ x -> putSHAPE 3 x) defineFont2_glyphShapeTable
        case defineFont2_codeTable of
            Left x | defineFont2_fontFlagsWideCodes ->
-                    if genericLength x /= (defineFont2_numGlyphs) then inconsistent
+                    if genericLength x /= (defineFont2_numGlyphs) then
+                      inconsistent "fromLeft (defineFont2_codeTable (x :: DefineFont2))"
+                        ("Mismatch with the required length: defineFont2_numGlyphs" ++
+                           show (genericLength x) ++ " /= " ++ show defineFont2_numGlyphs)
                       else mapM_ (\ x -> putUI16 x) x
-                  | otherwise -> inconsistent
-           Right x | defineFont2_fontFlagsWideCodes -> inconsistent
+                  | otherwise ->
+                    inconsistent "defineFont2_codeTable (x :: DefineFont2)"
+                      "Should have a Left iff defineFont2_fontFlagsWideCodes is True"
+           Right x | defineFont2_fontFlagsWideCodes ->
+                     inconsistent "defineFont2_codeTable (x :: DefineFont2)"
+                       "Should have a Right iff defineFont2_fontFlagsWideCodes is False"
                    | otherwise ->
-                     if genericLength x /= (defineFont2_numGlyphs) then inconsistent
+                     if genericLength x /= (defineFont2_numGlyphs) then
+                       inconsistent "fromRight (defineFont2_codeTable (x :: DefineFont2))"
+                         ("Mismatch with the required length: defineFont2_numGlyphs" ++
+                            show (genericLength x) ++ " /= " ++ show defineFont2_numGlyphs)
                        else mapM_ (\ x -> putUI8 x) x
        case defineFont2_fontLayout of
            Just x | defineFont2_fontFlagsHasLayout ->
@@ -5148,14 +6362,38 @@ putDefineFont2 DefineFont2{..}
                                                                      genericLength
                                                                        defineFont2_fontLayoutAdvanceTable
                                                                        /= (defineFont2_numGlyphs)
-                                                                     then inconsistent else
+                                                                     then
+                                                                     inconsistent
+                                                                       "frth (fromJust (defineFont2_fontLayout (x :: DefineFont2)))"
+                                                                       ("Mismatch with the required length: defineFont2_numGlyphs"
+                                                                          ++
+                                                                          show
+                                                                            (genericLength
+                                                                               defineFont2_fontLayoutAdvanceTable)
+                                                                            ++
+                                                                            " /= " ++
+                                                                              show
+                                                                                defineFont2_numGlyphs)
+                                                                     else
                                                                      mapM_ (\ x -> putSI16 x)
                                                                        defineFont2_fontLayoutAdvanceTable
                                                                    if
                                                                      genericLength
                                                                        defineFont2_fontLayoutBoundsTable
                                                                        /= (defineFont2_numGlyphs)
-                                                                     then inconsistent else
+                                                                     then
+                                                                     inconsistent
+                                                                       "ffth (fromJust (defineFont2_fontLayout (x :: DefineFont2)))"
+                                                                       ("Mismatch with the required length: defineFont2_numGlyphs"
+                                                                          ++
+                                                                          show
+                                                                            (genericLength
+                                                                               defineFont2_fontLayoutBoundsTable)
+                                                                            ++
+                                                                            " /= " ++
+                                                                              show
+                                                                                defineFont2_numGlyphs)
+                                                                     else
                                                                      mapM_ (\ x -> putRECT x)
                                                                        defineFont2_fontLayoutBoundsTable
                                                                    putUI16
@@ -5165,7 +6403,19 @@ putDefineFont2 DefineFont2{..}
                                                                        defineFont2_fontLayoutKerningTable
                                                                        /=
                                                                        (defineFont2_fontLayoutKerningCount)
-                                                                     then inconsistent else
+                                                                     then
+                                                                     inconsistent
+                                                                       "svnth (fromJust (defineFont2_fontLayout (x :: DefineFont2)))"
+                                                                       ("Mismatch with the required length: defineFont2_fontLayoutKerningCount"
+                                                                          ++
+                                                                          show
+                                                                            (genericLength
+                                                                               defineFont2_fontLayoutKerningTable)
+                                                                            ++
+                                                                            " /= " ++
+                                                                              show
+                                                                                defineFont2_fontLayoutKerningCount)
+                                                                     else
                                                                      mapM_
                                                                        (\ x ->
                                                                           putKERNINGRECORD
@@ -5173,8 +6423,12 @@ putDefineFont2 DefineFont2{..}
                                                                             x)
                                                                        defineFont2_fontLayoutKerningTable
                                                                    return ()
-                  | otherwise -> inconsistent
-           Nothing | defineFont2_fontFlagsHasLayout -> inconsistent
+                  | otherwise ->
+                    inconsistent "defineFont2_fontLayout (x :: DefineFont2)"
+                      "Should have a Just iff defineFont2_fontFlagsHasLayout is True"
+           Nothing | defineFont2_fontFlagsHasLayout ->
+                     inconsistent "defineFont2_fontLayout (x :: DefineFont2)"
+                       "Should have a Nothing iff defineFont2_fontFlagsHasLayout is False"
                    | otherwise -> return ()
        return ()
 
@@ -5248,32 +6502,61 @@ putDefineFont3 DefineFont3{..}
        let defineFont3_fontNameLen = genericLength defineFont3_fontName
        putUI8 defineFont3_fontNameLen
        if genericLength defineFont3_fontName /= (defineFont3_fontNameLen)
-         then inconsistent else mapM_ (\ x -> putUI8 x) defineFont3_fontName
+         then
+         inconsistent "defineFont3_fontName (x :: DefineFont3)"
+           ("Mismatch with the required length: defineFont3_fontNameLen" ++
+              show (genericLength defineFont3_fontName) ++
+                " /= " ++ show defineFont3_fontNameLen)
+         else mapM_ (\ x -> putUI8 x) defineFont3_fontName
        let defineFont3_numGlyphs
              = genericLength defineFont3_glyphShapeTable
        putUI16 defineFont3_numGlyphs
        case defineFont3_offsetTable of
            Left x | defineFont3_fontFlagsWideOffsets ->
-                    if genericLength x /= (defineFont3_numGlyphs) then inconsistent
+                    if genericLength x /= (defineFont3_numGlyphs) then
+                      inconsistent
+                        "fromLeft (defineFont3_offsetTable (x :: DefineFont3))"
+                        ("Mismatch with the required length: defineFont3_numGlyphs" ++
+                           show (genericLength x) ++ " /= " ++ show defineFont3_numGlyphs)
                       else mapM_ (\ x -> putUI32 x) x
-                  | otherwise -> inconsistent
-           Right x | defineFont3_fontFlagsWideOffsets -> inconsistent
+                  | otherwise ->
+                    inconsistent "defineFont3_offsetTable (x :: DefineFont3)"
+                      "Should have a Left iff defineFont3_fontFlagsWideOffsets is True"
+           Right x | defineFont3_fontFlagsWideOffsets ->
+                     inconsistent "defineFont3_offsetTable (x :: DefineFont3)"
+                       "Should have a Right iff defineFont3_fontFlagsWideOffsets is False"
                    | otherwise ->
-                     if genericLength x /= (defineFont3_numGlyphs) then inconsistent
+                     if genericLength x /= (defineFont3_numGlyphs) then
+                       inconsistent
+                         "fromRight (defineFont3_offsetTable (x :: DefineFont3))"
+                         ("Mismatch with the required length: defineFont3_numGlyphs" ++
+                            show (genericLength x) ++ " /= " ++ show defineFont3_numGlyphs)
                        else mapM_ (\ x -> putUI16 x) x
        case defineFont3_codeTableOffset of
            Left x | defineFont3_fontFlagsWideOffsets -> putUI32 x
-                  | otherwise -> inconsistent
-           Right x | defineFont3_fontFlagsWideOffsets -> inconsistent
+                  | otherwise ->
+                    inconsistent "defineFont3_codeTableOffset (x :: DefineFont3)"
+                      "Should have a Left iff defineFont3_fontFlagsWideOffsets is True"
+           Right x | defineFont3_fontFlagsWideOffsets ->
+                     inconsistent "defineFont3_codeTableOffset (x :: DefineFont3)"
+                       "Should have a Right iff defineFont3_fontFlagsWideOffsets is False"
                    | otherwise -> putUI16 x
        if
          genericLength defineFont3_glyphShapeTable /=
            (defineFont3_numGlyphs)
-         then inconsistent else
-         mapM_ (\ x -> putSHAPE 4 x) defineFont3_glyphShapeTable
+         then
+         inconsistent "defineFont3_glyphShapeTable (x :: DefineFont3)"
+           ("Mismatch with the required length: defineFont3_numGlyphs" ++
+              show (genericLength defineFont3_glyphShapeTable) ++
+                " /= " ++ show defineFont3_numGlyphs)
+         else mapM_ (\ x -> putSHAPE 4 x) defineFont3_glyphShapeTable
        if genericLength defineFont3_codeTable /= (defineFont3_numGlyphs)
-         then inconsistent else
-         mapM_ (\ x -> putUI16 x) defineFont3_codeTable
+         then
+         inconsistent "defineFont3_codeTable (x :: DefineFont3)"
+           ("Mismatch with the required length: defineFont3_numGlyphs" ++
+              show (genericLength defineFont3_codeTable) ++
+                " /= " ++ show defineFont3_numGlyphs)
+         else mapM_ (\ x -> putUI16 x) defineFont3_codeTable
        case defineFont3_fontLayout of
            Just x | defineFont3_fontFlagsHasLayout ->
                     case x of
@@ -5291,14 +6574,38 @@ putDefineFont3 DefineFont3{..}
                                                                      genericLength
                                                                        defineFont3_fontLayoutAdvanceTable
                                                                        /= (defineFont3_numGlyphs)
-                                                                     then inconsistent else
+                                                                     then
+                                                                     inconsistent
+                                                                       "frth (fromJust (defineFont3_fontLayout (x :: DefineFont3)))"
+                                                                       ("Mismatch with the required length: defineFont3_numGlyphs"
+                                                                          ++
+                                                                          show
+                                                                            (genericLength
+                                                                               defineFont3_fontLayoutAdvanceTable)
+                                                                            ++
+                                                                            " /= " ++
+                                                                              show
+                                                                                defineFont3_numGlyphs)
+                                                                     else
                                                                      mapM_ (\ x -> putSI16 x)
                                                                        defineFont3_fontLayoutAdvanceTable
                                                                    if
                                                                      genericLength
                                                                        defineFont3_fontLayoutBoundsTable
                                                                        /= (defineFont3_numGlyphs)
-                                                                     then inconsistent else
+                                                                     then
+                                                                     inconsistent
+                                                                       "ffth (fromJust (defineFont3_fontLayout (x :: DefineFont3)))"
+                                                                       ("Mismatch with the required length: defineFont3_numGlyphs"
+                                                                          ++
+                                                                          show
+                                                                            (genericLength
+                                                                               defineFont3_fontLayoutBoundsTable)
+                                                                            ++
+                                                                            " /= " ++
+                                                                              show
+                                                                                defineFont3_numGlyphs)
+                                                                     else
                                                                      mapM_ (\ x -> putRECT x)
                                                                        defineFont3_fontLayoutBoundsTable
                                                                    putUI16
@@ -5308,7 +6615,19 @@ putDefineFont3 DefineFont3{..}
                                                                        defineFont3_fontLayoutKerningTable
                                                                        /=
                                                                        (defineFont3_fontLayoutKerningCount)
-                                                                     then inconsistent else
+                                                                     then
+                                                                     inconsistent
+                                                                       "svnth (fromJust (defineFont3_fontLayout (x :: DefineFont3)))"
+                                                                       ("Mismatch with the required length: defineFont3_fontLayoutKerningCount"
+                                                                          ++
+                                                                          show
+                                                                            (genericLength
+                                                                               defineFont3_fontLayoutKerningTable)
+                                                                            ++
+                                                                            " /= " ++
+                                                                              show
+                                                                                defineFont3_fontLayoutKerningCount)
+                                                                     else
                                                                      mapM_
                                                                        (\ x ->
                                                                           putKERNINGRECORD
@@ -5316,8 +6635,12 @@ putDefineFont3 DefineFont3{..}
                                                                             x)
                                                                        defineFont3_fontLayoutKerningTable
                                                                    return ()
-                  | otherwise -> inconsistent
-           Nothing | defineFont3_fontFlagsHasLayout -> inconsistent
+                  | otherwise ->
+                    inconsistent "defineFont3_fontLayout (x :: DefineFont3)"
+                      "Should have a Just iff defineFont3_fontFlagsHasLayout is True"
+           Nothing | defineFont3_fontFlagsHasLayout ->
+                     inconsistent "defineFont3_fontLayout (x :: DefineFont3)"
+                       "Should have a Nothing iff defineFont3_fontFlagsHasLayout is False"
                    | otherwise -> return ()
        return ()
 
@@ -5328,14 +6651,29 @@ p186: DefineFontAlignZones
 getDefineFontAlignZones
   = do defineFontAlignZones_fontID <- getUI16
        defineFontAlignZones_cSMTableHint <- getUB 2
-       discardReserved (getUB 6)
+       discardReserved "_reserved (x :: ?)" (getUB 6)
        defineFontAlignZones_zoneTable <- getToEnd getZONERECORD
        return (DefineFontAlignZones{..})
 putDefineFontAlignZones DefineFontAlignZones{..}
   = do putUI16 defineFontAlignZones_fontID
-       putUB 2 defineFontAlignZones_cSMTableHint
+       if requiredBitsUB defineFontAlignZones_cSMTableHint <= 2 then
+         putUB 2 defineFontAlignZones_cSMTableHint else
+         inconsistent
+           "defineFontAlignZones_cSMTableHint (x :: DefineFontAlignZones)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB defineFontAlignZones_cSMTableHint) ++
+                " bits to store the value " ++
+                  show defineFontAlignZones_cSMTableHint ++
+                    ", but only have available " ++ show 2)
        let defineFontAlignZones_reserved = reservedDefault
-       putUB 6 defineFontAlignZones_reserved
+       if requiredBitsUB defineFontAlignZones_reserved <= 6 then
+         putUB 6 defineFontAlignZones_reserved else
+         inconsistent "x :: DefineFontAlignZones"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB defineFontAlignZones_reserved) ++
+                " bits to store the value " ++
+                  show defineFontAlignZones_reserved ++
+                    ", but only have available " ++ show 6)
        mapM_ (\ x -> putZONERECORD x) defineFontAlignZones_zoneTable
        return ()
 
@@ -5350,7 +6688,7 @@ getZONERECORD
   = do zONERECORD_numZoneData <- getUI8
        zONERECORD_zoneData <- genericReplicateM zONERECORD_numZoneData
                                 getZONEDATA
-       discardReserved (getUB 6)
+       discardReserved "_reserved (x :: ?)" (getUB 6)
        zONERECORD_zoneMaskY <- getFlag
        zONERECORD_zoneMaskX <- getFlag
        return (ZONERECORD{..})
@@ -5358,10 +6696,20 @@ putZONERECORD ZONERECORD{..}
   = do let zONERECORD_numZoneData = genericLength zONERECORD_zoneData
        putUI8 zONERECORD_numZoneData
        if genericLength zONERECORD_zoneData /= (zONERECORD_numZoneData)
-         then inconsistent else
-         mapM_ (\ x -> putZONEDATA x) zONERECORD_zoneData
+         then
+         inconsistent "zONERECORD_zoneData (x :: ZONERECORD)"
+           ("Mismatch with the required length: zONERECORD_numZoneData" ++
+              show (genericLength zONERECORD_zoneData) ++
+                " /= " ++ show zONERECORD_numZoneData)
+         else mapM_ (\ x -> putZONEDATA x) zONERECORD_zoneData
        let zONERECORD_reserved = reservedDefault
-       putUB 6 zONERECORD_reserved
+       if requiredBitsUB zONERECORD_reserved <= 6 then
+         putUB 6 zONERECORD_reserved else
+         inconsistent "x :: ZONERECORD"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB zONERECORD_reserved) ++
+                " bits to store the value " ++
+                  show zONERECORD_reserved ++ ", but only have available " ++ show 6)
        putFlag zONERECORD_zoneMaskY
        putFlag zONERECORD_zoneMaskX
        return ()
@@ -5404,8 +6752,12 @@ putKERNINGRECORD kERNINGRECORD_fontFlagsWideCodes KERNINGRECORD{..}
                     case x of
                         (x1, x2) -> do putUI16 x1
                                        putUI16 x2
-                  | otherwise -> inconsistent
-           Right x | kERNINGRECORD_fontFlagsWideCodes -> inconsistent
+                  | otherwise ->
+                    inconsistent "kERNINGRECORD_fontKerningCodes (x :: KERNINGRECORD)"
+                      "Should have a Left iff kERNINGRECORD_fontFlagsWideCodes is True"
+           Right x | kERNINGRECORD_fontFlagsWideCodes ->
+                     inconsistent "kERNINGRECORD_fontKerningCodes (x :: KERNINGRECORD)"
+                       "Should have a Right iff kERNINGRECORD_fontFlagsWideCodes is False"
                    | otherwise ->
                      case x of
                          (x1, x2) -> do putUI8 x1
@@ -5463,7 +6815,7 @@ getTEXTRECORDS textVer glyphBits advanceBits = go
       look <- lookAhead getUI8
       if look == 0
        then do
-         discardKnown 0 getUI8
+         discardKnown "x :: TEXTRECORDS" "TEXTRECORDS array should be 0 terminated" 0 getUI8
          return []
        else do
          x <- getTEXTRECORD textVer glyphBits advanceBits
@@ -5492,7 +6844,7 @@ data TEXTRECORD = TEXTRECORD{tEXTRECORD_textRecordType :: Bool,
 getTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
   tEXTRECORD_advanceBits
   = do tEXTRECORD_textRecordType <- getFlag
-       discardReserved (getUB 3)
+       discardReserved "_reserved (x :: ?)" (getUB 3)
        tEXTRECORD_styleFlagsHasFont <- getFlag
        tEXTRECORD_styleFlagsHasColor <- getFlag
        tEXTRECORD_styleFlagsHasYOffset <- getFlag
@@ -5510,13 +6862,20 @@ getTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
        tEXTRECORD_glyphCount <- getUI8
        tEXTRECORD_glyphEntries <- genericReplicateM tEXTRECORD_glyphCount
                                     (getGLYPHENTRY tEXTRECORD_glyphBits tEXTRECORD_advanceBits)
-       discardReserved byteAlign
+       discardReserved "_reserved (x :: ?)" byteAlign
        return (TEXTRECORD{..})
 putTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
   tEXTRECORD_advanceBits TEXTRECORD{..}
   = do putFlag tEXTRECORD_textRecordType
        let tEXTRECORD_styleFlagsReserved = reservedDefault
-       putUB 3 tEXTRECORD_styleFlagsReserved
+       if requiredBitsUB tEXTRECORD_styleFlagsReserved <= 3 then
+         putUB 3 tEXTRECORD_styleFlagsReserved else
+         inconsistent "x :: TEXTRECORD"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB tEXTRECORD_styleFlagsReserved) ++
+                " bits to store the value " ++
+                  show tEXTRECORD_styleFlagsReserved ++
+                    ", but only have available " ++ show 3)
        let tEXTRECORD_styleFlagsHasFont = isJust tEXTRECORD_fontID
        putFlag tEXTRECORD_styleFlagsHasFont
        let tEXTRECORD_styleFlagsHasColor = isJust tEXTRECORD_textColor
@@ -5527,38 +6886,67 @@ putTEXTRECORD tEXTRECORD_textVer tEXTRECORD_glyphBits
        putFlag tEXTRECORD_styleFlagsHasXOffset
        case tEXTRECORD_fontID of
            Just x | tEXTRECORD_styleFlagsHasFont -> putUI16 x
-                  | otherwise -> inconsistent
-           Nothing | tEXTRECORD_styleFlagsHasFont -> inconsistent
+                  | otherwise ->
+                    inconsistent "tEXTRECORD_fontID (x :: TEXTRECORD)"
+                      "Should have a Just iff tEXTRECORD_styleFlagsHasFont is True"
+           Nothing | tEXTRECORD_styleFlagsHasFont ->
+                     inconsistent "tEXTRECORD_fontID (x :: TEXTRECORD)"
+                       "Should have a Nothing iff tEXTRECORD_styleFlagsHasFont is False"
                    | otherwise -> return ()
        case tEXTRECORD_textColor of
            Just x | tEXTRECORD_styleFlagsHasColor ->
                     case x of
                         Left x | tEXTRECORD_textVer == 2 -> putRGBA x
-                               | otherwise -> inconsistent
-                        Right x | tEXTRECORD_textVer == 2 -> inconsistent
+                               | otherwise ->
+                                 inconsistent "fromJust (tEXTRECORD_textColor (x :: TEXTRECORD))"
+                                   "Should have a Left iff tEXTRECORD_textVer == 2 is True"
+                        Right x | tEXTRECORD_textVer == 2 ->
+                                  inconsistent "fromJust (tEXTRECORD_textColor (x :: TEXTRECORD))"
+                                    "Should have a Right iff tEXTRECORD_textVer == 2 is False"
                                 | otherwise -> putRGB x
-                  | otherwise -> inconsistent
-           Nothing | tEXTRECORD_styleFlagsHasColor -> inconsistent
+                  | otherwise ->
+                    inconsistent "tEXTRECORD_textColor (x :: TEXTRECORD)"
+                      "Should have a Just iff tEXTRECORD_styleFlagsHasColor is True"
+           Nothing | tEXTRECORD_styleFlagsHasColor ->
+                     inconsistent "tEXTRECORD_textColor (x :: TEXTRECORD)"
+                       "Should have a Nothing iff tEXTRECORD_styleFlagsHasColor is False"
                    | otherwise -> return ()
        case tEXTRECORD_xOffset of
            Just x | tEXTRECORD_styleFlagsHasXOffset -> putSI16 x
-                  | otherwise -> inconsistent
-           Nothing | tEXTRECORD_styleFlagsHasXOffset -> inconsistent
+                  | otherwise ->
+                    inconsistent "tEXTRECORD_xOffset (x :: TEXTRECORD)"
+                      "Should have a Just iff tEXTRECORD_styleFlagsHasXOffset is True"
+           Nothing | tEXTRECORD_styleFlagsHasXOffset ->
+                     inconsistent "tEXTRECORD_xOffset (x :: TEXTRECORD)"
+                       "Should have a Nothing iff tEXTRECORD_styleFlagsHasXOffset is False"
                    | otherwise -> return ()
        case tEXTRECORD_yOffset of
            Just x | tEXTRECORD_styleFlagsHasYOffset -> putSI16 x
-                  | otherwise -> inconsistent
-           Nothing | tEXTRECORD_styleFlagsHasYOffset -> inconsistent
+                  | otherwise ->
+                    inconsistent "tEXTRECORD_yOffset (x :: TEXTRECORD)"
+                      "Should have a Just iff tEXTRECORD_styleFlagsHasYOffset is True"
+           Nothing | tEXTRECORD_styleFlagsHasYOffset ->
+                     inconsistent "tEXTRECORD_yOffset (x :: TEXTRECORD)"
+                       "Should have a Nothing iff tEXTRECORD_styleFlagsHasYOffset is False"
                    | otherwise -> return ()
        case tEXTRECORD_textHeight of
            Just x | tEXTRECORD_styleFlagsHasFont -> putUI16 x
-                  | otherwise -> inconsistent
-           Nothing | tEXTRECORD_styleFlagsHasFont -> inconsistent
+                  | otherwise ->
+                    inconsistent "tEXTRECORD_textHeight (x :: TEXTRECORD)"
+                      "Should have a Just iff tEXTRECORD_styleFlagsHasFont is True"
+           Nothing | tEXTRECORD_styleFlagsHasFont ->
+                     inconsistent "tEXTRECORD_textHeight (x :: TEXTRECORD)"
+                       "Should have a Nothing iff tEXTRECORD_styleFlagsHasFont is False"
                    | otherwise -> return ()
        let tEXTRECORD_glyphCount = genericLength tEXTRECORD_glyphEntries
        putUI8 tEXTRECORD_glyphCount
        if genericLength tEXTRECORD_glyphEntries /= (tEXTRECORD_glyphCount)
-         then inconsistent else
+         then
+         inconsistent "tEXTRECORD_glyphEntries (x :: TEXTRECORD)"
+           ("Mismatch with the required length: tEXTRECORD_glyphCount" ++
+              show (genericLength tEXTRECORD_glyphEntries) ++
+                " /= " ++ show tEXTRECORD_glyphCount)
+         else
          mapM_
            (\ x ->
               putGLYPHENTRY tEXTRECORD_glyphBits tEXTRECORD_advanceBits x)
@@ -5581,8 +6969,23 @@ getGLYPHENTRY gLYPHENTRY_glyphBits gLYPHENTRY_advanceBits
        return (GLYPHENTRY{..})
 putGLYPHENTRY gLYPHENTRY_glyphBits gLYPHENTRY_advanceBits
   GLYPHENTRY{..}
-  = do putUB gLYPHENTRY_glyphBits gLYPHENTRY_glyphIndex
-       putSB gLYPHENTRY_advanceBits gLYPHENTRY_glyphAdvance
+  = do if
+         requiredBitsUB gLYPHENTRY_glyphIndex <= gLYPHENTRY_glyphBits then
+         putUB gLYPHENTRY_glyphBits gLYPHENTRY_glyphIndex else
+         inconsistent "gLYPHENTRY_glyphIndex (x :: GLYPHENTRY)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB gLYPHENTRY_glyphIndex) ++
+                " bits to store the value " ++
+                  show gLYPHENTRY_glyphIndex ++
+                    ", but only have available " ++ show gLYPHENTRY_glyphBits)
+       if requiredBitsSB gLYPHENTRY_glyphAdvance <= gLYPHENTRY_advanceBits
+         then putSB gLYPHENTRY_advanceBits gLYPHENTRY_glyphAdvance else
+         inconsistent "gLYPHENTRY_glyphAdvance (x :: GLYPHENTRY)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsSB gLYPHENTRY_glyphAdvance) ++
+                " bits to store the value " ++
+                  show gLYPHENTRY_glyphAdvance ++
+                    ", but only have available " ++ show gLYPHENTRY_advanceBits)
        return ()
 
 \end{code}
@@ -5682,28 +7085,48 @@ putDefineEditText DefineEditText{..}
        putFlag defineEditText_useOutlines
        case defineEditText_fontID of
            Just x | defineEditText_hasFont -> putUI16 x
-                  | otherwise -> inconsistent
-           Nothing | defineEditText_hasFont -> inconsistent
+                  | otherwise ->
+                    inconsistent "defineEditText_fontID (x :: DefineEditText)"
+                      "Should have a Just iff defineEditText_hasFont is True"
+           Nothing | defineEditText_hasFont ->
+                     inconsistent "defineEditText_fontID (x :: DefineEditText)"
+                       "Should have a Nothing iff defineEditText_hasFont is False"
                    | otherwise -> return ()
        case defineEditText_fontClass of
            Just x | defineEditText_hasFontClass -> putSTRING x
-                  | otherwise -> inconsistent
-           Nothing | defineEditText_hasFontClass -> inconsistent
+                  | otherwise ->
+                    inconsistent "defineEditText_fontClass (x :: DefineEditText)"
+                      "Should have a Just iff defineEditText_hasFontClass is True"
+           Nothing | defineEditText_hasFontClass ->
+                     inconsistent "defineEditText_fontClass (x :: DefineEditText)"
+                       "Should have a Nothing iff defineEditText_hasFontClass is False"
                    | otherwise -> return ()
        case defineEditText_fontHeight of
            Just x | defineEditText_hasFont -> putUI16 x
-                  | otherwise -> inconsistent
-           Nothing | defineEditText_hasFont -> inconsistent
+                  | otherwise ->
+                    inconsistent "defineEditText_fontHeight (x :: DefineEditText)"
+                      "Should have a Just iff defineEditText_hasFont is True"
+           Nothing | defineEditText_hasFont ->
+                     inconsistent "defineEditText_fontHeight (x :: DefineEditText)"
+                       "Should have a Nothing iff defineEditText_hasFont is False"
                    | otherwise -> return ()
        case defineEditText_textColor of
            Just x | defineEditText_hasTextColor -> putRGBA x
-                  | otherwise -> inconsistent
-           Nothing | defineEditText_hasTextColor -> inconsistent
+                  | otherwise ->
+                    inconsistent "defineEditText_textColor (x :: DefineEditText)"
+                      "Should have a Just iff defineEditText_hasTextColor is True"
+           Nothing | defineEditText_hasTextColor ->
+                     inconsistent "defineEditText_textColor (x :: DefineEditText)"
+                       "Should have a Nothing iff defineEditText_hasTextColor is False"
                    | otherwise -> return ()
        case defineEditText_maxLength of
            Just x | defineEditText_hasMaxLength -> putUI16 x
-                  | otherwise -> inconsistent
-           Nothing | defineEditText_hasMaxLength -> inconsistent
+                  | otherwise ->
+                    inconsistent "defineEditText_maxLength (x :: DefineEditText)"
+                      "Should have a Just iff defineEditText_hasMaxLength is True"
+           Nothing | defineEditText_hasMaxLength ->
+                     inconsistent "defineEditText_maxLength (x :: DefineEditText)"
+                       "Should have a Nothing iff defineEditText_hasMaxLength is False"
                    | otherwise -> return ()
        case defineEditText_layout of
            Just x | defineEditText_hasLayout ->
@@ -5718,14 +7141,22 @@ putDefineEditText DefineEditText{..}
                                                              putUI16 defineEditText_layoutIndent
                                                              putSI16 defineEditText_layoutLeading
                                                              return ()
-                  | otherwise -> inconsistent
-           Nothing | defineEditText_hasLayout -> inconsistent
+                  | otherwise ->
+                    inconsistent "defineEditText_layout (x :: DefineEditText)"
+                      "Should have a Just iff defineEditText_hasLayout is True"
+           Nothing | defineEditText_hasLayout ->
+                     inconsistent "defineEditText_layout (x :: DefineEditText)"
+                       "Should have a Nothing iff defineEditText_hasLayout is False"
                    | otherwise -> return ()
        putSTRING defineEditText_variableName
        case defineEditText_initialText of
            Just x | defineEditText_hasText -> putSTRING x
-                  | otherwise -> inconsistent
-           Nothing | defineEditText_hasText -> inconsistent
+                  | otherwise ->
+                    inconsistent "defineEditText_initialText (x :: DefineEditText)"
+                      "Should have a Just iff defineEditText_hasText is True"
+           Nothing | defineEditText_hasText ->
+                     inconsistent "defineEditText_initialText (x :: DefineEditText)"
+                       "Should have a Nothing iff defineEditText_hasText is False"
                    | otherwise -> return ()
        return ()
 
@@ -5737,17 +7168,38 @@ getCSMTextSettings
   = do cSMTextSettings_textID <- getUI16
        cSMTextSettings_useFlashType <- getUB 2
        cSMTextSettings_gridFit <- getUB 3
-       discardReserved (getUB 3)
+       discardReserved "_reserved (x :: ?)" (getUB 3)
        cSMTextSettings_thickness <- getFLOAT
        cSMTextSettings_sharpness <- getFLOAT
-       discardReserved getUI8
+       discardReserved "_reserved (x :: ?)" getUI8
        return (CSMTextSettings{..})
 putCSMTextSettings CSMTextSettings{..}
   = do putUI16 cSMTextSettings_textID
-       putUB 2 cSMTextSettings_useFlashType
-       putUB 3 cSMTextSettings_gridFit
+       if requiredBitsUB cSMTextSettings_useFlashType <= 2 then
+         putUB 2 cSMTextSettings_useFlashType else
+         inconsistent "cSMTextSettings_useFlashType (x :: CSMTextSettings)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB cSMTextSettings_useFlashType) ++
+                " bits to store the value " ++
+                  show cSMTextSettings_useFlashType ++
+                    ", but only have available " ++ show 2)
+       if requiredBitsUB cSMTextSettings_gridFit <= 3 then
+         putUB 3 cSMTextSettings_gridFit else
+         inconsistent "cSMTextSettings_gridFit (x :: CSMTextSettings)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB cSMTextSettings_gridFit) ++
+                " bits to store the value " ++
+                  show cSMTextSettings_gridFit ++
+                    ", but only have available " ++ show 3)
        let cSMTextSettings_reserved = reservedDefault
-       putUB 3 cSMTextSettings_reserved
+       if requiredBitsUB cSMTextSettings_reserved <= 3 then
+         putUB 3 cSMTextSettings_reserved else
+         inconsistent "x :: CSMTextSettings"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB cSMTextSettings_reserved) ++
+                " bits to store the value " ++
+                  show cSMTextSettings_reserved ++
+                    ", but only have available " ++ show 3)
        putFLOAT cSMTextSettings_thickness
        putFLOAT cSMTextSettings_sharpness
        let cSMTextSettings_reserved = reservedDefault
@@ -5760,7 +7212,7 @@ p198: DefineFont4
 \begin{code}
 getDefineFont4
   = do defineFont4_fontID <- getUI16
-       discardReserved (getUB 5)
+       discardReserved "_reserved (x :: ?)" (getUB 5)
        defineFont4_fontFlagsHasFontData <- getFlag
        defineFont4_fontFlagsItalic <- getFlag
        defineFont4_fontFlagsBold <- getFlag
@@ -5770,7 +7222,14 @@ getDefineFont4
 putDefineFont4 DefineFont4{..}
   = do putUI16 defineFont4_fontID
        let defineFont4_fontFlagsReserved = reservedDefault
-       putUB 5 defineFont4_fontFlagsReserved
+       if requiredBitsUB defineFont4_fontFlagsReserved <= 5 then
+         putUB 5 defineFont4_fontFlagsReserved else
+         inconsistent "x :: DefineFont4"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB defineFont4_fontFlagsReserved) ++
+                " bits to store the value " ++
+                  show defineFont4_fontFlagsReserved ++
+                    ", but only have available " ++ show 5)
        putFlag defineFont4_fontFlagsHasFontData
        putFlag defineFont4_fontFlagsItalic
        putFlag defineFont4_fontFlagsBold
@@ -5797,8 +7256,22 @@ getDefineSound
        return (DefineSound{..})
 putDefineSound DefineSound{..}
   = do putUI16 defineSound_soundId
-       putUB 4 defineSound_soundFormat
-       putUB 2 defineSound_soundRate
+       if requiredBitsUB defineSound_soundFormat <= 4 then
+         putUB 4 defineSound_soundFormat else
+         inconsistent "defineSound_soundFormat (x :: DefineSound)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB defineSound_soundFormat) ++
+                " bits to store the value " ++
+                  show defineSound_soundFormat ++
+                    ", but only have available " ++ show 4)
+       if requiredBitsUB defineSound_soundRate <= 2 then
+         putUB 2 defineSound_soundRate else
+         inconsistent "defineSound_soundRate (x :: DefineSound)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB defineSound_soundRate) ++
+                " bits to store the value " ++
+                  show defineSound_soundRate ++
+                    ", but only have available " ++ show 2)
        putFlag defineSound_soundSize
        putFlag defineSound_soundType
        putUI32 defineSound_soundSampleCount
@@ -5843,7 +7316,7 @@ data SOUNDINFO = SOUNDINFO{sOUNDINFO_syncStop :: Bool,
                            sOUNDINFO_env :: Maybe (UI8, [SOUNDENVELOPE])}
                deriving (Eq, Show, Typeable, Data)
 getSOUNDINFO
-  = do discardReserved (getUB 2)
+  = do discardReserved "_reserved (x :: ?)" (getUB 2)
        sOUNDINFO_syncStop <- getFlag
        sOUNDINFO_syncNoMultiple <- getFlag
        sOUNDINFO_hasEnvelope <- getFlag
@@ -5861,7 +7334,13 @@ getSOUNDINFO
        return (SOUNDINFO{..})
 putSOUNDINFO SOUNDINFO{..}
   = do let sOUNDINFO_reserved = reservedDefault
-       putUB 2 sOUNDINFO_reserved
+       if requiredBitsUB sOUNDINFO_reserved <= 2 then
+         putUB 2 sOUNDINFO_reserved else
+         inconsistent "x :: SOUNDINFO"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB sOUNDINFO_reserved) ++
+                " bits to store the value " ++
+                  show sOUNDINFO_reserved ++ ", but only have available " ++ show 2)
        putFlag sOUNDINFO_syncStop
        putFlag sOUNDINFO_syncNoMultiple
        let sOUNDINFO_hasEnvelope = isJust sOUNDINFO_env
@@ -5874,18 +7353,30 @@ putSOUNDINFO SOUNDINFO{..}
        putFlag sOUNDINFO_hasInPoint
        case sOUNDINFO_inPoint of
            Just x | sOUNDINFO_hasInPoint -> putUI32 x
-                  | otherwise -> inconsistent
-           Nothing | sOUNDINFO_hasInPoint -> inconsistent
+                  | otherwise ->
+                    inconsistent "sOUNDINFO_inPoint (x :: SOUNDINFO)"
+                      "Should have a Just iff sOUNDINFO_hasInPoint is True"
+           Nothing | sOUNDINFO_hasInPoint ->
+                     inconsistent "sOUNDINFO_inPoint (x :: SOUNDINFO)"
+                       "Should have a Nothing iff sOUNDINFO_hasInPoint is False"
                    | otherwise -> return ()
        case sOUNDINFO_outPoint of
            Just x | sOUNDINFO_hasOutPoint -> putUI32 x
-                  | otherwise -> inconsistent
-           Nothing | sOUNDINFO_hasOutPoint -> inconsistent
+                  | otherwise ->
+                    inconsistent "sOUNDINFO_outPoint (x :: SOUNDINFO)"
+                      "Should have a Just iff sOUNDINFO_hasOutPoint is True"
+           Nothing | sOUNDINFO_hasOutPoint ->
+                     inconsistent "sOUNDINFO_outPoint (x :: SOUNDINFO)"
+                       "Should have a Nothing iff sOUNDINFO_hasOutPoint is False"
                    | otherwise -> return ()
        case sOUNDINFO_loopCount of
            Just x | sOUNDINFO_hasLoops -> putUI16 x
-                  | otherwise -> inconsistent
-           Nothing | sOUNDINFO_hasLoops -> inconsistent
+                  | otherwise ->
+                    inconsistent "sOUNDINFO_loopCount (x :: SOUNDINFO)"
+                      "Should have a Just iff sOUNDINFO_hasLoops is True"
+           Nothing | sOUNDINFO_hasLoops ->
+                     inconsistent "sOUNDINFO_loopCount (x :: SOUNDINFO)"
+                       "Should have a Nothing iff sOUNDINFO_hasLoops is False"
                    | otherwise -> return ()
        case sOUNDINFO_env of
            Just x | sOUNDINFO_hasEnvelope ->
@@ -5897,7 +7388,18 @@ putSOUNDINFO SOUNDINFO{..}
                                                                                    sOUNDINFO_envelopeRecords
                                                                                    /=
                                                                                    (sOUNDINFO_envPoints)
-                                                                                 then inconsistent
+                                                                                 then
+                                                                                 inconsistent
+                                                                                   "snd (fromJust (sOUNDINFO_env (x :: SOUNDINFO)))"
+                                                                                   ("Mismatch with the required length: sOUNDINFO_envPoints"
+                                                                                      ++
+                                                                                      show
+                                                                                        (genericLength
+                                                                                           sOUNDINFO_envelopeRecords)
+                                                                                        ++
+                                                                                        " /= " ++
+                                                                                          show
+                                                                                            sOUNDINFO_envPoints)
                                                                                  else
                                                                                  mapM_
                                                                                    (\ x ->
@@ -5905,8 +7407,12 @@ putSOUNDINFO SOUNDINFO{..}
                                                                                         x)
                                                                                    sOUNDINFO_envelopeRecords
                                                                                return ()
-                  | otherwise -> inconsistent
-           Nothing | sOUNDINFO_hasEnvelope -> inconsistent
+                  | otherwise ->
+                    inconsistent "sOUNDINFO_env (x :: SOUNDINFO)"
+                      "Should have a Just iff sOUNDINFO_hasEnvelope is True"
+           Nothing | sOUNDINFO_hasEnvelope ->
+                     inconsistent "sOUNDINFO_env (x :: SOUNDINFO)"
+                       "Should have a Nothing iff sOUNDINFO_hasEnvelope is False"
                    | otherwise -> return ()
        return ()
 
@@ -5935,7 +7441,7 @@ putSOUNDENVELOPE SOUNDENVELOPE{..}
 p207: SoundStreamHead
 \begin{code}
 getSoundStreamHead
-  = do discardReserved (getUB 4)
+  = do discardReserved "_reserved (x :: ?)" (getUB 4)
        soundStreamHead_playbackSoundRate <- getUB 2
        soundStreamHead_playbackSoundSize <- getFlag
        soundStreamHead_playbackSoundType <- getFlag
@@ -5950,20 +7456,54 @@ getSoundStreamHead
        return (SoundStreamHead{..})
 putSoundStreamHead SoundStreamHead{..}
   = do let soundStreamHead_reserved = reservedDefault
-       putUB 4 soundStreamHead_reserved
-       putUB 2 soundStreamHead_playbackSoundRate
+       if requiredBitsUB soundStreamHead_reserved <= 4 then
+         putUB 4 soundStreamHead_reserved else
+         inconsistent "x :: SoundStreamHead"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB soundStreamHead_reserved) ++
+                " bits to store the value " ++
+                  show soundStreamHead_reserved ++
+                    ", but only have available " ++ show 4)
+       if requiredBitsUB soundStreamHead_playbackSoundRate <= 2 then
+         putUB 2 soundStreamHead_playbackSoundRate else
+         inconsistent
+           "soundStreamHead_playbackSoundRate (x :: SoundStreamHead)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB soundStreamHead_playbackSoundRate) ++
+                " bits to store the value " ++
+                  show soundStreamHead_playbackSoundRate ++
+                    ", but only have available " ++ show 2)
        putFlag soundStreamHead_playbackSoundSize
        putFlag soundStreamHead_playbackSoundType
-       putUB 4 soundStreamHead_streamSoundCompression
-       putUB 2 soundStreamHead_streamSoundRate
+       if requiredBitsUB soundStreamHead_streamSoundCompression <= 4 then
+         putUB 4 soundStreamHead_streamSoundCompression else
+         inconsistent
+           "soundStreamHead_streamSoundCompression (x :: SoundStreamHead)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB soundStreamHead_streamSoundCompression) ++
+                " bits to store the value " ++
+                  show soundStreamHead_streamSoundCompression ++
+                    ", but only have available " ++ show 4)
+       if requiredBitsUB soundStreamHead_streamSoundRate <= 2 then
+         putUB 2 soundStreamHead_streamSoundRate else
+         inconsistent
+           "soundStreamHead_streamSoundRate (x :: SoundStreamHead)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB soundStreamHead_streamSoundRate) ++
+                " bits to store the value " ++
+                  show soundStreamHead_streamSoundRate ++
+                    ", but only have available " ++ show 2)
        putFlag soundStreamHead_streamSoundSize
        putFlag soundStreamHead_streamSoundType
        putUI16 soundStreamHead_streamSoundSampleCount
        case soundStreamHead_latencySeek of
            Just x | soundStreamHead_streamSoundCompression == 2 -> putSI16 x
-                  | otherwise -> inconsistent
+                  | otherwise ->
+                    inconsistent "soundStreamHead_latencySeek (x :: SoundStreamHead)"
+                      "Should have a Just iff soundStreamHead_streamSoundCompression == 2 is True"
            Nothing | soundStreamHead_streamSoundCompression == 2 ->
-                     inconsistent
+                     inconsistent "soundStreamHead_latencySeek (x :: SoundStreamHead)"
+                       "Should have a Nothing iff soundStreamHead_streamSoundCompression == 2 is False"
                    | otherwise -> return ()
        return ()
 
@@ -5972,7 +7512,7 @@ putSoundStreamHead SoundStreamHead{..}
 p209: SoundStreamHead2
 \begin{code}
 getSoundStreamHead2
-  = do discardReserved (getUB 4)
+  = do discardReserved "_reserved (x :: ?)" (getUB 4)
        soundStreamHead2_playbackSoundRate <- getUB 2
        soundStreamHead2_playbackSoundSize <- getFlag
        soundStreamHead2_playbackSoundType <- getFlag
@@ -5987,20 +7527,54 @@ getSoundStreamHead2
        return (SoundStreamHead2{..})
 putSoundStreamHead2 SoundStreamHead2{..}
   = do let soundStreamHead2_reserved = reservedDefault
-       putUB 4 soundStreamHead2_reserved
-       putUB 2 soundStreamHead2_playbackSoundRate
+       if requiredBitsUB soundStreamHead2_reserved <= 4 then
+         putUB 4 soundStreamHead2_reserved else
+         inconsistent "x :: SoundStreamHead2"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB soundStreamHead2_reserved) ++
+                " bits to store the value " ++
+                  show soundStreamHead2_reserved ++
+                    ", but only have available " ++ show 4)
+       if requiredBitsUB soundStreamHead2_playbackSoundRate <= 2 then
+         putUB 2 soundStreamHead2_playbackSoundRate else
+         inconsistent
+           "soundStreamHead2_playbackSoundRate (x :: SoundStreamHead2)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB soundStreamHead2_playbackSoundRate) ++
+                " bits to store the value " ++
+                  show soundStreamHead2_playbackSoundRate ++
+                    ", but only have available " ++ show 2)
        putFlag soundStreamHead2_playbackSoundSize
        putFlag soundStreamHead2_playbackSoundType
-       putUB 4 soundStreamHead2_streamSoundCompression
-       putUB 2 soundStreamHead2_streamSoundRate
+       if requiredBitsUB soundStreamHead2_streamSoundCompression <= 4 then
+         putUB 4 soundStreamHead2_streamSoundCompression else
+         inconsistent
+           "soundStreamHead2_streamSoundCompression (x :: SoundStreamHead2)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB soundStreamHead2_streamSoundCompression) ++
+                " bits to store the value " ++
+                  show soundStreamHead2_streamSoundCompression ++
+                    ", but only have available " ++ show 4)
+       if requiredBitsUB soundStreamHead2_streamSoundRate <= 2 then
+         putUB 2 soundStreamHead2_streamSoundRate else
+         inconsistent
+           "soundStreamHead2_streamSoundRate (x :: SoundStreamHead2)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB soundStreamHead2_streamSoundRate) ++
+                " bits to store the value " ++
+                  show soundStreamHead2_streamSoundRate ++
+                    ", but only have available " ++ show 2)
        putFlag soundStreamHead2_streamSoundSize
        putFlag soundStreamHead2_streamSoundType
        putUI16 soundStreamHead2_streamSoundSampleCount
        case soundStreamHead2_latencySeek of
            Just x | soundStreamHead2_streamSoundCompression == 2 -> putSI16 x
-                  | otherwise -> inconsistent
+                  | otherwise ->
+                    inconsistent "soundStreamHead2_latencySeek (x :: SoundStreamHead2)"
+                      "Should have a Just iff soundStreamHead2_streamSoundCompression == 2 is True"
            Nothing | soundStreamHead2_streamSoundCompression == 2 ->
-                     inconsistent
+                     inconsistent "soundStreamHead2_latencySeek (x :: SoundStreamHead2)"
+                       "Should have a Nothing iff soundStreamHead2_streamSoundCompression == 2 is False"
                    | otherwise -> return ()
        return ()
 
@@ -6032,7 +7606,7 @@ getBUTTONRECORDS buttonVer = go
       look <- lookAhead getUI8
       if look == 0
         then do
-          discardKnown 0 getUI8
+          discardKnown "x :: BUTTONRECORDS" "BUTTONRECORDS array should be 0 terminated" 0 getUI8
           return []
         else do
           x <- getBUTTONRECORD buttonVer
@@ -6059,7 +7633,7 @@ data BUTTONRECORD = BUTTONRECORD{bUTTONRECORD_buttonHasBlendMode ::
                                  Maybe (CXFORMWITHALPHA, Maybe FILTERLIST, Maybe UI8)}
                   deriving (Eq, Show, Typeable, Data)
 getBUTTONRECORD bUTTONRECORD_buttonVer
-  = do discardReserved (getUB 2)
+  = do discardReserved "_reserved (x :: ?)" (getUB 2)
        bUTTONRECORD_buttonHasBlendMode <- getFlag
        bUTTONRECORD_buttonHasFilterList <- getFlag
        bUTTONRECORD_buttonStateHitTest <- getFlag
@@ -6085,7 +7659,14 @@ getBUTTONRECORD bUTTONRECORD_buttonVer
        return (BUTTONRECORD{..})
 putBUTTONRECORD bUTTONRECORD_buttonVer BUTTONRECORD{..}
   = do let bUTTONRECORD_buttonReserved = reservedDefault
-       putUB 2 bUTTONRECORD_buttonReserved
+       if requiredBitsUB bUTTONRECORD_buttonReserved <= 2 then
+         putUB 2 bUTTONRECORD_buttonReserved else
+         inconsistent "x :: BUTTONRECORD"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB bUTTONRECORD_buttonReserved) ++
+                " bits to store the value " ++
+                  show bUTTONRECORD_buttonReserved ++
+                    ", but only have available " ++ show 2)
        putFlag bUTTONRECORD_buttonHasBlendMode
        putFlag bUTTONRECORD_buttonHasFilterList
        putFlag bUTTONRECORD_buttonStateHitTest
@@ -6110,9 +7691,14 @@ putBUTTONRECORD bUTTONRECORD_buttonVer BUTTONRECORD{..}
                                                                                  -> putFILTERLIST x
                                                                                | otherwise ->
                                                                                  inconsistent
+                                                                                   "snd (fromJust (bUTTONRECORD_buttonDisplay (x :: BUTTONRECORD)))"
+                                                                                   "Should have a Just iff bUTTONRECORD_buttonHasFilterList is True"
                                                                         Nothing |
                                                                                   bUTTONRECORD_buttonHasFilterList
-                                                                                  -> inconsistent
+                                                                                  ->
+                                                                                  inconsistent
+                                                                                    "snd (fromJust (bUTTONRECORD_buttonDisplay (x :: BUTTONRECORD)))"
+                                                                                    "Should have a Nothing iff bUTTONRECORD_buttonHasFilterList is False"
                                                                                 | otherwise ->
                                                                                   return ()
                                                                     case
@@ -6123,14 +7709,23 @@ putBUTTONRECORD bUTTONRECORD_buttonVer BUTTONRECORD{..}
                                                                                  -> putUI8 x
                                                                                | otherwise ->
                                                                                  inconsistent
+                                                                                   "thd (fromJust (bUTTONRECORD_buttonDisplay (x :: BUTTONRECORD)))"
+                                                                                   "Should have a Just iff bUTTONRECORD_buttonHasBlendMode is True"
                                                                         Nothing |
                                                                                   bUTTONRECORD_buttonHasBlendMode
-                                                                                  -> inconsistent
+                                                                                  ->
+                                                                                  inconsistent
+                                                                                    "thd (fromJust (bUTTONRECORD_buttonDisplay (x :: BUTTONRECORD)))"
+                                                                                    "Should have a Nothing iff bUTTONRECORD_buttonHasBlendMode is False"
                                                                                 | otherwise ->
                                                                                   return ()
                                                                     return ()
-                  | otherwise -> inconsistent
-           Nothing | bUTTONRECORD_buttonVer == 2 -> inconsistent
+                  | otherwise ->
+                    inconsistent "bUTTONRECORD_buttonDisplay (x :: BUTTONRECORD)"
+                      "Should have a Just iff bUTTONRECORD_buttonVer == 2 is True"
+           Nothing | bUTTONRECORD_buttonVer == 2 ->
+                     inconsistent "bUTTONRECORD_buttonDisplay (x :: BUTTONRECORD)"
+                       "Should have a Nothing iff bUTTONRECORD_buttonVer == 2 is False"
                    | otherwise -> return ()
        return ()
 
@@ -6155,7 +7750,7 @@ p226: DefineButton2
 \begin{code}
 getDefineButton2
   = do defineButton2_buttonId <- getUI16
-       discardReserved (getUB 7)
+       discardReserved "_reserved (x :: ?)" (getUB 7)
        defineButton2_trackAsMenu <- getFlag
        defineButton2_actionOffset <- getUI16
        defineButton2_characters <- getBUTTONRECORDS 2
@@ -6165,7 +7760,14 @@ getDefineButton2
 putDefineButton2 DefineButton2{..}
   = do putUI16 defineButton2_buttonId
        let defineButton2_reservedFlags = reservedDefault
-       putUB 7 defineButton2_reservedFlags
+       if requiredBitsUB defineButton2_reservedFlags <= 7 then
+         putUB 7 defineButton2_reservedFlags else
+         inconsistent "x :: DefineButton2"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB defineButton2_reservedFlags) ++
+                " bits to store the value " ++
+                  show defineButton2_reservedFlags ++
+                    ", but only have available " ++ show 7)
        putFlag defineButton2_trackAsMenu
        putUI16 defineButton2_actionOffset
        putBUTTONRECORDS 2 defineButton2_characters
@@ -6212,7 +7814,15 @@ putBUTTONCONDACTION BUTTONCONDACTION{..}
        putFlag bUTTONCONDACTION_condOverUpToOverDown
        putFlag bUTTONCONDACTION_condOverUpToIdle
        putFlag bUTTONCONDACTION_condIdleToOverUp
-       putUB 7 bUTTONCONDACTION_condKeyPress
+       if requiredBitsUB bUTTONCONDACTION_condKeyPress <= 7 then
+         putUB 7 bUTTONCONDACTION_condKeyPress else
+         inconsistent
+           "bUTTONCONDACTION_condKeyPress (x :: BUTTONCONDACTION)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB bUTTONCONDACTION_condKeyPress) ++
+                " bits to store the value " ++
+                  show bUTTONCONDACTION_condKeyPress ++
+                    ", but only have available " ++ show 7)
        putFlag bUTTONCONDACTION_condOverDownToIdle
        putACTIONRECORDS bUTTONCONDACTION_actions
        return ()
@@ -6284,26 +7894,50 @@ putDefineButtonSound DefineButtonSound{..}
        putUI16 defineButtonSound_buttonSoundChar0
        case defineButtonSound_buttonSoundInfo0 of
            Just x | defineButtonSound_buttonSoundChar0 /= 0 -> putSOUNDINFO x
-                  | otherwise -> inconsistent
-           Nothing | defineButtonSound_buttonSoundChar0 /= 0 -> inconsistent
+                  | otherwise ->
+                    inconsistent
+                      "defineButtonSound_buttonSoundInfo0 (x :: DefineButtonSound)"
+                      "Should have a Just iff defineButtonSound_buttonSoundChar0 /= 0 is True"
+           Nothing | defineButtonSound_buttonSoundChar0 /= 0 ->
+                     inconsistent
+                       "defineButtonSound_buttonSoundInfo0 (x :: DefineButtonSound)"
+                       "Should have a Nothing iff defineButtonSound_buttonSoundChar0 /= 0 is False"
                    | otherwise -> return ()
        putUI16 defineButtonSound_buttonSoundChar1
        case defineButtonSound_buttonSoundInfo1 of
            Just x | defineButtonSound_buttonSoundChar1 /= 0 -> putSOUNDINFO x
-                  | otherwise -> inconsistent
-           Nothing | defineButtonSound_buttonSoundChar1 /= 0 -> inconsistent
+                  | otherwise ->
+                    inconsistent
+                      "defineButtonSound_buttonSoundInfo1 (x :: DefineButtonSound)"
+                      "Should have a Just iff defineButtonSound_buttonSoundChar1 /= 0 is True"
+           Nothing | defineButtonSound_buttonSoundChar1 /= 0 ->
+                     inconsistent
+                       "defineButtonSound_buttonSoundInfo1 (x :: DefineButtonSound)"
+                       "Should have a Nothing iff defineButtonSound_buttonSoundChar1 /= 0 is False"
                    | otherwise -> return ()
        putUI16 defineButtonSound_buttonSoundChar2
        case defineButtonSound_buttonSoundInfo2 of
            Just x | defineButtonSound_buttonSoundChar2 /= 0 -> putSOUNDINFO x
-                  | otherwise -> inconsistent
-           Nothing | defineButtonSound_buttonSoundChar2 /= 0 -> inconsistent
+                  | otherwise ->
+                    inconsistent
+                      "defineButtonSound_buttonSoundInfo2 (x :: DefineButtonSound)"
+                      "Should have a Just iff defineButtonSound_buttonSoundChar2 /= 0 is True"
+           Nothing | defineButtonSound_buttonSoundChar2 /= 0 ->
+                     inconsistent
+                       "defineButtonSound_buttonSoundInfo2 (x :: DefineButtonSound)"
+                       "Should have a Nothing iff defineButtonSound_buttonSoundChar2 /= 0 is False"
                    | otherwise -> return ()
        putUI16 defineButtonSound_buttonSoundChar3
        case defineButtonSound_buttonSoundInfo3 of
            Just x | defineButtonSound_buttonSoundChar3 /= 0 -> putSOUNDINFO x
-                  | otherwise -> inconsistent
-           Nothing | defineButtonSound_buttonSoundChar3 /= 0 -> inconsistent
+                  | otherwise ->
+                    inconsistent
+                      "defineButtonSound_buttonSoundInfo3 (x :: DefineButtonSound)"
+                      "Should have a Just iff defineButtonSound_buttonSoundChar3 /= 0 is True"
+           Nothing | defineButtonSound_buttonSoundChar3 /= 0 ->
+                     inconsistent
+                       "defineButtonSound_buttonSoundInfo3 (x :: DefineButtonSound)"
+                       "Should have a Nothing iff defineButtonSound_buttonSoundChar3 /= 0 is False"
                    | otherwise -> return ()
        return ()
 
@@ -6339,7 +7973,7 @@ getDefineVideoStream
        defineVideoStream_numFrames <- getUI16
        defineVideoStream_width <- getUI16
        defineVideoStream_height <- getUI16
-       discardReserved (getUB 4)
+       discardReserved "_reserved (x :: ?)" (getUB 4)
        defineVideoStream_videoFlagsDeblocking <- getUB 3
        defineVideoStream_videoFlagsSmoothing <- getFlag
        defineVideoStream_codecID <- getUI8
@@ -6350,8 +7984,23 @@ putDefineVideoStream DefineVideoStream{..}
        putUI16 defineVideoStream_width
        putUI16 defineVideoStream_height
        let defineVideoStream_videoFlagsReserved = reservedDefault
-       putUB 4 defineVideoStream_videoFlagsReserved
-       putUB 3 defineVideoStream_videoFlagsDeblocking
+       if requiredBitsUB defineVideoStream_videoFlagsReserved <= 4 then
+         putUB 4 defineVideoStream_videoFlagsReserved else
+         inconsistent "x :: DefineVideoStream"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB defineVideoStream_videoFlagsReserved) ++
+                " bits to store the value " ++
+                  show defineVideoStream_videoFlagsReserved ++
+                    ", but only have available " ++ show 4)
+       if requiredBitsUB defineVideoStream_videoFlagsDeblocking <= 3 then
+         putUB 3 defineVideoStream_videoFlagsDeblocking else
+         inconsistent
+           "defineVideoStream_videoFlagsDeblocking (x :: DefineVideoStream)"
+           ("Bit count incorrect: required " ++
+              show (requiredBitsUB defineVideoStream_videoFlagsDeblocking) ++
+                " bits to store the value " ++
+                  show defineVideoStream_videoFlagsDeblocking ++
+                    ", but only have available " ++ show 3)
        putFlag defineVideoStream_videoFlagsSmoothing
        putUI8 defineVideoStream_codecID
        return ()
@@ -6381,7 +8030,7 @@ p253: DefineBinaryData
 \begin{code}
 getDefineBinaryData
   = do defineBinaryData_tag <- getUI16
-       discardReserved getUI32
+       discardReserved "_reserved (x :: ?)" getUI32
        defineBinaryData_data <- getRemainingLazyByteString
        return (DefineBinaryData{..})
 putDefineBinaryData DefineBinaryData{..}

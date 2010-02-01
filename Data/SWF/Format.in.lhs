@@ -350,7 +350,8 @@ putSB :: Integral a => a -> SB -> SwfPut
 putSB nbits = putBits nbits . signretract nbits
 
 requiredBitsSB :: Integral a => SB -> a
-requiredBitsSB = (+1) . ceiling . logBase 2 . (+1) . fromIntegral . abs
+requiredBitsSB 0 = 0
+requiredBitsSB x = (+1) . ceiling . logBase 2 . (+1) . fromIntegral . abs $ x
 
 \end{code}
 
@@ -526,8 +527,8 @@ getSwf bs = runSwfGet emptySwfEnv bs $ do
     compressed <- case lookup (fromIntegral signature_1) [(ord 'F', False), (ord 'C', True)] of
         Just c  -> return c
         Nothing -> fail "SWF signature byte 1 unrecognised"
-    discardKnown (fromIntegral $ ord 'W') getUI8 -- "SWF signature byte 2 wrong"
-    discardKnown (fromIntegral $ ord 'S') getUI8 -- "SWF signature byte 3 wrong"
+    discardKnown "_signature2 (x :: Swf)" "The 2nd SWF signature byte must be W" (fromIntegral $ ord 'W') getUI8
+    discardKnown "_signature3 (x :: Swf)" "The 3rd SWF signature byte must be F" (fromIntegral $ ord 'S') getUI8
     version <- getUI8
     fileLength <- getUI32
     
@@ -694,7 +695,9 @@ getCLIPACTIONRECORD = do
 putCLIPACTIONRECORD (CLIPACTIONRECORD {..}) = do
     putCLIPEVENTFLAGS cLIPACTIONRECORD_eventFlags
     (len, putrest) <- nestSwfPut $ do
-        when ((ClipEventKeyPress `elem` cLIPACTIONRECORD_eventFlags) `consistentWith` isJust cLIPACTIONRECORD_keyCode) $ do
+        when (consistentWith (inconsistent "cLIPACTIONRECORD_keyCode (x :: CLIPACTIONRECORD)" "Can have a cLIPACTIONRECORD_keyCode iff the ClipEventKeyPress flag is set")
+                             (ClipEventKeyPress `elem` cLIPACTIONRECORD_eventFlags)
+                             (isJust cLIPACTIONRECORD_keyCode)) $ do
             putUI8 (fromJust cLIPACTIONRECORD_keyCode)
         putACTIONRECORDS cLIPACTIONRECORD_actions
     putUI32 len
@@ -962,9 +965,9 @@ type CLIPEVENTFLAGS = [CLIPEVENTFLAG]
       if (version <= 5)
        then return cefs
        else do
-          discardReserved $ getUB 5
+          discardReserved "x :: CLIPEVENTFLAGS" $ getUB 5
           cefs <- foldM f cefs swf6_flags
-          discardReserved $ getUB 8
+          discardReserved "x :: CLIPEVENTFLAGS" $ getUB 8
           return cefs
 
     putter flags = do
@@ -1208,7 +1211,9 @@ getACTIONRECORDHEADER = do
 
 putACTIONRECORDHEADER (ACTIONRECORDHEADER {..}) = do
     putUI8 aCTIONRECORDHEADER_actionCode
-    when (((aCTIONRECORDHEADER_actionCode .&. 0x80) /= 0) `consistentWith` isJust aCTIONRECORDHEADER_actionLength) $ do
+    when (consistentWith (inconsistent "aCTIONRECORDHEADER_actionLength (x :: ACTIONRECORDHEADER)" "You can have aCTIONRECORDHEADER_actionLength iff the top bit of aCTIONRECORDHEADER_actionCode is set")
+                         ((aCTIONRECORDHEADER_actionCode .&. 0x80) /= 0)
+                         (isJust aCTIONRECORDHEADER_actionLength)) $ do
         putUI16 (fromJust aCTIONRECORDHEADER_actionLength)
 
 data ACTIONRECORD = UnknownAction { unknownAction_actionCode :: UI8, unknownAction_data :: Maybe ByteString }
@@ -1232,7 +1237,9 @@ getACTIONRECORD = do
 
 putACTIONRECORD actionrecord = do
     (len, put) <- nestSwfPut $ case actionrecord of
-        UnknownAction {..} -> when (isJust unknownAction_data `consistentWith` (unknownAction_actionCode >= 0x80)) $
+        UnknownAction {..} -> when (consistentWith (inconsistent "unknownAction_data (x :: Tag)" "You can have unknownAction_data iff the top bit of unknownAction_actionCode is set")
+                                                   (isJust unknownAction_data)
+                                                   (unknownAction_actionCode >= 0x80)) $
                                 putLazyByteString $ fromJust unknownAction_data
         ActionPush {}      -> putActionPush actionrecord
         _                  -> generatedActionPutters actionrecord
@@ -2100,9 +2107,9 @@ putFILLSTYLE shapeVer fs = case fs of
         putUI8 0x00
         case fILLSTYLE_color of
             Left rgb | shapeVer <= 2  -> putRGB rgb
-                     | otherwise      -> inconsistent
+                     | otherwise      -> inconsistent "fILLSTYLE_color (x :: FILLSTYLE)" "Must use RGBA rather than RGB records for shape version > 2"
             Right rgba | shapeVer > 2 -> putRGBA rgba
-                       | otherwise    -> inconsistent
+                       | otherwise    -> inconsistent "fILLSTYLE_color (x :: FILLSTYLE)" "Must use RGB rather than RGBA records for shape version <= 2"
     GradientFill {..} -> do
         putUI8 (case fILLSTYLE_linearRadial of Linear -> 0x10; Radial -> 0x12)
         putMATRIX fILLSTYLE_gradientMatrix
@@ -2136,9 +2143,9 @@ putLINESTYLEARRAY shapeVer ei_ls_ls2 = do
     when (count >= 0xFF) $ putUI16 (fromIntegral count)
     case ei_ls_ls2 of
         Left ls   | shapeVer <= 3 -> mapM_ (putLINESTYLE shapeVer) ls
-                  | otherwise     -> inconsistent
+                  | otherwise     -> inconsistent "x :: LINESTYLEARRAY" "Must use LINESTYLE2 rather than LINESTYLE for shape version > 3"
         Right ls2 | shapeVer > 3  -> mapM_ putLINESTYLE2 ls2
-                  | otherwise     -> inconsistent
+                  | otherwise     -> inconsistent "x :: LINESTYLEARRAY" "Must use LINESTYLE rather than LINESTYLE2 for shape version <= 3"
     
 
 data LINESTYLE = LINESTYLE { lINESTYLE_width :: UI16, lINESTYLE_color :: Either RGB RGBA }
@@ -2153,9 +2160,9 @@ putLINESTYLE shapeVer (LINESTYLE {..}) = do
     putUI16 lINESTYLE_width
     case lINESTYLE_color of
         Left rgb   | shapeVer <= 2 -> putRGB rgb
-                   | otherwise     -> inconsistent
+                   | otherwise     -> inconsistent "x :: LINESTYLE" "Must use RGBA rather than RGB for shape version > 2"
         Right rgba | shapeVer > 2  -> putRGBA rgba
-                   | otherwise     -> inconsistent
+                   | otherwise     -> inconsistent "x :: LINESTYLE" "Must use RGB rather than RGBA for shape version <= 2"
 
 \end{code}
 
@@ -2222,7 +2229,7 @@ type SHAPERECORDS = [SHAPERECORD]
               look <- lookAhead (getUB 5)
               if look == 0
                then do
-                 discardKnown 0 $ getUB 5
+                 discardKnown "x :: SHAPERECORDS" "SHAPERECORDS array should be 0 terminated" 0 $ getUB 5
                  -- NB: align the SHAPERECORD array only at the end!
                  byteAlign
                  return []
@@ -2400,9 +2407,9 @@ putGRADRECORD shapeVer (GRADRECORD {..}) = do
     putUI8 gRADRECORD_ratio
     case gRADRECORD_color of
         Left rgb   | shapeVer <= 2 -> putRGB rgb
-                   | otherwise     -> inconsistent
+                   | otherwise     -> inconsistent "x :: GRADRECORD" "Must use RGBA rather than RGB for shape version > 2"
         Right rgba | shapeVer > 2  -> putRGBA rgba
-                   | otherwise     -> inconsistent
+                   | otherwise     -> inconsistent "x :: GRADRECORD" "Must use RGB rather than RGBA for shape version <= 2"
 
 \end{code}
 
@@ -2616,9 +2623,9 @@ putMORPHLINESTYLEARRAY morphVersion ei_mls_mls2 = do
     when (count >= 0xFF) $ putUI16 count
     case ei_mls_mls2 of
         Left mls | morphVersion == 1   -> mapM_ putMORPHLINESTYLE mls
-                 | otherwise           -> inconsistent
+                 | otherwise           -> inconsistent "x :: MORPHLINESTYLEARRAY" "Must use MORPHLINESTYLE2 rather than MORPHLINESTYLE1 for morph version 2"
         Right mls2 | morphVersion == 2 -> mapM_ putMORPHLINESTYLE2 mls2
-                   | otherwise         -> inconsistent
+                   | otherwise         -> inconsistent "x :: MORPHLINESTYLEARRAY" "Must use MORPHLINESTYLE rather than MORPHLINESTYLE2 for morph version 1"
 
 \end{code}
 
@@ -2847,7 +2854,7 @@ getTEXTRECORDS textVer glyphBits advanceBits = go
       look <- lookAhead getUI8
       if look == 0
        then do
-         discardKnown 0 getUI8
+         discardKnown "x :: TEXTRECORDS" "TEXTRECORDS array should be 0 terminated" 0 getUI8
          return []
        else do
          x <- getTEXTRECORD textVer glyphBits advanceBits
@@ -3089,7 +3096,7 @@ getBUTTONRECORDS buttonVer = go
       look <- lookAhead getUI8
       if look == 0
         then do
-          discardKnown 0 getUI8
+          discardKnown "x :: BUTTONRECORDS" "BUTTONRECORDS array should be 0 terminated" 0 getUI8
           return []
         else do
           x <- getBUTTONRECORD buttonVer

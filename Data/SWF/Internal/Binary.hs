@@ -91,13 +91,13 @@ decompressRemainder size_hint = nestSwfGetBS (fmap decompress B.getRemainingLazy
   where decompress = decompressWith (defaultDecompressParams { decompressBufferSize = size_hint })
 
 
-discardReserved :: ReservedDefault a => SwfGet a -> SwfGet ()
-discardReserved = discardKnown reservedDefault
+discardReserved :: ReservedDefault a => String -> SwfGet a -> SwfGet ()
+discardReserved selector = discardKnown selector "Reserved data must be 0" reservedDefault
 
-discardKnown :: Eq a => a -> SwfGet a -> SwfGet ()
-discardKnown known mx = do
+discardKnown :: Eq a => String -> String -> a -> SwfGet a -> SwfGet ()
+discardKnown selector why known mx = do
      x <- mx
-     unless (x == known) inconsistent
+     unless (x == known) $ inconsistent selector why
 
 
 liftGet :: B.Get a -> SwfGet a

@@ -40,13 +40,16 @@ condM mcond mt mf = do
     if cond then mt else mf
 
 
-consistentWith :: Bool -> Bool -> Bool
-consistentWith True  True  = True
-consistentWith False False = False
-consistentWith _     _     = inconsistent
+consistentWith :: Bool -> Bool -> Bool -> Bool
+consistentWith _        True  True  = True
+consistentWith _        False False = False
+consistentWith inconsis _     _     = inconsis
 
-inconsistent :: a
-inconsistent = error "Inconsistent state!"
+inconsistent :: String -> String -> a
+inconsistent selector why
+  = error $ unlines ["Data.SWF: Inconsistent state when writing back!",
+                     "Reason: " ++ why,
+                     "Selector: " ++ selector]
 
 maybeHasM :: Monad m => m Bool -> m b -> m (Maybe b)
 maybeHasM ma mb = ma >>= \a -> maybeHas a mb
