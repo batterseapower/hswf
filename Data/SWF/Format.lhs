@@ -365,9 +365,11 @@ signretract nbits num
 putSB :: Integral a => a -> SB -> SwfPut
 putSB nbits = putBits nbits . signretract nbits
 
+-- An n bit number can store values in the range:
+--   -2^(n-1) to 2^(n-1)-1
 requiredBitsSB :: Integral a => SB -> a
 requiredBitsSB 0 = 0
-requiredBitsSB x = (+1) . ceiling . logBase 2 . (+1) . fromIntegral . abs $ x
+requiredBitsSB x = 1 + ceiling (logBase 2 (fromIntegral $ if x < 0 then negate x else x + 1))
 
 \end{code}
 
@@ -384,7 +386,9 @@ putFB :: Integral a => a -> FB -> SwfPut
 putFB nbits fixed = putBits nbits $ ((signretract (nbits - 16) $ fIXED_integer fixed) `shiftL` 16) .|. fromIntegral (fIXED_decimal fixed)
 
 requiredBitsFB :: Integral a => FB -> a
-requiredBitsFB = (+16) . requiredBitsSB . fromIntegral . fIXED_integer
+requiredBitsFB (FIXED {..})
+  | fIXED_integer == 0 = requiredBitsUB . fromIntegral $ fIXED_decimal
+  | otherwise          = (+16) . requiredBitsSB . fromIntegral $ fIXED_integer
 
 \end{code}
 
