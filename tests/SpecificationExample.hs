@@ -53,8 +53,6 @@ swf = Swf {
                         })
                     }
                 ],
-                sHAPEWITHSTYLE_numFillBits = 0,
-                sHAPEWITHSTYLE_numLineBits = 1,
                 sHAPEWITHSTYLE_shapeRecords = [
                     STYLECHANGERECORD {
                         sTYLECHANGERECORD_move = Just (14,

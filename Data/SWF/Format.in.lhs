@@ -25,8 +25,9 @@ TODOS
   * In particular, the zlib compressed fields in the image chapter
   * Perhaps also those embedding sound and video formats
 3) Reduce semantic junk
-  * NBits fields, even those in CXFORM and stuff like mATRIX_scaleBits
-  * "NumFillBits" and the like...
+  * NewNumFillBits and NewNumLineBits
+  * CONVOLUTIONFILTER.Matrix
+  * GRADIENT{GLOW,BEVEL}FILTER.Gradient{Colors,Ratio}
 5) Simplify away generated consistency checks that are trivially true
 7) Generate comments on constructor fields and add them to custom ones
 8) Represent some [UI8] as ByteString?
@@ -2042,23 +2043,22 @@ Field              Type               Comment
 ActionImplementsOp ACTIONRECORDHEADER ActionCode = 0x2C
 \end{record}
 
-p121: ActionTy
+p121: ActionTry
 \begin{record}
 ActionTry
-Field               Type                               Comment
-ActionTry           ACTIONRECORDHEADER                 ActionCode = 0x8F
-Reserved            UB[5]                              Always zero
-CatchInRegisterFlag UB[1]                              0 - Do not put caught object into register (instead, store in named variable) 1 - Put caught object into register (do not store in named variable)
-FinallyBlockFlag    UB[1]                              0 - No finally block 1 - Has finally block
-CatchBlockFlag      UB[1]                              0 - No catch block 1 - Has catch block
-TrySize             UI16                               Length of the try block
-CatchSize           UI16                               Length of the catch block
-FinallySize         UI16                               Length of the finally block
-CatchName           If CatchInRegisterFlag = 0, STRING Name of the catch variable
-CatchRegister       If CatchInRegisterFlag = 1, UI8    Register to catch into
-TryBody             UI8[TrySize]                       Body of the try block
-CatchBody           UI8[CatchSize]                     Body of the catch block, if any
-FinallyBody         UI8[FinallySize]                   Body of the finally block, if any
+Field               Type                                              Comment
+ActionTry           ACTIONRECORDHEADER                                ActionCode = 0x8F
+Reserved            UB[5]                                             Always zero
+CatchInRegisterFlag UB[1]                                             0 - Do not put caught object into register (instead, store in named variable) 1 - Put caught object into register (do not store in named variable)
+FinallyBlockFlag    UB[1]                                             0 - No finally block 1 - Has finally block
+CatchBlockFlag      UB[1]                                             0 - No catch block 1 - Has catch block
+TrySize             UI16                                              Length of the try block
+CatchSize           UI16                                              Length of the catch block
+FinallySize         UI16                                              Length of the finally block
+CatchHow            If CatchInRegisterFlag = 0, STRING Otherwise, UI8 Name of the catch variable or register
+TryBody             UI8[TrySize]                                      Body of the try block
+CatchBody           UI8[CatchSize]                                    Body of the catch block, if any
+FinallyBody         UI8[FinallySize]                                  Body of the finally block, if any
 \end{record}
 
 p122: ActionThrow
@@ -2188,28 +2188,43 @@ putLINESTYLE shapeVer (LINESTYLE {..}) = do
 
 \begin{record}
 LINESTYLE2
-Field            Type                             Comment
-Width            UI16                             Width of line in twips.
-StartCapStyle    UB[2]                            Start cap style: 0 = Round cap 1 = No cap 2 = Square cap
-JoinStyle        UB[2]                            Join style: 0 = Round join 1 = Bevel join 2 = Miter join
-HasFillFlag      UB[1]                            If 1, fill is defined in FillType. If 0, uses Color field.
-NoHScaleFlag     UB[1]                            If 1, stroke thickness will not scale if the object is scaled horizontally.
-NoVScaleFlag     UB[1]                            If 1, stroke thickness will not scale if the object is scaled vertically.
-PixelHintingFlag UB[1]                            If 1, all anchors will be aligned to full pixels.
-Reserved         UB[5]                            Must be 0.
-NoClose          UB[1]                            If 1, stroke will not be closed if the stroke’s last point matches its first point. Flash Player will apply caps instead of a join.
-EndCapStyle      UB[2]                            End cap style: 0 = Round cap 1 = No cap 2 = Square cap
-MiterLimitFactor If JoinStyle = 2, UI16           Miter limit factor is an 8.8 fixed-point value.
-Color            If HasFillFlag = 0, RGBA         Color value including alpha channel.
-FillType         If HasFillFlag = 1, FILLSTYLE(4) Fill style for this stroke.
+Field            Type                                             Comment
+Width            UI16                                             Width of line in twips.
+StartCapStyle    UB[2]                                            Start cap style: 0 = Round cap 1 = No cap 2 = Square cap
+JoinStyle        UB[2]                                            Join style: 0 = Round join 1 = Bevel join 2 = Miter join
+HasFillFlag      UB[1]                                            If 1, fill is defined in FillType. If 0, uses Color field.
+NoHScaleFlag     UB[1]                                            If 1, stroke thickness will not scale if the object is scaled horizontally.
+NoVScaleFlag     UB[1]                                            If 1, stroke thickness will not scale if the object is scaled vertically.
+PixelHintingFlag UB[1]                                            If 1, all anchors will be aligned to full pixels.
+Reserved         UB[5]                                            Must be 0.
+NoClose          UB[1]                                            If 1, stroke will not be closed if the stroke’s last point matches its first point. Flash Player will apply caps instead of a join.
+EndCapStyle      UB[2]                                            End cap style: 0 = Round cap 1 = No cap 2 = Square cap
+MiterLimitFactor If JoinStyle = 2, UI16                           Miter limit factor is an 8.8 fixed-point value.
+Fill             If HasFillFlag = 0, RGBA Otherwise, FILLSTYLE(4) Color value including alpha channel or fill style for this stroke.
 \end{record}
+
+\begin{code}
+
+requiredBitsSHAPERECORDS [] = (0, 0)
+requiredBitsSHAPERECORDS (r:rs) = case r of
+    STYLECHANGERECORD {..}
+      -> (fbits `max` maybe 0 requiredBitsUB sTYLECHANGERECORD_fillStyle0 `max` maybe 0 requiredBitsUB sTYLECHANGERECORD_fillStyle1,
+          lbits `max` maybe 0 requiredBitsUB sTYLECHANGERECORD_lineStyle)
+      where (fbits, lbits) | Just _ <- sTYLECHANGERECORD_new = (0, 0) 
+                           | otherwise                       = requiredBitsSHAPERECORDS rs
+    _ -> requiredBitsSHAPERECORDS rs
+
+\end{code}
 
 p133: Shape Structures
 \begin{record}
 SHAPE(ShapeVer)
 Field        Type                                             Comment
 NumFillBits  UB[4]                                            Number of fill index bits.
+  let (fbits, lbits) = requiredBitsSHAPERECORDS sHAPE_shapeRecords
+  fbits
 NumLineBits  UB[4]                                            Number of line index bits.
+  lbits
 ShapeRecords SHAPERECORDS(ShapeVer, NumFillBits, NumLineBits) Shape records (see following).
 \end{record}
 
@@ -2219,7 +2234,9 @@ Field        Type                                             Comment
 FillStyles   FILLSTYLEARRAY(ShapeVer)                         Array of fill styles.
 LineStyles   LINESTYLEARRAY(ShapeVer)                         Array of line styles.
 NumFillBits  UB[4]                                            Number of fill index bits.
+  requiredBitsUB (genericLength sHAPEWITHSTYLE_fillStyles)
 NumLineBits  UB[4]                                            Number of line index bits.
+  requiredBitsUB (either genericLength genericLength sHAPEWITHSTYLE_lineStyles)
 ShapeRecords SHAPERECORDS(ShapeVer, NumFillBits, NumLineBits) Shape records (see following).
 \end{record}
 
@@ -2303,6 +2320,10 @@ NewNumFillBits  If StateNewStyles, UB[4]                    Number of fill index
 NewNumLineBits  If StateNewStyles, UB[4]                    Number of line index bits for new styles.
 \end{record}
 
+I used to use these to eliminate the NewNumFillBits and NewNumLineBits fields, but it causes an issue in getSHAPERECORDS
+  requiredBitsUB (genericLength sTYLECHANGERECORD_newFillStyles)
+  requiredBitsUB (either genericLength genericLength sTYLECHANGERECORD_newLineStyles)
+
 \begin{record}
 STRAIGHTEDGERECORD
 Field           Type                  Comment
@@ -2336,6 +2357,7 @@ putStraightEdge numBits se = case se of
 CURVEDEDGERECORD
 Field         Type          Comment
 NumBits       UB[4]         Number of bits per value (2 less than the actual number).
+  (requiredBitsSB cURVEDEDGERECORD_controlDeltaX `max` requiredBitsSB cURVEDEDGERECORD_controlDeltaY `max` requiredBitsSB cURVEDEDGERECORD_anchorDeltaX `max` requiredBitsSB cURVEDEDGERECORD_anchorDeltaY) - 2
 ControlDeltaX SB[NumBits+2] X control point change.
 ControlDeltaY SB[NumBits+2] Y control point change.
 AnchorDeltaX  SB[NumBits+2] X anchor point change.

@@ -25,8 +25,9 @@ TODOS
   * In particular, the zlib compressed fields in the image chapter
   * Perhaps also those embedding sound and video formats
 3) Reduce semantic junk
-  * NBits fields, even those in CXFORM and stuff like mATRIX_scaleBits
-  * "NumFillBits" and the like...
+  * NewNumFillBits and NewNumLineBits
+  * CONVOLUTIONFILTER.Matrix
+  * GRADIENT{GLOW,BEVEL}FILTER.Gradient{Colors,Ratio}
 5) Simplify away generated consistency checks that are trivially true
 7) Generate comments on constructor fields and add them to custom ones
 8) Represent some [UI8] as ByteString?
@@ -3225,11 +3226,12 @@ data ACTIONRECORD = UnknownAction { unknownAction_actionCode :: UI8, unknownActi
          |  ActionExtends{}
          |  ActionCastOp{}
          |  ActionImplementsOp{}
-         |  ActionTry{actionTry_finallyBlockFlag :: Bool,
+         |  ActionTry{actionTry_catchInRegisterFlag :: Bool,
+            actionTry_finallyBlockFlag :: Bool,
             actionTry_catchBlockFlag :: Bool,
-            actionTry_catchName :: Maybe STRING,
-            actionTry_catchRegister :: Maybe UI8, actionTry_tryBody :: [UI8],
-            actionTry_catchBody :: [UI8], actionTry_finallyBody :: [UI8]}
+            actionTry_catchHow :: Either STRING UI8,
+            actionTry_tryBody :: [UI8], actionTry_catchBody :: [UI8],
+            actionTry_finallyBody :: [UI8]}
          |  ActionThrow{}
             deriving (Eq, Show, Typeable, Data)
 
@@ -4506,7 +4508,7 @@ putActionImplementsOp ActionImplementsOp{..} = do return ()
 
 \end{code}
 
-p121: ActionTy
+p121: ActionTry
 \begin{code}
 getActionTry
   = do discardReserved "_reserved (x :: ?)" (getUB 5)
@@ -4516,10 +4518,8 @@ getActionTry
        actionTry_trySize <- getUI16
        actionTry_catchSize <- getUI16
        actionTry_finallySize <- getUI16
-       actionTry_catchName <- maybeHas (not actionTry_catchInRegisterFlag)
-                                getSTRING
-       actionTry_catchRegister <- maybeHas actionTry_catchInRegisterFlag
-                                    getUI8
+       actionTry_catchHow <- if not actionTry_catchInRegisterFlag then
+                               fmap Left getSTRING else fmap Right getUI8
        actionTry_tryBody <- genericReplicateM actionTry_trySize getUI8
        actionTry_catchBody <- genericReplicateM actionTry_catchSize getUI8
        actionTry_finallyBody <- genericReplicateM actionTry_finallySize
@@ -4534,7 +4534,6 @@ putActionTry ActionTry{..}
               show (requiredBitsUB actionTry_reserved) ++
                 " bits to store the value " ++
                   show actionTry_reserved ++ ", but only have available " ++ show 5)
-       let actionTry_catchInRegisterFlag = isJust actionTry_catchRegister
        putFlag actionTry_catchInRegisterFlag
        putFlag actionTry_finallyBlockFlag
        putFlag actionTry_catchBlockFlag
@@ -4544,24 +4543,15 @@ putActionTry ActionTry{..}
        putUI16 actionTry_catchSize
        let actionTry_finallySize = genericLength actionTry_finallyBody
        putUI16 actionTry_finallySize
-       case actionTry_catchName of
-           Just x | not actionTry_catchInRegisterFlag -> putSTRING x
+       case actionTry_catchHow of
+           Left x | not actionTry_catchInRegisterFlag -> putSTRING x
                   | otherwise ->
-                    inconsistent "actionTry_catchName (x :: ActionTry)"
-                      "Should have a Just iff not actionTry_catchInRegisterFlag is True"
-           Nothing | not actionTry_catchInRegisterFlag ->
-                     inconsistent "actionTry_catchName (x :: ActionTry)"
-                       "Should have a Nothing iff not actionTry_catchInRegisterFlag is False"
-                   | otherwise -> return ()
-       case actionTry_catchRegister of
-           Just x | actionTry_catchInRegisterFlag -> putUI8 x
-                  | otherwise ->
-                    inconsistent "actionTry_catchRegister (x :: ActionTry)"
-                      "Should have a Just iff actionTry_catchInRegisterFlag is True"
-           Nothing | actionTry_catchInRegisterFlag ->
-                     inconsistent "actionTry_catchRegister (x :: ActionTry)"
-                       "Should have a Nothing iff actionTry_catchInRegisterFlag is False"
-                   | otherwise -> return ()
+                    inconsistent "actionTry_catchHow (x :: ActionTry)"
+                      "Should have a Left iff not actionTry_catchInRegisterFlag is True"
+           Right x | not actionTry_catchInRegisterFlag ->
+                     inconsistent "actionTry_catchHow (x :: ActionTry)"
+                       "Should have a Right iff not actionTry_catchInRegisterFlag is False"
+                   | otherwise -> putUI8 x
        if genericLength actionTry_tryBody /= (actionTry_trySize) then
          inconsistent "actionTry_tryBody (x :: ActionTry)"
            ("Mismatch with the required length: actionTry_trySize" ++
@@ -4719,12 +4709,12 @@ putLINESTYLE shapeVer (LINESTYLE {..}) = do
  
 data LINESTYLE2 = LINESTYLE2{lINESTYLE2_width :: UI16,
                              lINESTYLE2_startCapStyle :: UB, lINESTYLE2_joinStyle :: UB,
-                             lINESTYLE2_noHScaleFlag :: Bool, lINESTYLE2_noVScaleFlag :: Bool,
+                             lINESTYLE2_hasFillFlag :: Bool, lINESTYLE2_noHScaleFlag :: Bool,
+                             lINESTYLE2_noVScaleFlag :: Bool,
                              lINESTYLE2_pixelHintingFlag :: Bool, lINESTYLE2_noClose :: Bool,
                              lINESTYLE2_endCapStyle :: UB,
                              lINESTYLE2_miterLimitFactor :: Maybe UI16,
-                             lINESTYLE2_color :: Maybe RGBA,
-                             lINESTYLE2_fillType :: Maybe FILLSTYLE}
+                             lINESTYLE2_fill :: Either RGBA FILLSTYLE}
                 deriving (Eq, Show, Typeable, Data)
 getLINESTYLE2
   = do lINESTYLE2_width <- getUI16
@@ -4739,9 +4729,8 @@ getLINESTYLE2
        lINESTYLE2_endCapStyle <- getUB 2
        lINESTYLE2_miterLimitFactor <- maybeHas (lINESTYLE2_joinStyle == 2)
                                         getUI16
-       lINESTYLE2_color <- maybeHas (not lINESTYLE2_hasFillFlag) getRGBA
-       lINESTYLE2_fillType <- maybeHas lINESTYLE2_hasFillFlag
-                                (getFILLSTYLE 4)
+       lINESTYLE2_fill <- if not lINESTYLE2_hasFillFlag then
+                            fmap Left getRGBA else fmap Right (getFILLSTYLE 4)
        return (LINESTYLE2{..})
 putLINESTYLE2 LINESTYLE2{..}
   = do putUI16 lINESTYLE2_width
@@ -4761,7 +4750,6 @@ putLINESTYLE2 LINESTYLE2{..}
                 " bits to store the value " ++
                   show lINESTYLE2_joinStyle ++
                     ", but only have available " ++ show 2)
-       let lINESTYLE2_hasFillFlag = isJust lINESTYLE2_fillType
        putFlag lINESTYLE2_hasFillFlag
        putFlag lINESTYLE2_noHScaleFlag
        putFlag lINESTYLE2_noVScaleFlag
@@ -4792,33 +4780,36 @@ putLINESTYLE2 LINESTYLE2{..}
                      inconsistent "lINESTYLE2_miterLimitFactor (x :: LINESTYLE2)"
                        "Should have a Nothing iff lINESTYLE2_joinStyle == 2 is False"
                    | otherwise -> return ()
-       case lINESTYLE2_color of
-           Just x | not lINESTYLE2_hasFillFlag -> putRGBA x
+       case lINESTYLE2_fill of
+           Left x | not lINESTYLE2_hasFillFlag -> putRGBA x
                   | otherwise ->
-                    inconsistent "lINESTYLE2_color (x :: LINESTYLE2)"
-                      "Should have a Just iff not lINESTYLE2_hasFillFlag is True"
-           Nothing | not lINESTYLE2_hasFillFlag ->
-                     inconsistent "lINESTYLE2_color (x :: LINESTYLE2)"
-                       "Should have a Nothing iff not lINESTYLE2_hasFillFlag is False"
-                   | otherwise -> return ()
-       case lINESTYLE2_fillType of
-           Just x | lINESTYLE2_hasFillFlag -> putFILLSTYLE 4 x
-                  | otherwise ->
-                    inconsistent "lINESTYLE2_fillType (x :: LINESTYLE2)"
-                      "Should have a Just iff lINESTYLE2_hasFillFlag is True"
-           Nothing | lINESTYLE2_hasFillFlag ->
-                     inconsistent "lINESTYLE2_fillType (x :: LINESTYLE2)"
-                       "Should have a Nothing iff lINESTYLE2_hasFillFlag is False"
-                   | otherwise -> return ()
+                    inconsistent "lINESTYLE2_fill (x :: LINESTYLE2)"
+                      "Should have a Left iff not lINESTYLE2_hasFillFlag is True"
+           Right x | not lINESTYLE2_hasFillFlag ->
+                     inconsistent "lINESTYLE2_fill (x :: LINESTYLE2)"
+                       "Should have a Right iff not lINESTYLE2_hasFillFlag is False"
+                   | otherwise -> putFILLSTYLE 4 x
        return ()
+
+\end{code}
+
+\begin{code}
+
+requiredBitsSHAPERECORDS [] = (0, 0)
+requiredBitsSHAPERECORDS (r:rs) = case r of
+    STYLECHANGERECORD {..}
+      -> (fbits `max` maybe 0 requiredBitsUB sTYLECHANGERECORD_fillStyle0 `max` maybe 0 requiredBitsUB sTYLECHANGERECORD_fillStyle1,
+          lbits `max` maybe 0 requiredBitsUB sTYLECHANGERECORD_lineStyle)
+      where (fbits, lbits) | Just _ <- sTYLECHANGERECORD_new = (0, 0) 
+                           | otherwise                       = requiredBitsSHAPERECORDS rs
+    _ -> requiredBitsSHAPERECORDS rs
 
 \end{code}
 
 p133: Shape Structures
 \begin{code}
  
-data SHAPE = SHAPE{sHAPE_numFillBits :: UB,
-                   sHAPE_numLineBits :: UB, sHAPE_shapeRecords :: SHAPERECORDS}
+data SHAPE = SHAPE{sHAPE_shapeRecords :: SHAPERECORDS}
            deriving (Eq, Show, Typeable, Data)
 getSHAPE sHAPE_shapeVer
   = do sHAPE_numFillBits <- getUB 4
@@ -4828,16 +4819,20 @@ getSHAPE sHAPE_shapeVer
                                sHAPE_numLineBits
        return (SHAPE{..})
 putSHAPE sHAPE_shapeVer SHAPE{..}
-  = do if requiredBitsUB sHAPE_numFillBits <= 4 then
+  = do let (fbits, lbits)
+             = requiredBitsSHAPERECORDS sHAPE_shapeRecords
+       let sHAPE_numFillBits = fbits
+       if requiredBitsUB sHAPE_numFillBits <= 4 then
          putUB 4 sHAPE_numFillBits else
-         inconsistent "sHAPE_numFillBits (x :: SHAPE)"
+         inconsistent "x :: SHAPE"
            ("Bit count incorrect: required " ++
               show (requiredBitsUB sHAPE_numFillBits) ++
                 " bits to store the value " ++
                   show sHAPE_numFillBits ++ ", but only have available " ++ show 4)
+       let sHAPE_numLineBits = lbits
        if requiredBitsUB sHAPE_numLineBits <= 4 then
          putUB 4 sHAPE_numLineBits else
-         inconsistent "sHAPE_numLineBits (x :: SHAPE)"
+         inconsistent "x :: SHAPE"
            ("Bit count incorrect: required " ++
               show (requiredBitsUB sHAPE_numLineBits) ++
                 " bits to store the value " ++
@@ -4853,8 +4848,6 @@ putSHAPE sHAPE_shapeVer SHAPE{..}
 data SHAPEWITHSTYLE = SHAPEWITHSTYLE{sHAPEWITHSTYLE_fillStyles ::
                                      FILLSTYLEARRAY,
                                      sHAPEWITHSTYLE_lineStyles :: LINESTYLEARRAY,
-                                     sHAPEWITHSTYLE_numFillBits :: UB,
-                                     sHAPEWITHSTYLE_numLineBits :: UB,
                                      sHAPEWITHSTYLE_shapeRecords :: SHAPERECORDS}
                     deriving (Eq, Show, Typeable, Data)
 getSHAPEWITHSTYLE sHAPEWITHSTYLE_shapeVer
@@ -4873,17 +4866,22 @@ putSHAPEWITHSTYLE sHAPEWITHSTYLE_shapeVer SHAPEWITHSTYLE{..}
   = do putFILLSTYLEARRAY sHAPEWITHSTYLE_shapeVer
          sHAPEWITHSTYLE_fillStyles
        putLINESTYLEARRAY sHAPEWITHSTYLE_shapeVer sHAPEWITHSTYLE_lineStyles
+       let sHAPEWITHSTYLE_numFillBits
+             = requiredBitsUB (genericLength sHAPEWITHSTYLE_fillStyles)
        if requiredBitsUB sHAPEWITHSTYLE_numFillBits <= 4 then
          putUB 4 sHAPEWITHSTYLE_numFillBits else
-         inconsistent "sHAPEWITHSTYLE_numFillBits (x :: SHAPEWITHSTYLE)"
+         inconsistent "x :: SHAPEWITHSTYLE"
            ("Bit count incorrect: required " ++
               show (requiredBitsUB sHAPEWITHSTYLE_numFillBits) ++
                 " bits to store the value " ++
                   show sHAPEWITHSTYLE_numFillBits ++
                     ", but only have available " ++ show 4)
+       let sHAPEWITHSTYLE_numLineBits
+             = requiredBitsUB
+                 (either genericLength genericLength sHAPEWITHSTYLE_lineStyles)
        if requiredBitsUB sHAPEWITHSTYLE_numLineBits <= 4 then
          putUB 4 sHAPEWITHSTYLE_numLineBits else
-         inconsistent "sHAPEWITHSTYLE_numLineBits (x :: SHAPEWITHSTYLE)"
+         inconsistent "x :: SHAPEWITHSTYLE"
            ("Bit count incorrect: required " ++
               show (requiredBitsUB sHAPEWITHSTYLE_numLineBits) ++
                 " bits to store the value " ++
@@ -4953,8 +4951,7 @@ data SHAPERECORD
                     Maybe (FILLSTYLEARRAY, LINESTYLEARRAY, UB, UB)}
          |  STRAIGHTEDGERECORD{sTRAIGHTEDGERECORD_numBits :: UB,
                      sTRAIGHTEDGERECORD_straightEdge :: StraightEdge}
-         |  CURVEDEDGERECORD{cURVEDEDGERECORD_numBits :: UB,
-                   cURVEDEDGERECORD_controlDeltaX :: SB,
+         |  CURVEDEDGERECORD{cURVEDEDGERECORD_controlDeltaX :: SB,
                    cURVEDEDGERECORD_controlDeltaY :: SB,
                    cURVEDEDGERECORD_anchorDeltaX :: SB,
                    cURVEDEDGERECORD_anchorDeltaY :: SB}
@@ -5232,6 +5229,10 @@ putSTYLECHANGERECORD sTYLECHANGERECORD_shapeVer
 
 \end{code}
 
+I used to use these to eliminate the NewNumFillBits and NewNumLineBits fields, but it causes an issue in getSHAPERECORDS
+  requiredBitsUB (genericLength sTYLECHANGERECORD_newFillStyles)
+  requiredBitsUB (either genericLength genericLength sTYLECHANGERECORD_newLineStyles)
+
 \begin{code}
 getSTRAIGHTEDGERECORD
   = do sTRAIGHTEDGERECORD_numBits <- getUB 4
@@ -5288,9 +5289,15 @@ getCURVEDEDGERECORD
                                           (cURVEDEDGERECORD_numBits + 2)
        return (CURVEDEDGERECORD{..})
 putCURVEDEDGERECORD CURVEDEDGERECORD{..}
-  = do if requiredBitsUB cURVEDEDGERECORD_numBits <= 4 then
+  = do let cURVEDEDGERECORD_numBits
+             = (requiredBitsSB cURVEDEDGERECORD_controlDeltaX `max`
+                  requiredBitsSB cURVEDEDGERECORD_controlDeltaY
+                  `max` requiredBitsSB cURVEDEDGERECORD_anchorDeltaX
+                  `max` requiredBitsSB cURVEDEDGERECORD_anchorDeltaY)
+                 - 2
+       if requiredBitsUB cURVEDEDGERECORD_numBits <= 4 then
          putUB 4 cURVEDEDGERECORD_numBits else
-         inconsistent "cURVEDEDGERECORD_numBits (x :: CURVEDEDGERECORD)"
+         inconsistent "x :: CURVEDEDGERECORD"
            ("Bit count incorrect: required " ++
               show (requiredBitsUB cURVEDEDGERECORD_numBits) ++
                 " bits to store the value " ++

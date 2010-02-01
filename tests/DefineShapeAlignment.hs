@@ -61,8 +61,6 @@ define_shape = DefineShape {
               }
           ],
         sHAPEWITHSTYLE_lineStyles = Left [],
-        sHAPEWITHSTYLE_numFillBits = 1,
-        sHAPEWITHSTYLE_numLineBits = 0,
         sHAPEWITHSTYLE_shapeRecords = [
             STYLECHANGERECORD {
                 sTYLECHANGERECORD_move = Just (16,23349,13737),
@@ -72,7 +70,6 @@ define_shape = DefineShape {
                 sTYLECHANGERECORD_new = Nothing
               },
             CURVEDEDGERECORD {
-                cURVEDEDGERECORD_numBits = 14,
                 cURVEDEDGERECORD_controlDeltaX = -19799,
                 cURVEDEDGERECORD_controlDeltaY = 818,
                 cURVEDEDGERECORD_anchorDeltaX = -17536,
