@@ -32,9 +32,8 @@ define_shape = DefineShape {
             GradientFill {
                 fILLSTYLE_linearRadial = Linear,
                 fILLSTYLE_gradientMatrix = MATRIX {
-                    mATRIX_scale = Just (5,FIXED {fIXED_decimal = 9, fIXED_integer = 0},FIXED {fIXED_decimal = 13, fIXED_integer = 0}),
-                    mATRIX_rotate = Just (16,FIXED {fIXED_decimal = 49822, fIXED_integer = 0},FIXED {fIXED_decimal = 24676, fIXED_integer = 0}),
-                    mATRIX_translateBits = 15,
+                    mATRIX_scale = Just (FIXED {fIXED_decimal = 9, fIXED_integer = 0},FIXED {fIXED_decimal = 13, fIXED_integer = 0}),
+                    mATRIX_rotate = Just (FIXED {fIXED_decimal = 49822, fIXED_integer = 0},FIXED {fIXED_decimal = 24676, fIXED_integer = 0}),
                     mATRIX_translateX = 5002,
                     mATRIX_translateY = -10301
                   },

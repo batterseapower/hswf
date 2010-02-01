@@ -551,9 +551,9 @@ p20: MATRIX record
 
 \begin{code}
  
-data MATRIX = MATRIX{mATRIX_scale :: Maybe (UB, FB, FB),
-                     mATRIX_rotate :: Maybe (UB, FB, FB), mATRIX_translateBits :: UB,
-                     mATRIX_translateX :: SB, mATRIX_translateY :: SB}
+data MATRIX = MATRIX{mATRIX_scale :: Maybe (FB, FB),
+                     mATRIX_rotate :: Maybe (FB, FB), mATRIX_translateX :: SB,
+                     mATRIX_translateY :: SB}
             deriving (Eq, Show, Typeable, Data)
 getMATRIX
   = do mATRIX_hasScale <- getFlag
@@ -561,13 +561,13 @@ getMATRIX
                          (do mATRIX_scaleBits <- getUB 5
                              mATRIX_scaleX <- getFB mATRIX_scaleBits
                              mATRIX_scaleY <- getFB mATRIX_scaleBits
-                             return (mATRIX_scaleBits, mATRIX_scaleX, mATRIX_scaleY))
+                             return (mATRIX_scaleX, mATRIX_scaleY))
        mATRIX_hasRotate <- getFlag
        mATRIX_rotate <- maybeHas mATRIX_hasRotate
                           (do mATRIX_rotateBits <- getUB 5
                               mATRIX_rotateSkew0 <- getFB mATRIX_rotateBits
                               mATRIX_rotateSkew1 <- getFB mATRIX_rotateBits
-                              return (mATRIX_rotateBits, mATRIX_rotateSkew0, mATRIX_rotateSkew1))
+                              return (mATRIX_rotateSkew0, mATRIX_rotateSkew1))
        mATRIX_translateBits <- getUB 5
        mATRIX_translateX <- getSB mATRIX_translateBits
        mATRIX_translateY <- getSB mATRIX_translateBits
@@ -579,86 +579,61 @@ putMATRIX MATRIX{..}
        case mATRIX_scale of
            Just x | mATRIX_hasScale ->
                     case x of
-                        (mATRIX_scaleBits, mATRIX_scaleX, mATRIX_scaleY) -> do if
-                                                                                 requiredBitsUB
-                                                                                   mATRIX_scaleBits
-                                                                                   <= 5
-                                                                                 then
-                                                                                 putUB 5
-                                                                                   mATRIX_scaleBits
-                                                                                 else
-                                                                                 inconsistent
-                                                                                   "fst (fromJust (mATRIX_scale (x :: MATRIX)))"
-                                                                                   ("Bit count incorrect: required "
-                                                                                      ++
-                                                                                      show
-                                                                                        (requiredBitsUB
-                                                                                           mATRIX_scaleBits)
-                                                                                        ++
-                                                                                        " bits to store the value "
-                                                                                          ++
-                                                                                          show
-                                                                                            mATRIX_scaleBits
-                                                                                            ++
-                                                                                            ", but only have available "
-                                                                                              ++
-                                                                                              show
-                                                                                                5)
-                                                                               if
-                                                                                 requiredBitsFB
-                                                                                   mATRIX_scaleX
-                                                                                   <=
-                                                                                   mATRIX_scaleBits
-                                                                                 then
-                                                                                 putFB
-                                                                                   mATRIX_scaleBits
-                                                                                   mATRIX_scaleX
-                                                                                 else
-                                                                                 inconsistent
-                                                                                   "snd (fromJust (mATRIX_scale (x :: MATRIX)))"
-                                                                                   ("Bit count incorrect: required "
-                                                                                      ++
-                                                                                      show
-                                                                                        (requiredBitsFB
-                                                                                           mATRIX_scaleX)
-                                                                                        ++
-                                                                                        " bits to store the value "
-                                                                                          ++
-                                                                                          show
-                                                                                            mATRIX_scaleX
-                                                                                            ++
-                                                                                            ", but only have available "
-                                                                                              ++
-                                                                                              show
-                                                                                                mATRIX_scaleBits)
-                                                                               if
-                                                                                 requiredBitsFB
-                                                                                   mATRIX_scaleY
-                                                                                   <=
-                                                                                   mATRIX_scaleBits
-                                                                                 then
-                                                                                 putFB
-                                                                                   mATRIX_scaleBits
-                                                                                   mATRIX_scaleY
-                                                                                 else
-                                                                                 inconsistent
-                                                                                   "thd (fromJust (mATRIX_scale (x :: MATRIX)))"
-                                                                                   ("Bit count incorrect: required "
-                                                                                      ++
-                                                                                      show
-                                                                                        (requiredBitsFB
-                                                                                           mATRIX_scaleY)
-                                                                                        ++
-                                                                                        " bits to store the value "
-                                                                                          ++
-                                                                                          show
-                                                                                            mATRIX_scaleY
-                                                                                            ++
-                                                                                            ", but only have available "
-                                                                                              ++
-                                                                                              show
-                                                                                                mATRIX_scaleBits)
-                                                                               return ()
+                        (mATRIX_scaleX, mATRIX_scaleY) -> do let mATRIX_scaleBits
+                                                                   = requiredBitsFB mATRIX_scaleX
+                                                                       `max`
+                                                                       requiredBitsFB mATRIX_scaleY
+                                                             if requiredBitsUB mATRIX_scaleBits <= 5
+                                                               then putUB 5 mATRIX_scaleBits else
+                                                               inconsistent
+                                                                 "fromJust (mATRIX_scale (x :: MATRIX))"
+                                                                 ("Bit count incorrect: required "
+                                                                    ++
+                                                                    show
+                                                                      (requiredBitsUB
+                                                                         mATRIX_scaleBits)
+                                                                      ++
+                                                                      " bits to store the value " ++
+                                                                        show mATRIX_scaleBits ++
+                                                                          ", but only have available "
+                                                                            ++ show 5)
+                                                             if
+                                                               requiredBitsFB mATRIX_scaleX <=
+                                                                 mATRIX_scaleBits
+                                                               then
+                                                               putFB mATRIX_scaleBits mATRIX_scaleX
+                                                               else
+                                                               inconsistent
+                                                                 "fst (fromJust (mATRIX_scale (x :: MATRIX)))"
+                                                                 ("Bit count incorrect: required "
+                                                                    ++
+                                                                    show
+                                                                      (requiredBitsFB mATRIX_scaleX)
+                                                                      ++
+                                                                      " bits to store the value " ++
+                                                                        show mATRIX_scaleX ++
+                                                                          ", but only have available "
+                                                                            ++
+                                                                            show mATRIX_scaleBits)
+                                                             if
+                                                               requiredBitsFB mATRIX_scaleY <=
+                                                                 mATRIX_scaleBits
+                                                               then
+                                                               putFB mATRIX_scaleBits mATRIX_scaleY
+                                                               else
+                                                               inconsistent
+                                                                 "snd (fromJust (mATRIX_scale (x :: MATRIX)))"
+                                                                 ("Bit count incorrect: required "
+                                                                    ++
+                                                                    show
+                                                                      (requiredBitsFB mATRIX_scaleY)
+                                                                      ++
+                                                                      " bits to store the value " ++
+                                                                        show mATRIX_scaleY ++
+                                                                          ", but only have available "
+                                                                            ++
+                                                                            show mATRIX_scaleBits)
+                                                             return ()
                   | otherwise ->
                     inconsistent "mATRIX_scale (x :: MATRIX)"
                       "Should have a Just iff mATRIX_hasScale is True"
@@ -671,11 +646,14 @@ putMATRIX MATRIX{..}
        case mATRIX_rotate of
            Just x | mATRIX_hasRotate ->
                     case x of
-                        (mATRIX_rotateBits, mATRIX_rotateSkew0,
-                         mATRIX_rotateSkew1) -> do if requiredBitsUB mATRIX_rotateBits <= 5
-                                                     then putUB 5 mATRIX_rotateBits else
+                        (mATRIX_rotateSkew0,
+                         mATRIX_rotateSkew1) -> do let mATRIX_rotateBits
+                                                         = requiredBitsFB mATRIX_rotateSkew0 `max`
+                                                             requiredBitsFB mATRIX_rotateSkew1
+                                                   if requiredBitsUB mATRIX_rotateBits <= 5 then
+                                                     putUB 5 mATRIX_rotateBits else
                                                      inconsistent
-                                                       "fst (fromJust (mATRIX_rotate (x :: MATRIX)))"
+                                                       "fromJust (mATRIX_rotate (x :: MATRIX))"
                                                        ("Bit count incorrect: required " ++
                                                           show (requiredBitsUB mATRIX_rotateBits) ++
                                                             " bits to store the value " ++
@@ -688,7 +666,7 @@ putMATRIX MATRIX{..}
                                                      then putFB mATRIX_rotateBits mATRIX_rotateSkew0
                                                      else
                                                      inconsistent
-                                                       "snd (fromJust (mATRIX_rotate (x :: MATRIX)))"
+                                                       "fst (fromJust (mATRIX_rotate (x :: MATRIX)))"
                                                        ("Bit count incorrect: required " ++
                                                           show (requiredBitsFB mATRIX_rotateSkew0)
                                                             ++
@@ -702,7 +680,7 @@ putMATRIX MATRIX{..}
                                                      then putFB mATRIX_rotateBits mATRIX_rotateSkew1
                                                      else
                                                      inconsistent
-                                                       "thd (fromJust (mATRIX_rotate (x :: MATRIX)))"
+                                                       "snd (fromJust (mATRIX_rotate (x :: MATRIX)))"
                                                        ("Bit count incorrect: required " ++
                                                           show (requiredBitsFB mATRIX_rotateSkew1)
                                                             ++
@@ -718,9 +696,12 @@ putMATRIX MATRIX{..}
                      inconsistent "mATRIX_rotate (x :: MATRIX)"
                        "Should have a Nothing iff mATRIX_hasRotate is False"
                    | otherwise -> return ()
+       let mATRIX_translateBits
+             = requiredBitsSB mATRIX_translateX `max`
+                 requiredBitsSB mATRIX_translateY
        if requiredBitsUB mATRIX_translateBits <= 5 then
          putUB 5 mATRIX_translateBits else
-         inconsistent "mATRIX_translateBits (x :: MATRIX)"
+         inconsistent "x :: MATRIX"
            ("Bit count incorrect: required " ++
               show (requiredBitsUB mATRIX_translateBits) ++
                 " bits to store the value " ++

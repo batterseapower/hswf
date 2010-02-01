@@ -101,7 +101,6 @@ swf = Swf {
             placeObject2_matrix = Just (MATRIX {
                 mATRIX_scale = Nothing,
                 mATRIX_rotate = Nothing,
-                mATRIX_translateBits = 0,
                 mATRIX_translateX = 0,
                 mATRIX_translateY = 0
             }),

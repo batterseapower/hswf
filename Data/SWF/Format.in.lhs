@@ -464,13 +464,16 @@ MATRIX
 Field         Type                             Comment
 HasScale      UB[1]                            Has scale values if equal to 1
 ScaleBits     If HasScale = 1, UB[5]           Bits in each scale value field
+  requiredBitsFB mATRIX_scaleX `max` requiredBitsFB mATRIX_scaleY
 ScaleX        If HasScale = 1, FB[ScaleBits]   x scale value
 ScaleY        If HasScale = 1, FB[ScaleBits]   y scale value
 HasRotate     UB[1]                            Has rotate and skew values if equal to 1
 RotateBits    If HasRotate = 1, UB[5]          Bits in each rotate value field
+  requiredBitsFB mATRIX_rotateSkew0 `max` requiredBitsFB mATRIX_rotateSkew1
 RotateSkew0   If HasRotate = 1, FB[RotateBits] First rotate and skew value
 RotateSkew1   If HasRotate = 1, FB[RotateBits] Second rotate and skew value
 TranslateBits UB[5]                            Bits in each translate value field
+  requiredBitsSB mATRIX_translateX `max` requiredBitsSB mATRIX_translateY
 TranslateX    SB[TranslateBits]                x translate value in twips
 TranslateY    SB[TranslateBits]                y translate value in twips
 Padding       PADDING8                         Padding to byte boundary
