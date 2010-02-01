@@ -15,7 +15,6 @@ swf = Swf {
     version = 3,
     fileLength = 79,
     frameSize = RECT {
-        rECT_nbits = 15,
         rECT_xmin = 0,
         rECT_xmax = 11000,
         rECT_ymin = 0,
@@ -37,7 +36,6 @@ swf = Swf {
         DefineShape {
             defineShape_shapeId = 1,
             defineShape_shapeBounds = RECT {
-                rECT_nbits = 14,
                 rECT_xmin = 2010,
                 rECT_xmax = 4910,
                 rECT_ymin = 1670,

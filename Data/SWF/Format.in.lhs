@@ -450,6 +450,7 @@ p20: Rectangle record
 RECT
 Field   Type      Comment
 Nbits   UB[5]     Bits used for each subsequent field
+  requiredBitsSB rECT_xmin `max` requiredBitsSB rECT_xmax `max` requiredBitsSB rECT_ymin `max` requiredBitsSB rECT_ymax
 Xmin    SB[Nbits] x minimum position for rectangle in twips
 Xmax    SB[Nbits] x maximum position for rectangle in twips
 Ymin    SB[Nbits] y minimum position for rectangle in twips
@@ -479,6 +480,13 @@ TranslateY    SB[TranslateBits]                y translate value in twips
 Padding       PADDING8                         Padding to byte boundary
 \end{record}
 
+\begin{code}
+
+requiredBitsSB3 :: Integral a => (SB, SB, SB) -> a
+requiredBitsSB3 (a, b, c) = requiredBitsSB a `max` requiredBitsSB b `max` requiredBitsSB c
+
+\end{code}
+
 p22: Color transform record
 \begin{record}
 CXFORM
@@ -486,6 +494,7 @@ Field         Type                           Comment
 HasAddTerms   UB[1]                          Has color addition values if equal to 1
 HasMultTerms  UB[1]                          Has color multiply values if equal to 1
 Nbits         UB[4]                          Bits in each value field
+  maybe 0 requiredBitsSB3 cXFORM_multTerm `max` maybe 0 requiredBitsSB3 cXFORM_addTerm
 RedMultTerm   If HasMultTerms = 1, SB[Nbits] Red multiply value
 GreenMultTerm If HasMultTerms = 1, SB[Nbits] Green multiply value
 BlueMultTerm  If HasMultTerms = 1, SB[Nbits] Blue multiply value
@@ -495,6 +504,13 @@ BlueAddTerm   If HasAddTerms = 1, SB[Nbits]  Blue addition value
 Padding       PADDING8                       Padding to byte boundary
 \end{record}
 
+\begin{code}
+
+requiredBitsSB4 :: Integral a => (SB, SB, SB, SB) -> a
+requiredBitsSB4 (a, b, c, d) = requiredBitsSB a `max` requiredBitsSB b `max` requiredBitsSB c `max` requiredBitsSB d
+
+\end{code}
+
 p23: Color transform with alpha record
 
 \begin{record}
@@ -503,6 +519,7 @@ Field         Type                           Comment
 HasAddTerms   UB[1]                          Has color addition values if equal to 1
 HasMultTerms  UB[1]                          Has color multiply values if equal to 1
 Nbits         UB[4]                          Bits in each value field
+  maybe 0 requiredBitsSB4 cXFORMWITHALPHA_multTerm `max` maybe 0 requiredBitsSB4 cXFORMWITHALPHA_addTerm
 RedMultTerm   If HasMultTerms = 1, SB[Nbits] Red multiply value
 GreenMultTerm If HasMultTerms = 1, SB[Nbits] Green multiply value
 BlueMultTerm  If HasMultTerms = 1, SB[Nbits] Blue multiply value

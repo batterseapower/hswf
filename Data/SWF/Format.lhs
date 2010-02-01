@@ -495,8 +495,8 @@ putARGB ARGB{..}
 p20: Rectangle record
 \begin{code}
  
-data RECT = RECT{rECT_nbits :: UB, rECT_xmin :: SB,
-                 rECT_xmax :: SB, rECT_ymin :: SB, rECT_ymax :: SB}
+data RECT = RECT{rECT_xmin :: SB, rECT_xmax :: SB, rECT_ymin :: SB,
+                 rECT_ymax :: SB}
           deriving (Eq, Show, Typeable, Data)
 getRECT
   = do rECT_nbits <- getUB 5
@@ -507,8 +507,12 @@ getRECT
        discardReserved "_reserved (x :: ?)" byteAlign
        return (RECT{..})
 putRECT RECT{..}
-  = do if requiredBitsUB rECT_nbits <= 5 then putUB 5 rECT_nbits else
-         inconsistent "rECT_nbits (x :: RECT)"
+  = do let rECT_nbits
+             = requiredBitsSB rECT_xmin `max` requiredBitsSB rECT_xmax `max`
+                 requiredBitsSB rECT_ymin
+                 `max` requiredBitsSB rECT_ymax
+       if requiredBitsUB rECT_nbits <= 5 then putUB 5 rECT_nbits else
+         inconsistent "x :: RECT"
            ("Bit count incorrect: required " ++
               show (requiredBitsUB rECT_nbits) ++
                 " bits to store the value " ++
@@ -729,11 +733,17 @@ putMATRIX MATRIX{..}
 
 \end{code}
 
+\begin{code}
+
+requiredBitsSB3 :: Integral a => (SB, SB, SB) -> a
+requiredBitsSB3 (a, b, c) = requiredBitsSB a `max` requiredBitsSB b `max` requiredBitsSB c
+
+\end{code}
+
 p22: Color transform record
 \begin{code}
  
-data CXFORM = CXFORM{cXFORM_nbits :: UB,
-                     cXFORM_multTerm :: Maybe (SB, SB, SB),
+data CXFORM = CXFORM{cXFORM_multTerm :: Maybe (SB, SB, SB),
                      cXFORM_addTerm :: Maybe (SB, SB, SB)}
             deriving (Eq, Show, Typeable, Data)
 getCXFORM
@@ -759,8 +769,11 @@ putCXFORM CXFORM{..}
        putFlag cXFORM_hasAddTerms
        let cXFORM_hasMultTerms = isJust cXFORM_multTerm
        putFlag cXFORM_hasMultTerms
+       let cXFORM_nbits
+             = maybe 0 requiredBitsSB3 cXFORM_multTerm `max`
+                 maybe 0 requiredBitsSB3 cXFORM_addTerm
        if requiredBitsUB cXFORM_nbits <= 4 then putUB 4 cXFORM_nbits else
-         inconsistent "cXFORM_nbits (x :: CXFORM)"
+         inconsistent "x :: CXFORM"
            ("Bit count incorrect: required " ++
               show (requiredBitsUB cXFORM_nbits) ++
                 " bits to store the value " ++
@@ -877,12 +890,19 @@ putCXFORM CXFORM{..}
 
 \end{code}
 
+\begin{code}
+
+requiredBitsSB4 :: Integral a => (SB, SB, SB, SB) -> a
+requiredBitsSB4 (a, b, c, d) = requiredBitsSB a `max` requiredBitsSB b `max` requiredBitsSB c `max` requiredBitsSB d
+
+\end{code}
+
 p23: Color transform with alpha record
 
 \begin{code}
  
-data CXFORMWITHALPHA = CXFORMWITHALPHA{cXFORMWITHALPHA_nbits :: UB,
-                                       cXFORMWITHALPHA_multTerm :: Maybe (SB, SB, SB, SB),
+data CXFORMWITHALPHA = CXFORMWITHALPHA{cXFORMWITHALPHA_multTerm ::
+                                       Maybe (SB, SB, SB, SB),
                                        cXFORMWITHALPHA_addTerm :: Maybe (SB, SB, SB, SB)}
                      deriving (Eq, Show, Typeable, Data)
 getCXFORMWITHALPHA
@@ -918,9 +938,12 @@ putCXFORMWITHALPHA CXFORMWITHALPHA{..}
        putFlag cXFORMWITHALPHA_hasAddTerms
        let cXFORMWITHALPHA_hasMultTerms = isJust cXFORMWITHALPHA_multTerm
        putFlag cXFORMWITHALPHA_hasMultTerms
+       let cXFORMWITHALPHA_nbits
+             = maybe 0 requiredBitsSB4 cXFORMWITHALPHA_multTerm `max`
+                 maybe 0 requiredBitsSB4 cXFORMWITHALPHA_addTerm
        if requiredBitsUB cXFORMWITHALPHA_nbits <= 4 then
          putUB 4 cXFORMWITHALPHA_nbits else
-         inconsistent "cXFORMWITHALPHA_nbits (x :: CXFORMWITHALPHA)"
+         inconsistent "x :: CXFORMWITHALPHA"
            ("Bit count incorrect: required " ++
               show (requiredBitsUB cXFORMWITHALPHA_nbits) ++
                 " bits to store the value " ++

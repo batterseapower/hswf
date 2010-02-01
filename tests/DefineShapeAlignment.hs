@@ -22,7 +22,6 @@ define_shape_bytes = [
 define_shape = DefineShape {
     defineShape_shapeId = 22,
     defineShape_shapeBounds = RECT {
-        rECT_nbits = 16,
         rECT_xmin = -13986,
         rECT_xmax = 23349,
         rECT_ymin = -14386,
