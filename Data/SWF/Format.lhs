@@ -27,15 +27,11 @@ TODOS
 3) Reduce semantic junk
   * NBits fields, even those in CXFORM and stuff like mATRIX_scaleBits
   * "NumFillBits" and the like...
-4) Asserts to validate semantic junk is in agreement with each other in all custom data types
-  * And assertions for NBits!
 5) Simplify away generated consistency checks that are trivially true
-6) Overflow checks on UB/SB/FB fields, since the data types used to represent them are imprecise
 7) Generate comments on constructor fields and add them to custom ones
 8) Represent some [UI8] as ByteString?
-9) Add String sources to the inconsistency checks for debugging
 10) Clean up names in putters and getters: don't give excluded fields record-prefixed names
-11) Review all handled tags to ensure that changing the size due to the roundtrip won't screw up any offset fields.. hmm!
+11) Review all handled tags to ensure that changing the size due to the roundtrip won't screw up any offset fields (hmm!)
 
 
 Roundtripping

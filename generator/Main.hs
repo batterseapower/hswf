@@ -24,6 +24,7 @@ import Numeric
 
 import Language.Haskell.Exts.Syntax hiding (Type, TyCon, Assoc(..))
 import qualified Language.Haskell.Exts.Syntax as LHE
+import qualified Language.Haskell.Exts.Parser as LHE
 import qualified Language.Haskell.Exts.Pretty as LHEP
 
 
@@ -122,7 +123,11 @@ data Field = Field {
     field_excluded :: Maybe WhyExcluded
   } deriving (Show, Typeable, Data)
 
-data WhyExcluded = IsReserved | IsPresenceFlag FieldName | IsSelectFlag FieldName | IsLength FieldName | IsBitLength BitTyConName FieldName
+data WhyExcluded = IsReserved
+                 | IsPresenceFlag FieldName
+                 | IsSelectFlag FieldName
+                 | IsLength FieldName
+                 | HasCustomSynthesiser [Stmt] Exp
                  deriving (Show, Typeable, Data)
 
 data BitTyConName = UB | SB | FB
@@ -187,19 +192,26 @@ parseFile contents = goNo [] (lines contents)
       | otherwise            = goYes (acc ++ [l]) ls
 
 parseRecordLines :: [String] -> Record
-parseRecordLines (header_line:headers:ls) = Record name params fields
+parseRecordLines (header_line:headers:ls) = Record name params (go1 ls)
   where
     (name, params) = parseExactly headerline header_line
     
     header_words = map length $ split (keepDelimsR $ condense $ oneOf " ") headers
     [name_offset, type_offset, _end_offset] = case header_words of [a, b, c] -> [a, b, c]; _ -> error ("parseRecordLines headers:\n" ++ show header_words)
     
-    fields = [Field { field_name = strip name, field_type = typ, field_comment = comment, field_excluded = Nothing }
-             | l <- ls
-             , let (name, l')         = splitAt name_offset l
-                   (typ_str, comment) = splitAt type_offset l'
-                   typ = case parseType (strip typ_str) of Left errs -> error (unlines [name, typ_str, show errs]); Right typ -> typ
-             ]
+    go1 [] = []
+    go1 (l:ls) = go2 (\below -> Field { field_name = strip name, field_type = typ, field_comment = comment, field_excluded = parseBelow below }) [] ls
+      where (name, l')         = splitAt name_offset l
+            (typ_str, comment) = splitAt type_offset l'
+            typ = case parseType (strip typ_str) of Left errs -> error (unlines [name, typ_str, show errs]); Right typ -> typ
+            
+            parseBelow [] = Nothing
+            parseBelow ls = Just $ HasCustomSynthesiser (map (LHE.fromParseResult . LHE.parseStmt) (init ls)) (LHE.fromParseResult $ LHE.parseExp (last ls))
+    
+    go2 f acc [] = [f $ reverse acc]
+    go2 f acc (l:ls)
+      | "  " `isPrefixOf` l = go2 f (drop 2 l:acc) ls
+      | otherwise           = f (reverse acc) : go1 (l:ls)
     
     strip = reverse . dropWhile isSpace . reverse . dropWhile isSpace
 
@@ -433,8 +445,9 @@ fieldToSyntax defuser locate_hint field = case field_excluded field of
             where -- NB: the hint passed to the putter may be meaningful even though this
                   -- is an excluded field, e.g. if its an excluded field that contains the
                   -- the number of repititions in a list, and we overflow the maximum...
-                  putter_stmts hint = [LetStmt (BDecls [PatBind noSrcLoc (PVar bndr) Nothing (UnGuardedRhs $ whyExcludedToSyntax defuser we) (BDecls [])]),
-                                       Qualifier $ putexp (fromMaybe hint $ locate_hint hint) (Var (UnQual bndr))]
+                  (stmts, expr) = whyExcludedToSyntax defuser we
+                  putter_stmts hint = stmts ++ [LetStmt (BDecls [PatBind noSrcLoc (PVar bndr) Nothing (UnGuardedRhs expr) (BDecls [])]),
+                                                Qualifier $ putexp (fromMaybe hint $ locate_hint hint) (Var (UnQual bndr))]
     Nothing -> (Just (bndr, ty), Generator noSrcLoc (PVar bndr) getexp, \hint -> [Qualifier $ putexp (fromMaybe hint $ locate_hint hint) (Var (UnQual bndr))])
   where
     bndr = defuser (field_name field)
@@ -531,10 +544,11 @@ typeToSyntax defuser typ = case typ of
               TyList onety)
       where (onegenexp, oneputexp, onety) = typeToSyntax defuser typ
 
-whyExcludedToSyntax _       IsReserved          = var "reservedDefault"
-whyExcludedToSyntax defuser (IsPresenceFlag fn) = App (var "isJust") (Var $ UnQual $ defuser fn)
-whyExcludedToSyntax defuser (IsSelectFlag fn)   = App (var "isLeft") (Var $ UnQual $ defuser fn)
-whyExcludedToSyntax defuser (IsLength fn)       = App (var "genericLength") (Var $ UnQual $ defuser fn)
+whyExcludedToSyntax _       IsReserved                     = ([], var "reservedDefault")
+whyExcludedToSyntax defuser (IsPresenceFlag fn)            = ([], App (var "isJust") (Var $ UnQual $ defuser fn))
+whyExcludedToSyntax defuser (IsSelectFlag fn)              = ([], App (var "isLeft") (Var $ UnQual $ defuser fn))
+whyExcludedToSyntax defuser (IsLength fn)                  = ([], App (var "genericLength") (Var $ UnQual $ defuser fn))
+whyExcludedToSyntax _       (HasCustomSynthesiser stmts e) = (stmts, e)
 
 fieldExprToSyntax _       (LitE i) = Lit (Int $ fromIntegral i)
 fieldExprToSyntax defuser (FieldE x) = Var $ UnQual $ defuser x -- TODO: this is blocking us using short names for non-stored fields, since we don't know what kind of name it will have
