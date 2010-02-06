@@ -543,7 +543,7 @@ data Swf = Swf { compressed :: Bool, version :: UI8, fileLength :: UI32 {- after
          deriving (Eq, Show, Typeable, Data)
 
 getSwf :: ByteString -> Swf
-getSwf bs = runSwfGet emptySwfEnv bs $ do
+getSwf bs = runSwfGet "getSwf" emptySwfEnv bs $ do
     signature_1 <- getUI8
     compressed <- case lookup (fromIntegral signature_1) [(ord 'F', False), (ord 'C', True)] of
         Just c  -> return c
@@ -614,7 +614,7 @@ getTag = do
           10 -> Just getDefineFont
           _  -> generatedTagGetters rECORDHEADER_tagType
 
-    nestSwfGet (fromIntegral rECORDHEADER_tagLength) $ case mb_getter of
+    nestSwfGet "getTag" (fromIntegral rECORDHEADER_tagLength) $ case mb_getter of
         Just getter -> getter
         Nothing -> do
             let unknownTag_tagType = rECORDHEADER_tagType
@@ -703,7 +703,7 @@ data CLIPACTIONRECORD = CLIPACTIONRECORD { cLIPACTIONRECORD_eventFlags :: CLIPEV
 getCLIPACTIONRECORD = do
     cLIPACTIONRECORD_eventFlags <- getCLIPEVENTFLAGS
     actionRecordSize <- getUI32
-    (cLIPACTIONRECORD_keyCode, cLIPACTIONRECORD_actions) <- nestSwfGet (fromIntegral actionRecordSize) $ do
+    (cLIPACTIONRECORD_keyCode, cLIPACTIONRECORD_actions) <- nestSwfGet "getCLIPACTIONRECORD" (fromIntegral actionRecordSize) $ do
         keyCode <- maybeHas (ClipEventKeyPress `elem` cLIPACTIONRECORD_eventFlags) getUI8
         actions <- getACTIONRECORDS
         return (keyCode, actions)
@@ -1238,7 +1238,7 @@ putACTIONRECORDHEADER (ACTIONRECORDHEADER {..}) = do
         putUI16 (fromJust aCTIONRECORDHEADER_actionLength)
 
 data ACTIONRECORD = UnknownAction { unknownAction_actionCode :: UI8, unknownAction_data :: Maybe ByteString }
-                  | ActionPush { actionPush_actionPushLiteral :: ActionPushLiteral }
+                  | ActionPush { actionPush_literals :: [ActionPushLiteral] }
 \genconstructors{action}
             deriving (Eq, Show, Typeable, Data)
 
@@ -1250,7 +1250,7 @@ getACTIONRECORD = do
                       _    -> generatedActionGetters aCTIONRECORDHEADER_actionCode
     
     -- Only some tags (with code >= 0x80) have a payload:
-    nestSwfGet (maybe 0 fromIntegral aCTIONRECORDHEADER_actionLength) $ case mb_getter of
+    nestSwfGet "getACTIONRECORD" (maybe 0 fromIntegral aCTIONRECORDHEADER_actionLength) $ case mb_getter of
         Just getter -> getter
         Nothing -> do
             dat <- getRemainingLazyByteString
@@ -1366,6 +1366,8 @@ p74: ActionPush
 data ActionPushLiteral
   = ActionPushString STRING
   | ActionPushFloat FLOAT
+  | ActionPushNull
+  | ActionPushUndefined
   | ActionPushRegisterNumber UI8
   | ActionPushBoolean UI8
   | ActionPushDouble DOUBLE
@@ -1374,11 +1376,13 @@ data ActionPushLiteral
   | ActionPushConstant16 UI16
   deriving (Eq, Show, Typeable, Data)
 
-getActionPush = do
+getActionPush = fmap ActionPush $ getToEnd $ do
     typ <- getUI8
-    fmap ActionPush $ case typ of
+    case typ of
         0 -> fmap ActionPushString getSTRING
         1 -> fmap ActionPushFloat getFLOAT
+        2 -> return ActionPushNull
+        3 -> return ActionPushUndefined
         4 -> fmap ActionPushRegisterNumber getUI8
         5 -> fmap ActionPushBoolean getUI8
         6 -> fmap ActionPushDouble getDOUBLE
@@ -1386,9 +1390,11 @@ getActionPush = do
         8 -> fmap ActionPushConstant8 getUI8
         9 -> fmap ActionPushConstant16 getUI16
 
-putActionPush (ActionPush lit) = case lit of
+putActionPush (ActionPush lits) = forM_ lits $ \lit -> case lit of
     ActionPushString x         -> putUI8 0 >> putSTRING x
     ActionPushFloat x          -> putUI8 1 >> putFLOAT x
+    ActionPushNull             -> putUI8 2
+    ActionPushUndefined        -> putUI8 3
     ActionPushRegisterNumber x -> putUI8 4 >> putUI8 x
     ActionPushBoolean x        -> putUI8 5 >> putUI8 x
     ActionPushDouble x         -> putUI8 6 >> putDOUBLE x
@@ -3214,7 +3220,7 @@ type BUTTONCONDACTIONS = [BUTTONCONDACTION]
 
 getBUTTONCONDACTIONS = condM isEmpty (return []) $ do
     offset <- getUI16
-    x <- (if offset /= 0 then nestSwfGet (fromIntegral $ offset - 2) else id) getBUTTONCONDACTION
+    x <- (if offset /= 0 then nestSwfGet "getBUTTONCONDACTIONS" (fromIntegral $ offset - 2) else id) getBUTTONCONDACTION
     
     if offset == 0
      then return []

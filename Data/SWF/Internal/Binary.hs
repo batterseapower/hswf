@@ -60,34 +60,37 @@ modifySwfGet f act = SwfGet $ \env byte nbits -> unSwfGet act (f env) byte nbits
 getSwfGet :: SwfGet SwfEnv
 getSwfGet = SwfGet $ \env byte nbits -> return (byte, nbits, env)
 
-runSwfGet :: SwfEnv -> ByteString -> SwfGet a -> a
-runSwfGet env bs mx = thd3 $ B.runGet (unSwfGet (checkConsumesAll mx) env 0 0) bs
+runSwfGet :: String -> SwfEnv -> ByteString -> SwfGet a -> a
+runSwfGet hint env bs mx = thd3 $ B.runGet (unSwfGet (checkConsumesAll hint mx) env 0 0) bs
 
 
-checkConsumesAll :: SwfGet a -> SwfGet a
-checkConsumesAll mx = SwfGet $ \env byte nbits -> do
+checkConsumesAll :: String -> SwfGet a -> SwfGet a
+checkConsumesAll hint mx = SwfGet $ \env byte nbits -> do
     (byte, nbits, x) <- unSwfGet mx env byte nbits
     nbytes <- B.remaining
     if nbytes /= 0
-     then error $ show nbytes ++ " trailing bytes - likely to be an error"
-     else if nbits /= 0
-           then error $ show nbits ++ " trailing bits - likely to be an error"
-           else return (byte, nbits, x)
+     then do
+       remainder <- B.getRemainingLazyByteString
+       error $ hint ++ ": " ++ show nbytes ++ " trailing bytes - likely to be an error\n" ++ show remainder
+     else 
+       if nbits /= 0
+         then error $ hint ++ ": " ++ show nbits ++ " trailing bits - likely to be an error"
+         else return (byte, nbits, x)
 
 
-nestSwfGetBS :: B.Get ByteString -> SwfGet a -> SwfGet a
-nestSwfGetBS mrest mx = SwfGet $ \env _ nbits -> do
+nestSwfGetBS :: String -> B.Get ByteString -> SwfGet a -> SwfGet a
+nestSwfGetBS hint mrest mx = SwfGet $ \env _ nbits -> do
   if nbits /= 0
-   then error "Nesting off a byte boundary - likely to be an error"
+   then error $ hint ++ ": nesting off a byte boundary - likely to be an error"
    else do
      rest <- mrest
-     return (0, 0, runSwfGet env rest mx)
+     return (0, 0, runSwfGet hint env rest mx)
 
-nestSwfGet :: Int64 -> SwfGet a -> SwfGet a
-nestSwfGet len = nestSwfGetBS (B.getLazyByteString len)
+nestSwfGet :: String -> Int64 -> SwfGet a -> SwfGet a
+nestSwfGet hint len = nestSwfGetBS hint (B.getLazyByteString len)
 
 decompressRemainder :: Int -> SwfGet a -> SwfGet a
-decompressRemainder size_hint = nestSwfGetBS (fmap decompress B.getRemainingLazyByteString)
+decompressRemainder size_hint = nestSwfGetBS "decompressRemainder" (fmap decompress (B.getLazyByteString maxBound))
   where decompress = decompressWith (defaultDecompressParams { decompressBufferSize = size_hint })
 
 
@@ -115,7 +118,10 @@ getLazyByteString len = byteAlign >> liftGet (B.getLazyByteString len)
 
 getLazyByteStringNul = byteAlign >> liftGet B.getLazyByteStringNul
 
-getRemainingLazyByteString = byteAlign >> liftGet B.getRemainingLazyByteString
+  -- NB: do NOT use getRemainingLazyByteString here, because it consumes 0 bytes if we don't
+  -- deepseq the thing consuming it, and that gets reported as too few bytes being consumed
+  -- from the non-nested stream. Delegate reporting that error to any *nested* runSwfGet call!
+getRemainingLazyByteString = getLazyByteString maxBound
 
 getBits :: Integral a => a -> SwfGet Word32
 getBits n | n <  0    = error "getBits: negative bits"
