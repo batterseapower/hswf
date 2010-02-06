@@ -6,19 +6,31 @@ import Control.Monad
 
 import qualified Data.ByteString.Lazy as BS
 
-import System.Environment
+import System.Console.CmdArgs
+
+
+data HSwf = HSwf {
+    files :: [FilePath],
+    incremental :: Bool
+  } deriving (Show, Data, Typeable)
+
+hswf = mode $ HSwf {
+    files       = def   &= args & text "Files to read",
+    incremental = False &=        text "Output displayed incrementally"
+  }
 
 
 main :: IO ()
 main = do
-    [file] <- getArgs
-    bs <- BS.readFile file
+    HSwf{..} <- cmdArgs "HSwf v0.1, (C) 2010 Max Bolingbroke" [hswf]
+    forM_ files $ \file -> do
+        putStrLn $ "### Reading " ++ file
+        
+        swf <- fmap getSwf $ BS.readFile file
     
-    let swf = getSwf bs
-    
-    {-
-    print $ swf { tags = [] }
-    forM_ (tags swf) $ \tag -> print (rECORD_recordHeader tag) >> print (rECORD_recordTag tag)
-    -}
-    
-    print swf
+        if incremental
+         then do
+          print $ swf { tags = [] }
+          forM_ (tags swf) print
+         else
+          print swf
