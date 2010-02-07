@@ -206,9 +206,9 @@ nestSwfPutM = nestSwfPutMBS (\x bs -> return (x, (fromIntegral $ BS.length bs, p
 nestSwfPut :: Integral b => SwfPut -> SwfPutM (b, SwfPut)
 nestSwfPut = fmap snd . nestSwfPutM
 
-compressRemainder :: Int -> SwfPutM a -> SwfPutM a
-compressRemainder size_hint = nestSwfPutMBS (\x bs -> B.putLazyByteString (compress bs) >> return x)
- where compress = compressWith (defaultCompressParams { compressBufferSize = size_hint })
+compressRemainder :: Integral b => SwfPutM a -> SwfPutM (a, (b, SwfPut))
+compressRemainder = nestSwfPutMBS (\x bs -> return (x, (fromIntegral $ BS.length bs, putLazyByteString (compress bs))))
+  where compress = compressWith defaultCompressParams
 
 
 liftPut :: B.PutM a -> SwfPutM a

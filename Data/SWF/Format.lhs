@@ -28,6 +28,8 @@ TODOS
   * NewNumFillBits and NewNumLineBits
   * CONVOLUTIONFILTER.Matrix
   * GRADIENT{GLOW,BEVEL}FILTER.Gradient{Colors,Ratio}
+  * GlyphBits / AdvanceBits
+  * DefineButton2 CharacterEndFlag??
 5) Simplify away generated consistency checks that are trivially true
 7) Generate comments on constructor fields and add them to custom ones
 8) Represent some [UI8] as ByteString?
@@ -1196,41 +1198,43 @@ Chapter 2: SWF Structure Summary
 p25: The SWF header
 \begin{code}
 
-data Swf = Swf { compressed :: Bool, version :: UI8, fileLength :: UI32 {- after decompression -}, frameSize :: RECT {- Twips -}, frameRate :: FIXED8, frameCount :: UI16, tags :: [Tag] }
+data Swf = Swf { swf_compressed :: Bool, swf_version :: UI8, swf_frameSize :: RECT, swf_frameRate :: FIXED8, swf_frameCount :: UI16, swf_tags :: [Tag] }
          deriving (Eq, Show, Typeable, Data)
 
 getSwf :: ByteString -> Swf
 getSwf bs = runSwfGet "getSwf" emptySwfEnv bs $ do
     signature_1 <- getUI8
-    compressed <- case lookup (fromIntegral signature_1) [(ord 'F', False), (ord 'C', True)] of
+    swf_compressed <- case lookup (fromIntegral signature_1) [(ord 'F', False), (ord 'C', True)] of
         Just c  -> return c
         Nothing -> fail "SWF signature byte 1 unrecognised"
     discardKnown "_signature2 (x :: Swf)" "The 2nd SWF signature byte must be W" (fromIntegral $ ord 'W') getUI8
     discardKnown "_signature3 (x :: Swf)" "The 3rd SWF signature byte must be F" (fromIntegral $ ord 'S') getUI8
-    version <- getUI8
+    swf_version <- getUI8
     fileLength <- getUI32
     
-    modifySwfGet (\e -> e { swfVersion = version }) $ (if compressed then decompressRemainder (fromIntegral fileLength) else id) $ do
-        frameSize <- getRECT
+    modifySwfGet (\e -> e { swfVersion = swf_version }) $ (if swf_compressed then decompressRemainder (fromIntegral fileLength) else id) $ do
+        swf_frameSize <- getRECT
         -- TODO: assert XMin/YMin are 0
-        frameRate <- getFIXED8
-        frameCount <- getUI16
-        tags <- getToEnd getTag
+        swf_frameRate <- getFIXED8
+        swf_frameCount <- getUI16
+        swf_tags <- getToEnd getTag
         return Swf {..}
 
 putSwf :: Swf -> ByteString
 putSwf swf = runSwfPut emptySwfEnv $ do
-    putUI8 $ fromIntegral (if compressed swf then ord 'C' else ord 'F')
+    putUI8 $ fromIntegral (if swf_compressed swf then ord 'C' else ord 'F')
     putUI8 $ fromIntegral (ord 'W')
     putUI8 $ fromIntegral (ord 'S')
-    putUI8 $ version swf
-    putUI32 $ fileLength swf
+    putUI8 $ swf_version swf
     
-    modifySwfPutM (\e -> e { swfVersion = version swf }) $ (if compressed swf then compressRemainder (fromIntegral $ fileLength swf) else id) $ do
-        putRECT $ frameSize swf
-        putFIXED8 $ frameRate swf
-        putUI16 $ frameCount swf
-        mapM_ putTag $ tags swf
+    ((), (fileLength, put)) <- modifySwfPutM (\e -> e { swfVersion = swf_version swf }) $ (if swf_compressed swf then compressRemainder else nestSwfPutM) $ do
+        putRECT $ swf_frameSize swf
+        putFIXED8 $ swf_frameRate swf
+        putUI16 $ swf_frameCount swf
+        mapM_ putTag $ swf_tags swf
+    
+    putUI32 fileLength
+    put
 
 \end{code}
 
@@ -1295,13 +1299,9 @@ data Tag = UnknownTag { unknownTag_tagType :: UI16, unknownTag_data :: ByteStrin
              frameLabel_namedAnchorFlag :: Maybe UI8}
          |  Protect{}
          |  End{}
-         |  ExportAssets{exportAssets_count :: UI16, exportAssets_tag1 :: UI16,
-               exportAssets_name1 :: STRING, exportAssets_tagN :: UI16,
-               exportAssets_nameN :: STRING}
+         |  ExportAssets{exportAssets_tagNames :: [(UI16, STRING)]}
          |  ImportAssets{importAssets_uRL :: STRING,
-               importAssets_count :: UI16, importAssets_tag1 :: UI16,
-               importAssets_name1 :: STRING, importAssets_tagN :: UI16,
-               importAssets_nameN :: STRING}
+               importAssets_tagNames :: [(UI16, STRING)]}
          |  EnableDebugger{enableDebugger_password :: STRING}
          |  EnableDebugger2{enableDebugger2_password :: STRING}
          |  ScriptLimits{scriptLimits_maxRecursionDepth :: UI16,
@@ -1313,9 +1313,7 @@ data Tag = UnknownTag { unknownTag_tagType :: UI16, unknownTag_data :: ByteStrin
                  fileAttributes_actionScript3 :: Bool,
                  fileAttributes_useNetwork :: Bool}
          |  ImportAssets2{importAssets2_uRL :: STRING,
-                importAssets2_count :: UI16, importAssets2_tag1 :: UI16,
-                importAssets2_name1 :: STRING, importAssets2_tagN :: UI16,
-                importAssets2_nameN :: STRING}
+                importAssets2_tagNames :: [(UI16, STRING)]}
          |  SymbolClass{symbolClass_tagsNames :: [(UI16, STRING)]}
          |  Metadata{metadata_metadata :: STRING}
          |  DefineScalingGrid{defineScalingGrid_characterId :: UI16,
@@ -2793,17 +2791,24 @@ p55: ExportAssets
 \begin{code}
 getExportAssets
   = do exportAssets_count <- getUI16
-       exportAssets_tag1 <- getUI16
-       exportAssets_name1 <- getSTRING
-       exportAssets_tagN <- getUI16
-       exportAssets_nameN <- getSTRING
+       exportAssets_tagNames <- genericReplicateM exportAssets_count
+                                  (liftM2 (,) getUI16 getSTRING)
        return (ExportAssets{..})
 putExportAssets ExportAssets{..}
-  = do putUI16 exportAssets_count
-       putUI16 exportAssets_tag1
-       putSTRING exportAssets_name1
-       putUI16 exportAssets_tagN
-       putSTRING exportAssets_nameN
+  = do let exportAssets_count = genericLength exportAssets_tagNames
+       putUI16 exportAssets_count
+       if genericLength exportAssets_tagNames /= (exportAssets_count) then
+         inconsistent "exportAssets_tagNames (x :: ExportAssets)"
+           ("Mismatch with the required length: exportAssets_count" ++
+              show (genericLength exportAssets_tagNames) ++
+                " /= " ++ show exportAssets_count)
+         else
+         mapM_
+           (\ x ->
+              case x of
+                  (x1, x2) -> do putUI16 x1
+                                 putSTRING x2)
+           exportAssets_tagNames
        return ()
 
 \end{code}
@@ -2813,18 +2818,25 @@ p56: ImportAssets
 getImportAssets
   = do importAssets_uRL <- getSTRING
        importAssets_count <- getUI16
-       importAssets_tag1 <- getUI16
-       importAssets_name1 <- getSTRING
-       importAssets_tagN <- getUI16
-       importAssets_nameN <- getSTRING
+       importAssets_tagNames <- genericReplicateM importAssets_count
+                                  (liftM2 (,) getUI16 getSTRING)
        return (ImportAssets{..})
 putImportAssets ImportAssets{..}
   = do putSTRING importAssets_uRL
+       let importAssets_count = genericLength importAssets_tagNames
        putUI16 importAssets_count
-       putUI16 importAssets_tag1
-       putSTRING importAssets_name1
-       putUI16 importAssets_tagN
-       putSTRING importAssets_nameN
+       if genericLength importAssets_tagNames /= (importAssets_count) then
+         inconsistent "importAssets_tagNames (x :: ImportAssets)"
+           ("Mismatch with the required length: importAssets_count" ++
+              show (genericLength importAssets_tagNames) ++
+                " /= " ++ show importAssets_count)
+         else
+         mapM_
+           (\ x ->
+              case x of
+                  (x1, x2) -> do putUI16 x1
+                                 putSTRING x2)
+           importAssets_tagNames
        return ()
 
 \end{code}
@@ -2929,10 +2941,8 @@ getImportAssets2
        discardReserved "_reserved (x :: ?)" getUI8
        discardReserved "_reserved (x :: ?)" getUI8
        importAssets2_count <- getUI16
-       importAssets2_tag1 <- getUI16
-       importAssets2_name1 <- getSTRING
-       importAssets2_tagN <- getUI16
-       importAssets2_nameN <- getSTRING
+       importAssets2_tagNames <- genericReplicateM importAssets2_count
+                                   (liftM2 (,) getUI16 getSTRING)
        return (ImportAssets2{..})
 putImportAssets2 ImportAssets2{..}
   = do putSTRING importAssets2_uRL
@@ -2940,11 +2950,21 @@ putImportAssets2 ImportAssets2{..}
        putUI8 importAssets2_reserved
        let importAssets2_reserved = reservedDefault
        putUI8 importAssets2_reserved
+       let importAssets2_count = genericLength importAssets2_tagNames
        putUI16 importAssets2_count
-       putUI16 importAssets2_tag1
-       putSTRING importAssets2_name1
-       putUI16 importAssets2_tagN
-       putSTRING importAssets2_nameN
+       if genericLength importAssets2_tagNames /= (importAssets2_count)
+         then
+         inconsistent "importAssets2_tagNames (x :: ImportAssets2)"
+           ("Mismatch with the required length: importAssets2_count" ++
+              show (genericLength importAssets2_tagNames) ++
+                " /= " ++ show importAssets2_count)
+         else
+         mapM_
+           (\ x ->
+              case x of
+                  (x1, x2) -> do putUI16 x1
+                                 putSTRING x2)
+           importAssets2_tagNames
        return ()
 
 \end{code}

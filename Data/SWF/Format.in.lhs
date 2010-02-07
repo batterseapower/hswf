@@ -28,6 +28,8 @@ TODOS
   * NewNumFillBits and NewNumLineBits
   * CONVOLUTIONFILTER.Matrix
   * GRADIENT{GLOW,BEVEL}FILTER.Gradient{Colors,Ratio}
+  * GlyphBits / AdvanceBits
+  * DefineButton2 CharacterEndFlag??
 5) Simplify away generated consistency checks that are trivially true
 7) Generate comments on constructor fields and add them to custom ones
 8) Represent some [UI8] as ByteString?
@@ -539,41 +541,43 @@ Chapter 2: SWF Structure Summary
 p25: The SWF header
 \begin{code}
 
-data Swf = Swf { compressed :: Bool, version :: UI8, fileLength :: UI32 {- after decompression -}, frameSize :: RECT {- Twips -}, frameRate :: FIXED8, frameCount :: UI16, tags :: [Tag] }
+data Swf = Swf { swf_compressed :: Bool, swf_version :: UI8, swf_frameSize :: RECT, swf_frameRate :: FIXED8, swf_frameCount :: UI16, swf_tags :: [Tag] }
          deriving (Eq, Show, Typeable, Data)
 
 getSwf :: ByteString -> Swf
 getSwf bs = runSwfGet "getSwf" emptySwfEnv bs $ do
     signature_1 <- getUI8
-    compressed <- case lookup (fromIntegral signature_1) [(ord 'F', False), (ord 'C', True)] of
+    swf_compressed <- case lookup (fromIntegral signature_1) [(ord 'F', False), (ord 'C', True)] of
         Just c  -> return c
         Nothing -> fail "SWF signature byte 1 unrecognised"
     discardKnown "_signature2 (x :: Swf)" "The 2nd SWF signature byte must be W" (fromIntegral $ ord 'W') getUI8
     discardKnown "_signature3 (x :: Swf)" "The 3rd SWF signature byte must be F" (fromIntegral $ ord 'S') getUI8
-    version <- getUI8
+    swf_version <- getUI8
     fileLength <- getUI32
     
-    modifySwfGet (\e -> e { swfVersion = version }) $ (if compressed then decompressRemainder (fromIntegral fileLength) else id) $ do
-        frameSize <- getRECT
+    modifySwfGet (\e -> e { swfVersion = swf_version }) $ (if swf_compressed then decompressRemainder (fromIntegral fileLength) else id) $ do
+        swf_frameSize <- getRECT
         -- TODO: assert XMin/YMin are 0
-        frameRate <- getFIXED8
-        frameCount <- getUI16
-        tags <- getToEnd getTag
+        swf_frameRate <- getFIXED8
+        swf_frameCount <- getUI16
+        swf_tags <- getToEnd getTag
         return Swf {..}
 
 putSwf :: Swf -> ByteString
 putSwf swf = runSwfPut emptySwfEnv $ do
-    putUI8 $ fromIntegral (if compressed swf then ord 'C' else ord 'F')
+    putUI8 $ fromIntegral (if swf_compressed swf then ord 'C' else ord 'F')
     putUI8 $ fromIntegral (ord 'W')
     putUI8 $ fromIntegral (ord 'S')
-    putUI8 $ version swf
-    putUI32 $ fileLength swf
+    putUI8 $ swf_version swf
     
-    modifySwfPutM (\e -> e { swfVersion = version swf }) $ (if compressed swf then compressRemainder (fromIntegral $ fileLength swf) else id) $ do
-        putRECT $ frameSize swf
-        putFIXED8 $ frameRate swf
-        putUI16 $ frameCount swf
-        mapM_ putTag $ tags swf
+    ((), (fileLength, put)) <- modifySwfPutM (\e -> e { swfVersion = swf_version swf }) $ (if swf_compressed swf then compressRemainder else nestSwfPutM) $ do
+        putRECT $ swf_frameSize swf
+        putFIXED8 $ swf_frameRate swf
+        putUI16 $ swf_frameCount swf
+        mapM_ putTag $ swf_tags swf
+    
+    putUI32 fileLength
+    put
 
 \end{code}
 
@@ -1065,26 +1069,20 @@ Header RECORDHEADER Tag type = 0
 p55: ExportAssets
 \begin{record}
 ExportAssets
-Field  Type         Comment
-Header RECORDHEADER Tag type = 56
-Count  UI16         Number of assets to export
-Tag1   UI16         First character ID to export
-Name1  STRING       Identifier for first exported character
-TagN   UI16         Last character ID to export
-NameN  STRING       Identifier for last exported character
+Field    Type                 Comment
+Header   RECORDHEADER         Tag type = 56
+Count    UI16                 Number of assets to export
+TagNames <UI16,STRING>[Count] Character IDs to export, and the identifiers to give them
 \end{record}
 
 p56: ImportAssets
 \begin{record}
 ImportAssets
-Field  Type         Comment
-Header RECORDHEADER Tag type = 57
-URL    STRING       URL where the source SWF file can be found
-Count  UI16         Number of assets to import
-Tag1   UI16         Character ID to use for first imported character in importing SWF file (need not match character ID in exporting SWF file)
-Name1  STRING       Identifier for first imported character (must match an identifier in exporting SWF file)
-TagN   UI16         Character ID to use for last imported character in importing SWF file
-NameN  STRING       Identifier for last imported character
+Field    Type                 Comment
+Header   RECORDHEADER         Tag type = 57
+URL      STRING               URL where the source SWF file can be found
+Count    UI16                 Number of assets to import
+TagNames <UI16,STRING>[Count] Character IDs to use for imported characters, and the identifiers to import
 \end{record}
 
 p57: EnableDebugger
@@ -1140,16 +1138,13 @@ Reserved      UB[24]       Must be 0
 p60: ImportAssets2
 \begin{record}
 ImportAssets2
-Field    Type         Comment
-Header   RECORDHEADER Tag type = 71
-URL      STRING       URL where the source SWF file can be found
-Reserved UI8          Must be 1
-Reserved UI8          Must be 0
-Count    UI16         Number of assets to import
-Tag1     UI16         Character ID to use for first imported character in importing SWF file (need not match character ID in exporting SWF file)
-Name1    STRING       Identifier for first imported character (must match an identifier in exporting SWF file) ...
-TagN     UI16         Character ID to use for last imported character in importing SWF file
-NameN    STRING       Identifier for last imported character
+Field    Type                 Comment
+Header   RECORDHEADER         Tag type = 71
+URL      STRING               URL where the source SWF file can be found
+Reserved UI8                  Must be 1
+Reserved UI8                  Must be 0
+Count    UI16                 Number of assets to import
+TagNames <UI16,STRING>[Count] Character IDs to use for imported characters, and the identifiers to import
 \end{record}
 
 p62: SymbolClass

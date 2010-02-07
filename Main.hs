@@ -30,7 +30,7 @@ main = do
     
         if incremental
          then do
-          print $ swf { tags = [] }
-          forM_ (tags swf) print
+          print $ swf { swf_tags = [] }
+          forM_ (swf_tags swf) print
          else
           print swf
