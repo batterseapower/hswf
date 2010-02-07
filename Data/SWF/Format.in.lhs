@@ -32,7 +32,6 @@ TODOS
   * DefineButton2 ActionOffset
   * DefineFont3.CodeTableOffset (OffsetTable is semantic junk, as is GlyphShapeTable/CodeTable pairing)
   * DefineFont2.CodeTableOffset (lots of NumGlyphs junk here too)
-  * ActionTry
   * ActionDefineFunction.CodeSize
   * ActionDefineFunction2.CodeSize
   * ActionWith.Size
@@ -1272,6 +1271,9 @@ putACTIONRECORDHEADER (ACTIONRECORDHEADER {..}) = do
 data ACTIONRECORD = UnknownAction { unknownAction_actionCode :: UI8, unknownAction_data :: Maybe ByteString }
                   | ActionPush { actionPush_literals :: [ActionPushLiteral] }
                   | ActionTry { actionTry_catchHow :: Either STRING UI8, actionTry_try :: [ACTIONRECORD], actionTry_catch :: [ACTIONRECORD], actionTry_finally :: [ACTIONRECORD] }
+                  | ActionDefineFunction { actionDefineFunction_functionName :: STRING, actionDefineFunction_params :: [STRING], actionDefineFunction_codeSize :: UI16 }
+                  | ActionDefineFunction2 { actionDefineFunction2_functionName :: STRING, actionDefineFunction2_registerCount :: UI8, actionDefineFunction2_preloadParentFlag :: Bool, actionDefineFunction2_preloadRootFlag :: Bool, actionDefineFunction2_suppressSuperFlag :: Bool, actionDefineFunction2_preloadSuperFlag :: Bool, actionDefineFunction2_suppressArgumentsFlag :: Bool, actionDefineFunction2_preloadArgumentsFlag :: Bool, actionDefineFunction2_suppressThisFlag :: Bool, actionDefineFunction2_preloadThisFlag :: Bool, actionDefineFunction2_preloadGlobalFlag :: Bool, actionDefineFunction2_parameters :: [REGISTERPARAM], actionDefineFunction2_codeSize :: UI16 }
+                  | ActionWith { actionWith_size :: UI16 }
 \genconstructors{action}
             deriving (Eq, Show, Typeable, Data)
 
@@ -1281,6 +1283,9 @@ getACTIONRECORD = do
     let mb_getter = case aCTIONRECORDHEADER_actionCode of
                       0x96 -> Just getActionPush
                       0x8F -> Just getActionTry
+                      0x9B -> Just getActionDefineFunction
+                      0x8E -> Just getActionDefineFunction2
+                      0x94 -> Just getActionWith
                       _    -> generatedActionGetters aCTIONRECORDHEADER_actionCode
     
     -- Only some tags (with code >= 0x80) have a payload:
@@ -1292,13 +1297,16 @@ getACTIONRECORD = do
 
 putACTIONRECORD actionrecord = do
     (len, put) <- nestSwfPut $ case actionrecord of
-        UnknownAction {..} -> when (consistentWith (inconsistent "unknownAction_data (x :: Tag)" "You can have unknownAction_data iff the top bit of unknownAction_actionCode is set")
-                                                   (isJust unknownAction_data)
-                                                   (unknownAction_actionCode >= 0x80)) $
-                                putLazyByteString $ fromJust unknownAction_data
-        ActionPush {}      -> putActionPush actionrecord
-        ActionTry {}       -> putActionTry actionrecord
-        _                  -> generatedActionPutters actionrecord
+        UnknownAction {..}       -> when (consistentWith (inconsistent "unknownAction_data (x :: Tag)" "You can have unknownAction_data iff the top bit of unknownAction_actionCode is set")
+                                                         (isJust unknownAction_data)
+                                                         (unknownAction_actionCode >= 0x80)) $
+                                      putLazyByteString $ fromJust unknownAction_data
+        ActionPush {}            -> putActionPush actionrecord
+        ActionTry {}             -> putActionTry actionrecord
+        ActionDefineFunction {}  -> putActionDefineFunction actionrecord
+        ActionDefineFunction2 {} -> putActionDefineFunction2 actionrecord
+        ActionWith {}            -> putActionWith actionrecord
+        _                        -> generatedActionPutters actionrecord
 
     let code = actionType actionrecord
     putACTIONRECORDHEADER $ ACTIONRECORDHEADER {
@@ -1307,9 +1315,13 @@ putACTIONRECORD actionrecord = do
       }
     put
 
-actionType (UnknownAction {..}) = unknownAction_actionCode
-actionType (ActionPush {})      = 0x96
-actionType actionrecord         = generatedActionTypes actionrecord
+actionType (UnknownAction {..})       = unknownAction_actionCode
+actionType (ActionPush {})            = 0x96
+actionType (ActionTry {})             = 0x8F
+actionType (ActionDefineFunction {})  = 0x9B
+actionType (ActionDefineFunction2 {}) = 0x8E
+actionType (ActionWith {})            = 0x94
+actionType actionrecord               = generatedActionTypes actionrecord
 
 \end{code}
 
@@ -1758,7 +1770,7 @@ ConstantPool       STRING[Count]      String constants
 \end{record}
 
 p97: ActionDefineFunction
-\begin{record}
+\begin{comment}
 ActionDefineFunction
 Field                Type               Comment
 ActionDefineFunction ACTIONRECORDHEADER ActionCode = 0x9B
@@ -1766,7 +1778,24 @@ FunctionName         STRING             Function name, empty if anonymous
 NumParams            UI16               # of parameters
 Params               STRING[NumParams]  Paramaters
 CodeSize             UI16               # of bytes of code that follow
-\end{record}
+\end{comment}
+
+\begin{code}
+
+getActionDefineFunction = do
+    actionDefineFunction_functionName <- getSTRING
+    actionDefineFunction_numParams <- getUI16
+    actionDefineFunction_params <- genericReplicateM actionDefineFunction_numParams getSTRING
+    actionDefineFunction_codeSize <- getUI16
+    return $ ActionDefineFunction {..}
+
+putActionDefineFunction (ActionDefineFunction {..}) = do
+    putSTRING actionDefineFunction_functionName
+    putUI16 (genericLength actionDefineFunction_params)
+    mapM_ putSTRING actionDefineFunction_params
+    putUI16 actionDefineFunction_codeSize
+
+\end{code}
 
 p98: ActionDefineLocal
 \begin{record}
@@ -1860,12 +1889,23 @@ ActionTargetPath ACTIONRECORDHEADER ActionCode = 0x45
 \end{record}
 
 p104: ActionWith
-\begin{record}
+\begin{comment}
 ActionWith
 Field      Type               Comment
 ActionWith ACTIONRECORDHEADER ActionCode = 0x94
 Size       UI16               # of bytes of code that follow
-\end{record}
+\end{comment}
+
+\begin{code}
+
+getActionWith = do
+    actionWith_size <- getUI16
+    return $ ActionWith {..}
+    
+putActionWith (ActionWith {..}) = do
+    putUI16 actionWith_size
+
+\end{code}
 
 p105: ActionToNumber
 \begin{record}
@@ -2039,7 +2079,7 @@ ActionStringGreater ACTIONRECORDHEADER ActionCode = 0x68
 \end{record}
 
 p116: ActionDefineFunction2
-\begin{record}
+\begin{comment}
 ActionDefineFunction2
 Field                 Type                     Comment
 ActionDefineFunction2 ACTIONRECORDHEADER       ActionCode = 0x8E
@@ -2058,7 +2098,51 @@ Reserved              UB[7]                    Always 0
 PreloadGlobalFlag     UB[1]                    0 = Don’t preload _global into register 1 = Preload _global into register
 Parameters            REGISTERPARAM[NumParams] See REGISTERPARAM, following
 CodeSize              UI16                     # of bytes of code that follow
-\end{record}
+\end{comment}
+
+\begin{code}
+
+getActionDefineFunction2 = do
+    actionDefineFunction2_functionName <- getSTRING
+    actionDefineFunction2_numParams <- getUI16
+    
+    actionDefineFunction2_registerCount <- getUI8
+    actionDefineFunction2_preloadParentFlag <- getFlag
+    actionDefineFunction2_preloadRootFlag <- getFlag
+    actionDefineFunction2_suppressSuperFlag <- getFlag
+    actionDefineFunction2_preloadSuperFlag <- getFlag
+    actionDefineFunction2_suppressArgumentsFlag <- getFlag
+    actionDefineFunction2_preloadArgumentsFlag <- getFlag
+    actionDefineFunction2_suppressThisFlag <- getFlag
+    actionDefineFunction2_preloadThisFlag <- getFlag
+    discardReserved "_reserved (x :: ?)" (getUB 7)
+    actionDefineFunction2_preloadGlobalFlag <- getFlag
+    
+    actionDefineFunction2_parameters <- genericReplicateM actionDefineFunction2_numParams getREGISTERPARAM
+    actionDefineFunction2_codeSize <- getUI16
+    
+    return $ ActionDefineFunction2 {..}
+
+putActionDefineFunction2 (ActionDefineFunction2 {..}) = do
+    putSTRING actionDefineFunction2_functionName
+    putUI16 (genericLength actionDefineFunction2_parameters)
+    
+    putUI8 actionDefineFunction2_registerCount
+    putFlag actionDefineFunction2_preloadParentFlag
+    putFlag actionDefineFunction2_preloadRootFlag
+    putFlag actionDefineFunction2_suppressSuperFlag
+    putFlag actionDefineFunction2_preloadSuperFlag
+    putFlag actionDefineFunction2_suppressArgumentsFlag
+    putFlag actionDefineFunction2_preloadArgumentsFlag
+    putFlag actionDefineFunction2_suppressThisFlag
+    putFlag actionDefineFunction2_preloadThisFlag
+    putUB 7 reservedDefault
+    putFlag actionDefineFunction2_preloadGlobalFlag
+    
+    mapM_ putREGISTERPARAM actionDefineFunction2_parameters
+    putUI16 actionDefineFunction2_codeSize
+
+\end{code}
 
 \begin{record}
 REGISTERPARAM
