@@ -3260,7 +3260,7 @@ getBUTTONCONDACTIONS = condM isEmpty (return []) $ do
     x <- (if offset /= 0 then nestSwfGet "getBUTTONCONDACTIONS" (fromIntegral $ offset - 2) else id) getBUTTONCONDACTION
     
     if offset == 0
-     then return []
+     then return [x]
      else fmap (x:) getBUTTONCONDACTIONS
 
 putBUTTONCONDACTIONS [] = return ()
