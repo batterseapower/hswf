@@ -86,8 +86,8 @@ nestSwfGetBS hint mrest mx = SwfGet $ \env _ nbits -> do
      rest <- mrest
      return (0, 0, runSwfGet hint env rest mx)
 
-nestSwfGet :: String -> Int64 -> SwfGet a -> SwfGet a
-nestSwfGet hint len = nestSwfGetBS hint (B.getLazyByteString len)
+nestSwfGet :: Integral b => String -> b -> SwfGet a -> SwfGet a
+nestSwfGet hint len = nestSwfGetBS hint (B.getLazyByteString $ fromIntegral len)
 
 decompressRemainder :: Int -> SwfGet a -> SwfGet a
 decompressRemainder size_hint = nestSwfGetBS "decompressRemainder" (fmap decompress (B.getLazyByteString maxBound))

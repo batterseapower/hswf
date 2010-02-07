@@ -642,7 +642,7 @@ getTag = do
           10 -> Just getDefineFont
           _  -> generatedTagGetters rECORDHEADER_tagType
 
-    nestSwfGet "getTag" (fromIntegral rECORDHEADER_tagLength) $ case mb_getter of
+    nestSwfGet "getTag" rECORDHEADER_tagLength $ case mb_getter of
         Just getter -> getter
         Nothing -> do
             let unknownTag_tagType = rECORDHEADER_tagType
@@ -731,7 +731,7 @@ data CLIPACTIONRECORD = CLIPACTIONRECORD { cLIPACTIONRECORD_eventFlags :: CLIPEV
 getCLIPACTIONRECORD = do
     cLIPACTIONRECORD_eventFlags <- getCLIPEVENTFLAGS
     actionRecordSize <- getUI32
-    (cLIPACTIONRECORD_keyCode, cLIPACTIONRECORD_actions) <- nestSwfGet "getCLIPACTIONRECORD" (fromIntegral actionRecordSize) $ do
+    (cLIPACTIONRECORD_keyCode, cLIPACTIONRECORD_actions) <- nestSwfGet "getCLIPACTIONRECORD" actionRecordSize $ do
         keyCode <- maybeHas (ClipEventKeyPress `elem` cLIPACTIONRECORD_eventFlags) getUI8
         actions <- getACTIONRECORDS -- NB: this is a standard zero-terminated ACTIONRECORD list, contrary to what the specification suggests
         return (keyCode, actions)
@@ -1271,6 +1271,7 @@ putACTIONRECORDHEADER (ACTIONRECORDHEADER {..}) = do
 
 data ACTIONRECORD = UnknownAction { unknownAction_actionCode :: UI8, unknownAction_data :: Maybe ByteString }
                   | ActionPush { actionPush_literals :: [ActionPushLiteral] }
+                  | ActionTry { actionTry_catchHow :: Either STRING UI8, actionTry_try :: [ACTIONRECORD], actionTry_catch :: [ACTIONRECORD], actionTry_finally :: [ACTIONRECORD] }
 \genconstructors{action}
             deriving (Eq, Show, Typeable, Data)
 
@@ -1279,10 +1280,11 @@ getACTIONRECORD = do
     
     let mb_getter = case aCTIONRECORDHEADER_actionCode of
                       0x96 -> Just getActionPush
+                      0x8F -> Just getActionTry
                       _    -> generatedActionGetters aCTIONRECORDHEADER_actionCode
     
     -- Only some tags (with code >= 0x80) have a payload:
-    nestSwfGet "getACTIONRECORD" (maybe 0 fromIntegral aCTIONRECORDHEADER_actionLength) $ case mb_getter of
+    nestSwfGet "getACTIONRECORD" (fromMaybe 0 aCTIONRECORDHEADER_actionLength) $ case mb_getter of
         Just getter -> getter
         Nothing -> do
             dat <- getRemainingLazyByteString
@@ -1295,6 +1297,7 @@ putACTIONRECORD actionrecord = do
                                                    (unknownAction_actionCode >= 0x80)) $
                                 putLazyByteString $ fromJust unknownAction_data
         ActionPush {}      -> putActionPush actionrecord
+        ActionTry {}       -> putActionTry actionrecord
         _                  -> generatedActionPutters actionrecord
 
     let code = actionType actionrecord
@@ -2041,7 +2044,7 @@ ActionDefineFunction2
 Field                 Type                     Comment
 ActionDefineFunction2 ACTIONRECORDHEADER       ActionCode = 0x8E
 FunctionName          STRING                   Name of function, empty if anonymous
-NumParams             UI16                     of parameters
+NumParams             UI16                     Number of parameters
 RegisterCount         UI8                      Number of registers to allocate, up to 255 registers (from 0 to 254)
 PreloadParentFlag     UB[1]                    0 = Don’t preload _parent into register 1 = Preload _parent into register
 PreloadRootFlag       UB[1]                    0 = Don’t preload _root into register 1 = Preload _root into register
@@ -2086,7 +2089,7 @@ ActionImplementsOp ACTIONRECORDHEADER ActionCode = 0x2C
 \end{record}
 
 p121: ActionTry
-\begin{record}
+\begin{comment}
 ActionTry
 Field               Type                                              Comment
 ActionTry           ACTIONRECORDHEADER                                ActionCode = 0x8F
@@ -2101,7 +2104,56 @@ CatchHow            If CatchInRegisterFlag = 0, STRING Otherwise, UI8 Name of th
 TryBody             UI8[TrySize]                                      Body of the try block
 CatchBody           UI8[CatchSize]                                    Body of the catch block, if any
 FinallyBody         UI8[FinallySize]                                  Body of the finally block, if any
-\end{record}
+\end{comment}
+
+\begin{code}
+
+getActionTry = do
+    discardReserved "_reserved (x :: ?)" (getUB 5)
+    actionTry_catchInRegisterFlag <- getFlag
+    actionTry_finallyBlockFlag <- getFlag
+    actionTry_catchBlockFlag <- getFlag
+    
+    actionTry_trySize <- getUI16
+    actionTry_catchSize <- getUI16
+    actionTry_finallySize <- getUI16
+    
+    unless (actionTry_catchBlockFlag || actionTry_catchSize == 0) $
+        inconsistent "actionTry_catch (x :: ActionTry)" "The catchBlockFlag must be set when the catch block size is non-zero"
+    unless (actionTry_finallyBlockFlag || actionTry_finallySize == 0) $
+        inconsistent "actionTry_finally (x :: ActionTry)" "The finallyBlockFlag must be set exactly when the finally block size is non-zero"
+    
+    actionTry_catchHow <- if not actionTry_catchInRegisterFlag then fmap Left getSTRING else fmap Right getUI8
+    
+    actionTry_try     <- nestSwfGet "ActionTry try block"     actionTry_trySize (getToEnd getACTIONRECORD)
+    actionTry_catch   <- nestSwfGet "ActionTry catch block"   actionTry_catchSize (getToEnd getACTIONRECORD)
+    actionTry_finally <- nestSwfGet "ActionTry finally block" actionTry_finallySize (getToEnd getACTIONRECORD)
+    
+    return $ ActionTry {..}
+
+putActionTry (ActionTry {..}) = do
+    putUB 5 reservedDefault
+    putFlag (not $ isLeft actionTry_catchHow)
+    putFlag (not $ null actionTry_finally)
+    putFlag (not $ null actionTry_catch)
+    
+    (actionTry_trySize,     put_try)     <- nestSwfPut $ mapM_ putACTIONRECORD actionTry_try
+    (actionTry_catchSize,   put_catch)   <- nestSwfPut $ mapM_ putACTIONRECORD actionTry_catch
+    (actionTry_finallySize, put_finally) <- nestSwfPut $ mapM_ putACTIONRECORD actionTry_finally
+    
+    putUI16 actionTry_trySize
+    putUI16 actionTry_catchSize
+    putUI16 actionTry_finallySize
+    
+    case actionTry_catchHow of
+        Left x  -> putSTRING x
+        Right x -> putUI8 x
+    
+    put_try
+    put_catch
+    put_finally
+
+\end{code}
 
 p122: ActionThrow
 \begin{record}
@@ -3257,7 +3309,7 @@ type BUTTONCONDACTIONS = [BUTTONCONDACTION]
 
 getBUTTONCONDACTIONS = condM isEmpty (return []) $ do
     offset <- getUI16
-    x <- (if offset /= 0 then nestSwfGet "getBUTTONCONDACTIONS" (fromIntegral $ offset - 2) else id) getBUTTONCONDACTION
+    x <- (if offset /= 0 then nestSwfGet "getBUTTONCONDACTIONS" (offset - 2) else id) getBUTTONCONDACTION
     
     if offset == 0
      then return [x]
