@@ -27,11 +27,19 @@ TODOS
 3) Reduce semantic junk
   * NewNumFillBits and NewNumLineBits
   * GlyphBits / AdvanceBits
+  * STYLECHANGERECORD MoveBits
+  * STRAIGHTEDGERECORD NumBits
+  * DefineButton2 ActionOffset
+  * DefineFont3.CodeTableOffset (OffsetTable is semantic junk, as is GlyphShapeTable/CodeTable pairing)
+  * DefineFont2.CodeTableOffset (lots of NumGlyphs junk here too)
+  * ActionTry
+  * ActionDefineFunction.CodeSize
+  * ActionDefineFunction2.CodeSize
+  * ActionWith.Size
 5) Simplify away generated consistency checks that are trivially true
 7) Generate comments on constructor fields and add them to custom ones
 8) Represent some [UI8] as ByteString?
 10) Clean up names in putters and getters: don't give excluded fields record-prefixed names
-11) Review all handled tags to ensure that changing the size due to the roundtrip won't screw up any offset fields (hmm!)
 
 
 Roundtripping
@@ -41,13 +49,16 @@ We do *not* implement perfect roundtripping -- but we guarantee to
 roundtrip anything about the file that affects how it plays back.
 The things preventing us from having perfect roundtripping are:
 1) Fields that control the number of bits used to encode other fields.
-   We discard this information and write back using the minimum number of bits.
-   (TODO: implement this)
+   We (usually) discard this information and write back using the minimum
+   number of bits. (TODO: implement this)
 2) Long vs. short count fields. For example, the RECORDHEADER length field
    can be coded using either a long or short count field if the length is less
    than 0x3F. We always write back using the shortest possible representation.
 3) ZLib (compress . decompress) may not be the identity (haven't observed this
    in practice though)
+4) Various lengths and offsets are recorded in the file (e.g. ActionDefineFunction
+   CodeSize), and since we don't hold the length of other stuff constant we may very
+   well end up transitively modifying these fields.
 
 
 Chapter 1: Basic Data Types
@@ -120,6 +131,14 @@ putFIXED FIXED{..}
 
 \begin{code}
 
+rationalToFIXED :: Rational -> FIXED
+rationalToFIXED r = FIXED { fIXED_integer = integer, fIXED_decimal = decimal }
+  where
+    num = numerator r
+    denom = denominator r
+    integer = fromIntegral $ num `div` denom
+    decimal = round ((fromIntegral num / fromIntegral denom - fromIntegral integer) * 65535)
+
 fIXEDToRational :: FIXED -> Rational
 fIXEDToRational fixed = fromIntegral (fIXED_integer fixed) + (fromIntegral (fIXED_decimal fixed) % 65535)
 
@@ -144,6 +163,14 @@ putFIXED8 FIXED8{..}
 \end{code}
 
 \begin{code}
+
+rationalToFIXED8 :: Rational -> FIXED8
+rationalToFIXED8 r = FIXED8 { fIXED8_integer = integer, fIXED8_decimal = decimal }
+  where
+    num = numerator r
+    denom = denominator r
+    integer = fromIntegral $ num `div` denom
+    decimal = round ((fromIntegral num / fromIntegral denom - fromIntegral integer) * 255)
 
 fIXED8ToRational :: FIXED8 -> Rational
 fIXED8ToRational fixed8 = fromIntegral (fIXED8_integer fixed8) + (fromIntegral (fIXED8_decimal fixed8) % 255)
@@ -3244,12 +3271,16 @@ putACTIONRECORD actionrecord = do
         ActionPush {}      -> putActionPush actionrecord
         _                  -> generatedActionPutters actionrecord
 
-    let code = generatedActionTypes actionrecord
+    let code = actionType actionrecord
     putACTIONRECORDHEADER $ ACTIONRECORDHEADER {
         aCTIONRECORDHEADER_actionCode = code,
         aCTIONRECORDHEADER_actionLength = if code < 0x80 then Nothing else Just len
       }
     put
+
+actionType (UnknownAction {..}) = unknownAction_actionCode
+actionType (ActionPush {})      = 0x96
+actionType actionrecord         = generatedActionTypes actionrecord
 
 \end{code}
 

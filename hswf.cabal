@@ -14,8 +14,9 @@ Executable swf
     Main-Is:        Main.hs
     Build-Depends:  base >= 4 && < 5, bytestring >= 0.9.1.5 && < 0.10,
                     zlib >= 0.5.2.0 && < 0.6, binary >= 0.5.0.2 && < 0.6,
-                    cmdargs == 0.1
+                    cmdargs == 0.1, pretty >= 1.0.1.1 && < 1.1, syb >= 0.1.0.2 && < 0.2,
+                    filepath >= 1.1.0.3 && < 1.2
     Extensions:     PatternGuards, RecordWildCards, TupleSections, Rank2Types,
-                    DeriveDataTypeable, GeneralizedNewtypeDeriving
+                    DeriveDataTypeable, GeneralizedNewtypeDeriving, ExistentialQuantification
 
     Ghc-Options:    -fwarn-unused-binds -fwarn-unused-imports -fwarn-unused-matches -fwarn-overlapping-patterns -fwarn-unused-do-bind

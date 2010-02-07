@@ -123,6 +123,14 @@ Integer SI16 Signed integer part of the number
 
 \begin{code}
 
+rationalToFIXED :: Rational -> FIXED
+rationalToFIXED r = FIXED { fIXED_integer = integer, fIXED_decimal = decimal }
+  where
+    num = numerator r
+    denom = denominator r
+    integer = fromIntegral $ num `div` denom
+    decimal = round ((fromIntegral num / fromIntegral denom - fromIntegral integer) * 65535)
+
 fIXEDToRational :: FIXED -> Rational
 fIXEDToRational fixed = fromIntegral (fIXED_integer fixed) + (fromIntegral (fIXED_decimal fixed) % 65535)
 
@@ -139,6 +147,14 @@ Integer SI8  Signed integer part of the number
 \end{record}
 
 \begin{code}
+
+rationalToFIXED8 :: Rational -> FIXED8
+rationalToFIXED8 r = FIXED8 { fIXED8_integer = integer, fIXED8_decimal = decimal }
+  where
+    num = numerator r
+    denom = denominator r
+    integer = fromIntegral $ num `div` denom
+    decimal = round ((fromIntegral num / fromIntegral denom - fromIntegral integer) * 255)
 
 fIXED8ToRational :: FIXED8 -> Rational
 fIXED8ToRational fixed8 = fromIntegral (fIXED8_integer fixed8) + (fromIntegral (fIXED8_decimal fixed8) % 255)
@@ -1285,12 +1301,16 @@ putACTIONRECORD actionrecord = do
         ActionPush {}      -> putActionPush actionrecord
         _                  -> generatedActionPutters actionrecord
 
-    let code = generatedActionTypes actionrecord
+    let code = actionType actionrecord
     putACTIONRECORDHEADER $ ACTIONRECORDHEADER {
         aCTIONRECORDHEADER_actionCode = code,
         aCTIONRECORDHEADER_actionLength = if code < 0x80 then Nothing else Just len
       }
     put
+
+actionType (UnknownAction {..}) = unknownAction_actionCode
+actionType (ActionPush {})      = 0x96
+actionType actionrecord         = generatedActionTypes actionrecord
 
 \end{code}
 
