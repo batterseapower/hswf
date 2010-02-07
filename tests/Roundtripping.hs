@@ -6,8 +6,10 @@ import Control.Monad
 
 import qualified Data.ByteString.Lazy as BS
 import Data.List
+import Data.Ord
 
 import System.Directory
+import System.IO
 
 
 main :: IO ()
@@ -58,11 +60,12 @@ findFiles p dir = do
 
 roundtripFiles :: IO ()
 roundtripFiles = do
-    files <- findFiles (".swf" `isSuffixOf`) "examples"
+    files <- smallestFilesFirst =<< findFiles (".swf" `isSuffixOf`) "examples"
     mapM_ roundtripFile files
 
 roundtripFile :: FilePath -> IO ()
 roundtripFile file = do
+    putStrLn $ "Roundtripping " ++ file
     bs <- BS.readFile file
     let swf = getSwf bs
         bs' = putSwf swf
@@ -73,3 +76,16 @@ roundtripFile file = do
         tmp_file <- fmap (</> "roundtrip.swf") getTemporaryDirectory
         BS.writeFile tmp_file bs'
         sayNotEqual ["In " ++ file ++ " (vs. " ++ tmp_file ++ ")"] swf' swf
+
+
+smallestFilesFirst :: [FilePath] -> IO [FilePath]
+smallestFilesFirst fps = do
+    sfps <- forM fps $ \fp -> do
+        s <- fileSize fp
+        return (s, fp)
+    return $ map snd $ sortBy (comparing fst) sfps
+
+fileSize :: FilePath -> IO Integer
+fileSize fp = do
+    h <- openBinaryFile fp ReadMode
+    hFileSize h
