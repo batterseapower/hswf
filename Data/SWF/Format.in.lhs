@@ -29,11 +29,17 @@ TODOS
   * GlyphBits / AdvanceBits
   * STYLECHANGERECORD MoveBits
   * STRAIGHTEDGERECORD NumBits
+  * DefineButton2 ActionOffset
+  * DefineFont3.CodeTableOffset (OffsetTable is semantic junk, as is GlyphShapeTable/CodeTable pairing)
+  * DefineFont2.CodeTableOffset (lots of NumGlyphs junk here too)
+  * ActionTry
+  * ActionDefineFunction.CodeSize
+  * ActionDefineFunction2.CodeSize
+  * ActionWith.Size
 5) Simplify away generated consistency checks that are trivially true
 7) Generate comments on constructor fields and add them to custom ones
 8) Represent some [UI8] as ByteString?
 10) Clean up names in putters and getters: don't give excluded fields record-prefixed names
-11) Review all handled tags to ensure that changing the size due to the roundtrip won't screw up any offset fields (hmm!)
 
 
 Roundtripping
@@ -43,13 +49,16 @@ We do *not* implement perfect roundtripping -- but we guarantee to
 roundtrip anything about the file that affects how it plays back.
 The things preventing us from having perfect roundtripping are:
 1) Fields that control the number of bits used to encode other fields.
-   We discard this information and write back using the minimum number of bits.
-   (TODO: implement this)
+   We (usually) discard this information and write back using the minimum
+   number of bits. (TODO: implement this)
 2) Long vs. short count fields. For example, the RECORDHEADER length field
    can be coded using either a long or short count field if the length is less
    than 0x3F. We always write back using the shortest possible representation.
 3) ZLib (compress . decompress) may not be the identity (haven't observed this
    in practice though)
+4) Various lengths and offsets are recorded in the file (e.g. ActionDefineFunction
+   CodeSize), and since we don't hold the length of other stuff constant we may very
+   well end up transitively modifying these fields.
 
 
 Chapter 1: Basic Data Types
