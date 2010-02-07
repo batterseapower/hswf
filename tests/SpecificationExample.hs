@@ -11,21 +11,20 @@ main = do
 io_swf_bytes = readFileWords $ "examples" </> "spec" </> "example.swf"
 
 swf = Swf {
-    compressed = False,
-    version = 3,
-    fileLength = 79,
-    frameSize = RECT {
+    swf_compressed = False,
+    swf_version = 3,
+    swf_frameSize = RECT {
         rECT_xmin = 0,
         rECT_xmax = 11000,
         rECT_ymin = 0,
         rECT_ymax = 8000
     },
-    frameRate = FIXED8 {
+    swf_frameRate = FIXED8 {
         fIXED8_decimal = 0,
         fIXED8_integer = 12
     },
-    frameCount = 1,
-    tags = [
+    swf_frameCount = 1,
+    swf_tags = [
         SetBackgroundColor {
             setBackgroundColor_backgroundColor = RGB {
                 rGB_red = 255,

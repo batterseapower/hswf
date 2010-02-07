@@ -44,7 +44,7 @@ roundtripPrimitives = do
 
 roundtrips :: Eq a => SwfGet a -> (a -> SwfPut) -> a -> Bool
 roundtrips getter putter what
-  = runSwfGet emptySwfEnv (runSwfPut emptySwfEnv (putter what)) getter == what
+  = runSwfGet "roundtrips" emptySwfEnv (runSwfPut emptySwfEnv (putter what)) getter == what
 
 
 findFiles :: (FilePath -> Bool) -> FilePath -> IO [FilePath]
