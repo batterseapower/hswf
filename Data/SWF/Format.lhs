@@ -1971,7 +1971,7 @@ getCLIPACTIONRECORD = do
     actionRecordSize <- getUI32
     (cLIPACTIONRECORD_keyCode, cLIPACTIONRECORD_actions) <- nestSwfGet "getCLIPACTIONRECORD" (fromIntegral actionRecordSize) $ do
         keyCode <- maybeHas (ClipEventKeyPress `elem` cLIPACTIONRECORD_eventFlags) getUI8
-        actions <- getACTIONRECORDS
+        actions <- getACTIONRECORDS -- NB: this is a standard zero-terminated ACTIONRECORD list, contrary to what the specification suggests
         return (keyCode, actions)
     return $ CLIPACTIONRECORD {..}
 
@@ -6114,8 +6114,10 @@ putDefineFont (DefineFont {..}) = do
     
     (lengths, shape_puts) <- fmap unzip $ mapM (nestSwfPut . putSHAPE 1) defineFont_glyphShapeTable
     
-    -- Compute the offsets from the data, so we don't need to redundantly store them in the data structure
-    _ <- foldM (\i len -> putUI16 i >> return (i + len)) 0 lengths
+    -- Compute the offsets from the data, so we don't need to redundantly store them in the data structure.
+    -- NB: the offsets include the length of the offset table itself, hence the non-0 initialiser
+    let offset_table_bytes = 2 * genericLength lengths
+    _ <- foldM (\i len -> putUI16 i >> return (i + len)) offset_table_bytes lengths
     sequence_ shape_puts
 
 \end{code}
