@@ -29,7 +29,6 @@ TODOS
   * CONVOLUTIONFILTER.Matrix
   * GRADIENT{GLOW,BEVEL}FILTER.Gradient{Colors,Ratio}
   * GlyphBits / AdvanceBits
-  * DefineButton2 CharacterEndFlag??
 5) Simplify away generated consistency checks that are trivially true
 7) Generate comments on constructor fields and add them to custom ones
 8) Represent some [UI8] as ByteString?
@@ -3189,7 +3188,6 @@ ReservedFlags     UB[7]             Always 0
 TrackAsMenu       UB[1]             0 = track as normal button 1 = track as menu button
 ActionOffset      UI16              Offset in bytes from start of this field to the first BUTTONCONDACTION, or 0 if no actions occur
 Characters        BUTTONRECORDS(2)  Characters that make up the button
-CharacterEndFlag  UI8               Must be 0
 Actions           BUTTONCONDACTIONS Actions to execute at particular button events
 \end{record}
 

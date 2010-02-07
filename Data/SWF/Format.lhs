@@ -1506,7 +1506,6 @@ data Tag = UnknownTag { unknownTag_tagType :: UI16, unknownTag_data :: ByteStrin
                 defineButton2_trackAsMenu :: Bool,
                 defineButton2_actionOffset :: UI16,
                 defineButton2_characters :: BUTTONRECORDS,
-                defineButton2_characterEndFlag :: UI8,
                 defineButton2_actions :: BUTTONCONDACTIONS}
          |  DefineButtonCxform{defineButtonCxform_buttonId :: UI16,
                      defineButtonCxform_buttonColorTransform :: CXFORM}
@@ -7791,7 +7790,6 @@ getDefineButton2
        defineButton2_trackAsMenu <- getFlag
        defineButton2_actionOffset <- getUI16
        defineButton2_characters <- getBUTTONRECORDS 2
-       defineButton2_characterEndFlag <- getUI8
        defineButton2_actions <- getBUTTONCONDACTIONS
        return (DefineButton2{..})
 putDefineButton2 DefineButton2{..}
@@ -7808,7 +7806,6 @@ putDefineButton2 DefineButton2{..}
        putFlag defineButton2_trackAsMenu
        putUI16 defineButton2_actionOffset
        putBUTTONRECORDS 2 defineButton2_characters
-       putUI8 defineButton2_characterEndFlag
        putBUTTONCONDACTIONS defineButton2_actions
        return ()
 
