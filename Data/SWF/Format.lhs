@@ -1963,7 +1963,7 @@ putCLIPACTIONRECORDS rs = do
     mapM_ putCLIPACTIONRECORD rs
     putCLIPEVENTFLAGS []
 
-data CLIPACTIONRECORD = CLIPACTIONRECORD { cLIPACTIONRECORD_eventFlags :: CLIPEVENTFLAGS, cLIPACTIONRECORD_keyCode :: Maybe UI8, cLIPACTIONRECORD_actions :: [ACTIONRECORD] }
+data CLIPACTIONRECORD = CLIPACTIONRECORD { cLIPACTIONRECORD_eventFlags :: CLIPEVENTFLAGS, cLIPACTIONRECORD_keyCode :: Maybe UI8, cLIPACTIONRECORD_actions :: ACTIONRECORDS }
                       deriving (Eq, Show, Typeable, Data)
 
 getCLIPACTIONRECORD = do
@@ -1974,10 +1974,6 @@ getCLIPACTIONRECORD = do
         actions <- getACTIONRECORDS
         return (keyCode, actions)
     return $ CLIPACTIONRECORD {..}
-  where
-    getACTIONRECORDS = condM isEmpty (return []) $ do
-        action <- getACTIONRECORD
-        fmap (action:) getACTIONRECORDS
 
 putCLIPACTIONRECORD (CLIPACTIONRECORD {..}) = do
     putCLIPEVENTFLAGS cLIPACTIONRECORD_eventFlags
