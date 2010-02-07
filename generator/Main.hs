@@ -271,7 +271,9 @@ arguments = between (char '(') (char ')' >> spaces) (sepBy expr (char ',' >> spa
 parameters = between (char '(') (char ')' >> spaces) (sepBy fieldname (char ',' >> spaces))
          <?> "parameters"
 
-tupletyp = fmap TupleType $ between (char '<') (char '>' >> spaces) $ sepBy typ (char ',' >> spaces)
+tupletyp = fmap tupleType $ between (char '<') (char '>' >> spaces) $ sepBy typ (char ',' >> spaces)
+  where tupleType tys | [ty] <- tys = ty
+                      | otherwise   = TupleType tys
 
 expr = buildExpressionParser table (do { e <- factor; spaces; return e })
    <?> "expression"

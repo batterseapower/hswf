@@ -26,9 +26,9 @@ TODOS
   * Perhaps also those embedding sound and video formats
 3) Reduce semantic junk
   * NewNumFillBits and NewNumLineBits
-  * CONVOLUTIONFILTER.Matrix
-  * GRADIENT{GLOW,BEVEL}FILTER.Gradient{Colors,Ratio}
   * GlyphBits / AdvanceBits
+  * STYLECHANGERECORD MoveBits
+  * STRAIGHTEDGERECORD NumBits
 5) Simplify away generated consistency checks that are trivially true
 7) Generate comments on constructor fields and add them to custom ones
 8) Represent some [UI8] as ByteString?
@@ -849,17 +849,21 @@ Matrix FLOAT[20] Color matrix values
 p43: Convolution filter
 \begin{record}
 CONVOLUTIONFILTER
-Field         Type                     Comment
-MatrixX       UI8                      Horizontal matrix size
-MatrixY       UI8                      Vertical matrix size
-Divisor       FLOAT                    Divisor applied to the matrix values
-Bias          FLOAT                    Bias applied to the matrix values
-Matrix        FLOAT[MatrixX * MatrixY] Matrix values
-DefaultColor  RGBA                     Default color for pixels outside the image
-Reserved      UB[6]                    Must be 0
-Clamp         UB[1]                    Clamp mode
-PreserveAlpha UB[1]                    Preserve the alpha
+Field         Type                      Comment
+MatrixX       UI8                       Horizontal matrix size
+  fromMaybe 0 (the "cONVOLUTIONFILTER_matrix (x :: CONVOLUTIONFILTER)" "Not all of the rows had the same length" (map genericLength cONVOLUTIONFILTER_matrix))
+MatrixY       UI8                       Vertical matrix size
+Divisor       FLOAT                     Divisor applied to the matrix values
+Bias          FLOAT                     Bias applied to the matrix values
+Matrix        <FLOAT[MatrixX]>[MatrixY] Matrix values
+DefaultColor  RGBA                      Default color for pixels outside the image
+Reserved      UB[6]                     Must be 0
+Clamp         UB[1]                     Clamp mode
+PreserveAlpha UB[1]                     Preserve the alpha
 \end{record}
+
+NB: the specification doesn't say, but I've assumed that the Matrix is stored
+in row-major order like a C array -- i.e. rows are stored one after another.
 
 p44: Blur filter
 \begin{record}
@@ -919,13 +923,28 @@ OnTop           UB[1]  OnTop mode
 Passes          UB[4]  Number of blur passes
 \end{record}
 
+\begin{code}
+
+-- | A list of (color, ratio) pairs describing a gradient ramp, for use in
+-- a GRADIENTGLOWFILTER or a GRADIENTBEVELFILTER
+type FilterGradient = [(RGBA, UI8)]
+
+getFilterGradient = do
+    numColors <- getUI8
+    liftM2 zip (genericReplicateM numColors getRGBA) (genericReplicateM numColors getUI8)
+
+putFilterGradient fg = do
+    putUI8 (genericLength fg)
+    mapM_ (putRGBA . fst) fg
+    mapM_ (putUI8 . snd) fg
+
+\end{code}
+
 p48: Gradient Glow and Gradient Bevel filters
 \begin{record}
 GRADIENTGLOWFILTER
 Field           Type            Comment
-NumColors       UI8             Number of colors in the gradient
-GradientColors  RGBA[NumColors] Gradient colors
-GradientRatio   UI8[NumColors]  Gradient ratios
+Gradient        FilterGradient  Gradient ramp for the filter
 BlurX           FIXED           Horizontal blur amount
 BlurY           FIXED           Vertical blur amount
 Angle           FIXED           Radian angle of the gradient glow
@@ -941,9 +960,7 @@ Passes          UB[4]           Number of blur passes
 \begin{record}
 GRADIENTBEVELFILTER
 Field           Type            Comment
-NumColors       UI8             Number of colors in the gradient
-GradientColors  RGBA[NumColors] Gradient colors
-GradientRatio   UI8[NumColors]  Gradient ratios
+Gradient        FilterGradient  Gradient ramp for the filter
 BlurX           FIXED           Horizontal blur amount
 BlurY           FIXED           Vertical blur amount
 Angle           FIXED           Radian angle of the gradient bevel

@@ -72,3 +72,9 @@ padTo n c xs = replicate (n - length xs) c ++ xs
 
 showBinary :: Integral a => a -> ShowS
 showBinary x = showIntAtBase 2 (\d -> toEnum (fromEnum '0' + d)) (fromIntegral x)
+
+
+the :: Eq a => String -> String -> [a] -> Maybe a
+the _        _   [] = Nothing
+the selector why (x:xs) | all (x==) xs = Just x
+                        | otherwise    = inconsistent selector why

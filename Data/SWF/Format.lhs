@@ -26,10 +26,7 @@ TODOS
   * Perhaps also those embedding sound and video formats
 3) Reduce semantic junk
   * NewNumFillBits and NewNumLineBits
-  * CONVOLUTIONFILTER.Matrix
-  * GRADIENT{GLOW,BEVEL}FILTER.Gradient{Colors,Ratio}
   * GlyphBits / AdvanceBits
-  * DefineButton2 CharacterEndFlag??
 5) Simplify away generated consistency checks that are trivially true
 7) Generate comments on constructor fields and add them to custom ones
 8) Represent some [UI8] as ByteString?
@@ -2271,12 +2268,10 @@ putCOLORMATRIXFILTER COLORMATRIXFILTER{..}
 p43: Convolution filter
 \begin{code}
  
-data CONVOLUTIONFILTER = CONVOLUTIONFILTER{cONVOLUTIONFILTER_matrixX
-                                           :: UI8,
-                                           cONVOLUTIONFILTER_matrixY :: UI8,
-                                           cONVOLUTIONFILTER_divisor :: FLOAT,
+data CONVOLUTIONFILTER = CONVOLUTIONFILTER{cONVOLUTIONFILTER_divisor
+                                           :: FLOAT,
                                            cONVOLUTIONFILTER_bias :: FLOAT,
-                                           cONVOLUTIONFILTER_matrix :: [FLOAT],
+                                           cONVOLUTIONFILTER_matrix :: [[FLOAT]],
                                            cONVOLUTIONFILTER_defaultColor :: RGBA,
                                            cONVOLUTIONFILTER_clamp :: Bool,
                                            cONVOLUTIONFILTER_preserveAlpha :: Bool}
@@ -2287,29 +2282,43 @@ getCONVOLUTIONFILTER
        cONVOLUTIONFILTER_divisor <- getFLOAT
        cONVOLUTIONFILTER_bias <- getFLOAT
        cONVOLUTIONFILTER_matrix <- genericReplicateM
-                                     (cONVOLUTIONFILTER_matrixX * cONVOLUTIONFILTER_matrixY)
-                                     getFLOAT
+                                     cONVOLUTIONFILTER_matrixY
+                                     (genericReplicateM cONVOLUTIONFILTER_matrixX getFLOAT)
        cONVOLUTIONFILTER_defaultColor <- getRGBA
        discardReserved "_reserved (x :: ?)" (getUB 6)
        cONVOLUTIONFILTER_clamp <- getFlag
        cONVOLUTIONFILTER_preserveAlpha <- getFlag
        return (CONVOLUTIONFILTER{..})
 putCONVOLUTIONFILTER CONVOLUTIONFILTER{..}
-  = do putUI8 cONVOLUTIONFILTER_matrixX
+  = do let cONVOLUTIONFILTER_matrixX
+             = fromMaybe 0
+                 (the "cONVOLUTIONFILTER_matrix (x :: CONVOLUTIONFILTER)"
+                    "Not all of the rows had the same length"
+                    (map genericLength cONVOLUTIONFILTER_matrix))
+       putUI8 cONVOLUTIONFILTER_matrixX
+       let cONVOLUTIONFILTER_matrixY
+             = genericLength cONVOLUTIONFILTER_matrix
        putUI8 cONVOLUTIONFILTER_matrixY
        putFLOAT cONVOLUTIONFILTER_divisor
        putFLOAT cONVOLUTIONFILTER_bias
        if
          genericLength cONVOLUTIONFILTER_matrix /=
-           (cONVOLUTIONFILTER_matrixX * cONVOLUTIONFILTER_matrixY)
+           (cONVOLUTIONFILTER_matrixY)
          then
          inconsistent "cONVOLUTIONFILTER_matrix (x :: CONVOLUTIONFILTER)"
-           ("Mismatch with the required length: cONVOLUTIONFILTER_matrixX * cONVOLUTIONFILTER_matrixY"
-              ++
+           ("Mismatch with the required length: cONVOLUTIONFILTER_matrixY" ++
               show (genericLength cONVOLUTIONFILTER_matrix) ++
-                " /= " ++
-                  show (cONVOLUTIONFILTER_matrixX * cONVOLUTIONFILTER_matrixY))
-         else mapM_ (\ x -> putFLOAT x) cONVOLUTIONFILTER_matrix
+                " /= " ++ show cONVOLUTIONFILTER_matrixY)
+         else
+         mapM_
+           (\ x ->
+              if genericLength x /= (cONVOLUTIONFILTER_matrixX) then
+                inconsistent
+                  "cONVOLUTIONFILTER_matrix (x :: CONVOLUTIONFILTER) !! n"
+                  ("Mismatch with the required length: cONVOLUTIONFILTER_matrixX" ++
+                     show (genericLength x) ++ " /= " ++ show cONVOLUTIONFILTER_matrixX)
+                else mapM_ (\ x -> putFLOAT x) x)
+           cONVOLUTIONFILTER_matrix
        putRGBA cONVOLUTIONFILTER_defaultColor
        let cONVOLUTIONFILTER_reserved = reservedDefault
        if requiredBitsUB cONVOLUTIONFILTER_reserved <= 6 then
@@ -2325,6 +2334,9 @@ putCONVOLUTIONFILTER CONVOLUTIONFILTER{..}
        return ()
 
 \end{code}
+
+NB: the specification doesn't say, but I've assumed that the Matrix is stored
+in row-major order like a C array -- i.e. rows are stored one after another.
 
 p44: Blur filter
 \begin{code}
@@ -2495,12 +2507,28 @@ putBEVELFILTER BEVELFILTER{..}
 
 \end{code}
 
+\begin{code}
+
+-- | A list of (color, ratio) pairs describing a gradient ramp, for use in
+-- a GRADIENTGLOWFILTER or a GRADIENTBEVELFILTER
+type FilterGradient = [(RGBA, UI8)]
+
+getFilterGradient = do
+    numColors <- getUI8
+    liftM2 zip (genericReplicateM numColors getRGBA) (genericReplicateM numColors getUI8)
+
+putFilterGradient fg = do
+    putUI8 (genericLength fg)
+    mapM_ (putRGBA . fst) fg
+    mapM_ (putUI8 . snd) fg
+
+\end{code}
+
 p48: Gradient Glow and Gradient Bevel filters
 \begin{code}
  
-data GRADIENTGLOWFILTER = GRADIENTGLOWFILTER{gRADIENTGLOWFILTER_gradientColors
-                                             :: [RGBA],
-                                             gRADIENTGLOWFILTER_gradientRatio :: [UI8],
+data GRADIENTGLOWFILTER = GRADIENTGLOWFILTER{gRADIENTGLOWFILTER_gradient
+                                             :: FilterGradient,
                                              gRADIENTGLOWFILTER_blurX :: FIXED,
                                              gRADIENTGLOWFILTER_blurY :: FIXED,
                                              gRADIENTGLOWFILTER_angle :: FIXED,
@@ -2513,13 +2541,7 @@ data GRADIENTGLOWFILTER = GRADIENTGLOWFILTER{gRADIENTGLOWFILTER_gradientColors
                                              gRADIENTGLOWFILTER_passes :: UB}
                         deriving (Eq, Show, Typeable, Data)
 getGRADIENTGLOWFILTER
-  = do gRADIENTGLOWFILTER_numColors <- getUI8
-       gRADIENTGLOWFILTER_gradientColors <- genericReplicateM
-                                              gRADIENTGLOWFILTER_numColors
-                                              getRGBA
-       gRADIENTGLOWFILTER_gradientRatio <- genericReplicateM
-                                             gRADIENTGLOWFILTER_numColors
-                                             getUI8
+  = do gRADIENTGLOWFILTER_gradient <- getFilterGradient
        gRADIENTGLOWFILTER_blurX <- getFIXED
        gRADIENTGLOWFILTER_blurY <- getFIXED
        gRADIENTGLOWFILTER_angle <- getFIXED
@@ -2532,31 +2554,7 @@ getGRADIENTGLOWFILTER
        gRADIENTGLOWFILTER_passes <- getUB 4
        return (GRADIENTGLOWFILTER{..})
 putGRADIENTGLOWFILTER GRADIENTGLOWFILTER{..}
-  = do let gRADIENTGLOWFILTER_numColors
-             = genericLength gRADIENTGLOWFILTER_gradientColors
-       putUI8 gRADIENTGLOWFILTER_numColors
-       if
-         genericLength gRADIENTGLOWFILTER_gradientColors /=
-           (gRADIENTGLOWFILTER_numColors)
-         then
-         inconsistent
-           "gRADIENTGLOWFILTER_gradientColors (x :: GRADIENTGLOWFILTER)"
-           ("Mismatch with the required length: gRADIENTGLOWFILTER_numColors"
-              ++
-              show (genericLength gRADIENTGLOWFILTER_gradientColors) ++
-                " /= " ++ show gRADIENTGLOWFILTER_numColors)
-         else mapM_ (\ x -> putRGBA x) gRADIENTGLOWFILTER_gradientColors
-       if
-         genericLength gRADIENTGLOWFILTER_gradientRatio /=
-           (gRADIENTGLOWFILTER_numColors)
-         then
-         inconsistent
-           "gRADIENTGLOWFILTER_gradientRatio (x :: GRADIENTGLOWFILTER)"
-           ("Mismatch with the required length: gRADIENTGLOWFILTER_numColors"
-              ++
-              show (genericLength gRADIENTGLOWFILTER_gradientRatio) ++
-                " /= " ++ show gRADIENTGLOWFILTER_numColors)
-         else mapM_ (\ x -> putUI8 x) gRADIENTGLOWFILTER_gradientRatio
+  = do putFilterGradient gRADIENTGLOWFILTER_gradient
        putFIXED gRADIENTGLOWFILTER_blurX
        putFIXED gRADIENTGLOWFILTER_blurY
        putFIXED gRADIENTGLOWFILTER_angle
@@ -2580,9 +2578,8 @@ putGRADIENTGLOWFILTER GRADIENTGLOWFILTER{..}
 
 \begin{code}
  
-data GRADIENTBEVELFILTER = GRADIENTBEVELFILTER{gRADIENTBEVELFILTER_gradientColors
-                                               :: [RGBA],
-                                               gRADIENTBEVELFILTER_gradientRatio :: [UI8],
+data GRADIENTBEVELFILTER = GRADIENTBEVELFILTER{gRADIENTBEVELFILTER_gradient
+                                               :: FilterGradient,
                                                gRADIENTBEVELFILTER_blurX :: FIXED,
                                                gRADIENTBEVELFILTER_blurY :: FIXED,
                                                gRADIENTBEVELFILTER_angle :: FIXED,
@@ -2595,13 +2592,7 @@ data GRADIENTBEVELFILTER = GRADIENTBEVELFILTER{gRADIENTBEVELFILTER_gradientColor
                                                gRADIENTBEVELFILTER_passes :: UB}
                          deriving (Eq, Show, Typeable, Data)
 getGRADIENTBEVELFILTER
-  = do gRADIENTBEVELFILTER_numColors <- getUI8
-       gRADIENTBEVELFILTER_gradientColors <- genericReplicateM
-                                               gRADIENTBEVELFILTER_numColors
-                                               getRGBA
-       gRADIENTBEVELFILTER_gradientRatio <- genericReplicateM
-                                              gRADIENTBEVELFILTER_numColors
-                                              getUI8
+  = do gRADIENTBEVELFILTER_gradient <- getFilterGradient
        gRADIENTBEVELFILTER_blurX <- getFIXED
        gRADIENTBEVELFILTER_blurY <- getFIXED
        gRADIENTBEVELFILTER_angle <- getFIXED
@@ -2614,31 +2605,7 @@ getGRADIENTBEVELFILTER
        gRADIENTBEVELFILTER_passes <- getUB 4
        return (GRADIENTBEVELFILTER{..})
 putGRADIENTBEVELFILTER GRADIENTBEVELFILTER{..}
-  = do let gRADIENTBEVELFILTER_numColors
-             = genericLength gRADIENTBEVELFILTER_gradientColors
-       putUI8 gRADIENTBEVELFILTER_numColors
-       if
-         genericLength gRADIENTBEVELFILTER_gradientColors /=
-           (gRADIENTBEVELFILTER_numColors)
-         then
-         inconsistent
-           "gRADIENTBEVELFILTER_gradientColors (x :: GRADIENTBEVELFILTER)"
-           ("Mismatch with the required length: gRADIENTBEVELFILTER_numColors"
-              ++
-              show (genericLength gRADIENTBEVELFILTER_gradientColors) ++
-                " /= " ++ show gRADIENTBEVELFILTER_numColors)
-         else mapM_ (\ x -> putRGBA x) gRADIENTBEVELFILTER_gradientColors
-       if
-         genericLength gRADIENTBEVELFILTER_gradientRatio /=
-           (gRADIENTBEVELFILTER_numColors)
-         then
-         inconsistent
-           "gRADIENTBEVELFILTER_gradientRatio (x :: GRADIENTBEVELFILTER)"
-           ("Mismatch with the required length: gRADIENTBEVELFILTER_numColors"
-              ++
-              show (genericLength gRADIENTBEVELFILTER_gradientRatio) ++
-                " /= " ++ show gRADIENTBEVELFILTER_numColors)
-         else mapM_ (\ x -> putUI8 x) gRADIENTBEVELFILTER_gradientRatio
+  = do putFilterGradient gRADIENTBEVELFILTER_gradient
        putFIXED gRADIENTBEVELFILTER_blurX
        putFIXED gRADIENTBEVELFILTER_blurY
        putFIXED gRADIENTBEVELFILTER_angle
