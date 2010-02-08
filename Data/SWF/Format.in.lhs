@@ -32,9 +32,6 @@ TODOS
   * DefineButton2 ActionOffset
   * DefineFont3.CodeTableOffset (OffsetTable is semantic junk, as is GlyphShapeTable/CodeTable pairing)
   * DefineFont2.CodeTableOffset (lots of NumGlyphs junk here too)
-  * ActionDefineFunction.CodeSize
-  * ActionDefineFunction2.CodeSize
-  * ActionWith.Size
 5) Simplify away generated consistency checks that are trivially true
 7) Generate comments on constructor fields and add them to custom ones
 8) Represent some [UI8] as ByteString?
@@ -1271,49 +1268,58 @@ putACTIONRECORDHEADER (ACTIONRECORDHEADER {..}) = do
 data ACTIONRECORD = UnknownAction { unknownAction_actionCode :: UI8, unknownAction_data :: Maybe ByteString }
                   | ActionPush { actionPush_literals :: [ActionPushLiteral] }
                   | ActionTry { actionTry_catchHow :: Either STRING UI8, actionTry_try :: [ACTIONRECORD], actionTry_catch :: [ACTIONRECORD], actionTry_finally :: [ACTIONRECORD] }
-                  | ActionDefineFunction { actionDefineFunction_functionName :: STRING, actionDefineFunction_params :: [STRING], actionDefineFunction_codeSize :: UI16 }
-                  | ActionDefineFunction2 { actionDefineFunction2_functionName :: STRING, actionDefineFunction2_registerCount :: UI8, actionDefineFunction2_preloadParentFlag :: Bool, actionDefineFunction2_preloadRootFlag :: Bool, actionDefineFunction2_suppressSuperFlag :: Bool, actionDefineFunction2_preloadSuperFlag :: Bool, actionDefineFunction2_suppressArgumentsFlag :: Bool, actionDefineFunction2_preloadArgumentsFlag :: Bool, actionDefineFunction2_suppressThisFlag :: Bool, actionDefineFunction2_preloadThisFlag :: Bool, actionDefineFunction2_preloadGlobalFlag :: Bool, actionDefineFunction2_parameters :: [REGISTERPARAM], actionDefineFunction2_codeSize :: UI16 }
-                  | ActionWith { actionWith_size :: UI16 }
+                  | ActionDefineFunction { actionDefineFunction_functionName :: STRING, actionDefineFunction_params :: [STRING], actionDefineFunction_code :: [ACTIONRECORD] }
+                  | ActionDefineFunction2 { actionDefineFunction2_functionName :: STRING, actionDefineFunction2_registerCount :: UI8, actionDefineFunction2_preloadParentFlag :: Bool, actionDefineFunction2_preloadRootFlag :: Bool, actionDefineFunction2_suppressSuperFlag :: Bool, actionDefineFunction2_preloadSuperFlag :: Bool, actionDefineFunction2_suppressArgumentsFlag :: Bool, actionDefineFunction2_preloadArgumentsFlag :: Bool, actionDefineFunction2_suppressThisFlag :: Bool, actionDefineFunction2_preloadThisFlag :: Bool, actionDefineFunction2_preloadGlobalFlag :: Bool, actionDefineFunction2_parameters :: [REGISTERPARAM], actionDefineFunction2_code :: [ACTIONRECORD] }
+                  | ActionWith { actionWith_code :: [ACTIONRECORD] }
 \genconstructors{action}
             deriving (Eq, Show, Typeable, Data)
 
 getACTIONRECORD = do
     ACTIONRECORDHEADER {..} <- getACTIONRECORDHEADER
     
-    let mb_getter = case aCTIONRECORDHEADER_actionCode of
-                      0x96 -> Just getActionPush
-                      0x8F -> Just getActionTry
+    let std getter = liftM (\x -> (\[] -> x, return [])) getter
+        mb_getter = case aCTIONRECORDHEADER_actionCode of
+                      0x96 -> Just $ std getActionPush
+                      0x8F -> Just $ std getActionTry
                       0x9B -> Just getActionDefineFunction
                       0x8E -> Just getActionDefineFunction2
                       0x94 -> Just getActionWith
-                      _    -> generatedActionGetters aCTIONRECORDHEADER_actionCode
+                      _    -> fmap std $ generatedActionGetters aCTIONRECORDHEADER_actionCode
     
     -- Only some tags (with code >= 0x80) have a payload:
-    nestSwfGet "getACTIONRECORD" (fromMaybe 0 aCTIONRECORDHEADER_actionLength) $ case mb_getter of
+    (got, extras_get) <- nestSwfGet "getACTIONRECORD" (fromMaybe 0 aCTIONRECORDHEADER_actionLength) $ case mb_getter of
         Just getter -> getter
-        Nothing -> do
+        Nothing -> std $ do
             dat <- getRemainingLazyByteString
             return $ UnknownAction { unknownAction_actionCode = aCTIONRECORDHEADER_actionCode, unknownAction_data = fmap (const dat) aCTIONRECORDHEADER_actionLength }
 
+    -- Extract any ACTIONRECORDS occurring physically after this one that belong logically within it
+    extras <- extras_get
+    return $ got extras
+
 putACTIONRECORD actionrecord = do
-    (len, put) <- nestSwfPut $ case actionrecord of
-        UnknownAction {..}       -> when (consistentWith (inconsistent "unknownAction_data (x :: Tag)" "You can have unknownAction_data iff the top bit of unknownAction_actionCode is set")
-                                                         (isJust unknownAction_data)
-                                                         (unknownAction_actionCode >= 0x80)) $
+    let std putter = putter >> return (return ())
+    (extras_put, (len, put)) <- nestSwfPutM $ case actionrecord of
+        UnknownAction {..}       -> std $ when (consistentWith (inconsistent "unknownAction_data (x :: Tag)" "You can have unknownAction_data iff the top bit of unknownAction_actionCode is set")
+                                                               (isJust unknownAction_data)
+                                                               (unknownAction_actionCode >= 0x80)) $
                                       putLazyByteString $ fromJust unknownAction_data
-        ActionPush {}            -> putActionPush actionrecord
-        ActionTry {}             -> putActionTry actionrecord
+        ActionPush {}            -> std $ putActionPush actionrecord
+        ActionTry {}             -> std $ putActionTry actionrecord
         ActionDefineFunction {}  -> putActionDefineFunction actionrecord
         ActionDefineFunction2 {} -> putActionDefineFunction2 actionrecord
         ActionWith {}            -> putActionWith actionrecord
-        _                        -> generatedActionPutters actionrecord
+        _                        -> std $ generatedActionPutters actionrecord
 
     let code = actionType actionrecord
     putACTIONRECORDHEADER $ ACTIONRECORDHEADER {
         aCTIONRECORDHEADER_actionCode = code,
         aCTIONRECORDHEADER_actionLength = if code < 0x80 then Nothing else Just len
       }
+    
+    -- Output the tag itself, followed by any extra ACTIONRECORDs it contained
     put
+    extras_put
 
 actionType (UnknownAction {..})       = unknownAction_actionCode
 actionType (ActionPush {})            = 0x96
@@ -1786,14 +1792,19 @@ getActionDefineFunction = do
     actionDefineFunction_functionName <- getSTRING
     actionDefineFunction_numParams <- getUI16
     actionDefineFunction_params <- genericReplicateM actionDefineFunction_numParams getSTRING
+    
     actionDefineFunction_codeSize <- getUI16
-    return $ ActionDefineFunction {..}
+    return (\actionDefineFunction_code -> ActionDefineFunction {..},
+            nestSwfGet "getActionDefineFunction" actionDefineFunction_codeSize $ getToEnd getACTIONRECORD)
 
 putActionDefineFunction (ActionDefineFunction {..}) = do
     putSTRING actionDefineFunction_functionName
     putUI16 (genericLength actionDefineFunction_params)
     mapM_ putSTRING actionDefineFunction_params
+    
+    (actionDefineFunction_codeSize, put_extras) <- nestSwfPut $ mapM_ putACTIONRECORD actionDefineFunction_code
     putUI16 actionDefineFunction_codeSize
+    return put_extras
 
 \end{code}
 
@@ -1900,10 +1911,13 @@ Size       UI16               # of bytes of code that follow
 
 getActionWith = do
     actionWith_size <- getUI16
-    return $ ActionWith {..}
+    return (\actionWith_code -> ActionWith {..},
+            nestSwfGet "getActionWith" actionWith_size $ getToEnd getACTIONRECORD)
     
 putActionWith (ActionWith {..}) = do
+    (actionWith_size, put_extras) <- nestSwfPut $ mapM_ putACTIONRECORD actionWith_code
     putUI16 actionWith_size
+    return put_extras
 
 \end{code}
 
@@ -2120,8 +2134,8 @@ getActionDefineFunction2 = do
     
     actionDefineFunction2_parameters <- genericReplicateM actionDefineFunction2_numParams getREGISTERPARAM
     actionDefineFunction2_codeSize <- getUI16
-    
-    return $ ActionDefineFunction2 {..}
+    return (\actionDefineFunction2_code -> ActionDefineFunction2 {..},
+            nestSwfGet "getActionDefineFunction2" actionDefineFunction2_codeSize $ getToEnd getACTIONRECORD)
 
 putActionDefineFunction2 (ActionDefineFunction2 {..}) = do
     putSTRING actionDefineFunction2_functionName
@@ -2140,7 +2154,10 @@ putActionDefineFunction2 (ActionDefineFunction2 {..}) = do
     putFlag actionDefineFunction2_preloadGlobalFlag
     
     mapM_ putREGISTERPARAM actionDefineFunction2_parameters
+    
+    (actionDefineFunction2_codeSize, put_extras) <- nestSwfPut $ mapM_ putACTIONRECORD actionDefineFunction2_code
     putUI16 actionDefineFunction2_codeSize
+    return put_extras
 
 \end{code}
 
