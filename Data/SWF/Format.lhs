@@ -25,13 +25,16 @@ TODOS
   * In particular, the zlib compressed fields in the image chapter
   * Perhaps also those embedding sound and video formats
 3) Reduce semantic junk
-  * NewNumFillBits and NewNumLineBits
-  * GlyphBits / AdvanceBits
-  * STYLECHANGERECORD MoveBits
-  * STRAIGHTEDGERECORD NumBits
-  * DefineButton2 ActionOffset
-  * DefineFont3.CodeTableOffset (OffsetTable is semantic junk, as is GlyphShapeTable/CodeTable pairing)
-  * DefineFont2.CodeTableOffset (lots of NumGlyphs junk here too)
+  a) Bit counts
+    * NewNumFillBits and NewNumLineBits
+    * GlyphBits / AdvanceBits
+    * STYLECHANGERECORD MoveBits
+    * STRAIGHTEDGERECORD NumBits
+  b) Byte counts and offset tables
+    * DefineFont3.CodeTableOffset (OffsetTable is semantic junk)
+    * DefineFont2.CodeTableOffset (lots of NumGlyphs junk here too)
+  c) Misc
+    * Paired arrays rather than arrays of pairs in DefineFont2 and DefineFont3
 5) Simplify away generated consistency checks that are trivially true
 7) Generate comments on constructor fields and add them to custom ones
 8) Represent some [UI8] as ByteString?
@@ -1285,6 +1288,7 @@ Chapter 3: The Display List
 
 data Tag = UnknownTag { unknownTag_tagType :: UI16, unknownTag_data :: ByteString }
          | DefineFont { defineFont_fontID :: UI16, defineFont_glyphShapeTable :: [SHAPE] }
+         | DefineButton2 { defineButton2_buttonId :: UI16, defineButton2_trackAsMenu :: Bool, defineButton2_characters :: BUTTONRECORDS, defineButton2_actions :: BUTTONCONDACTIONS }
          |  PlaceObject{placeObject_characterId :: UI16,
               placeObject_depth :: UI16, placeObject_matrix :: MATRIX,
               placeObject_colorTransform :: Maybe CXFORM}
@@ -1522,11 +1526,6 @@ data Tag = UnknownTag { unknownTag_tagType :: UI16, unknownTag_data :: ByteStrin
          |  DefineButton{defineButton_buttonId :: UI16,
                defineButton_characters :: BUTTONRECORDS,
                defineButton_actions :: ACTIONRECORDS}
-         |  DefineButton2{defineButton2_buttonId :: UI16,
-                defineButton2_trackAsMenu :: Bool,
-                defineButton2_actionOffset :: UI16,
-                defineButton2_characters :: BUTTONRECORDS,
-                defineButton2_actions :: BUTTONCONDACTIONS}
          |  DefineButtonCxform{defineButtonCxform_buttonId :: UI16,
                      defineButtonCxform_buttonColorTransform :: CXFORM}
          |  DefineButtonSound{defineButtonSound_buttonId :: UI16,
@@ -1557,6 +1556,7 @@ getTag = do
 
     let mb_getter = case rECORDHEADER_tagType of
           10 -> Just getDefineFont
+          34 -> Just getDefineButton2
           _  -> generatedTagGetters rECORDHEADER_tagType
 
     nestSwfGet "getTag" rECORDHEADER_tagLength $ case mb_getter of
@@ -1568,17 +1568,19 @@ getTag = do
 
 putTag tag = do
     (rECORDHEADER_tagLength, put) <- nestSwfPut $ case tag of
-        UnknownTag {..} -> putLazyByteString unknownTag_data
-        DefineFont {}   -> putDefineFont tag
-        _               -> generatedTagPutters tag
+        UnknownTag {..}  -> putLazyByteString unknownTag_data
+        DefineFont {}    -> putDefineFont tag
+        DefineButton2 {} -> putDefineButton2 tag
+        _                -> generatedTagPutters tag
   
     let rECORDHEADER_tagType = tagType tag
     putRECORDHEADER $ RECORDHEADER {..}
     put
 
-tagType (UnknownTag {..}) = unknownTag_tagType
-tagType (DefineFont {})   = 10
-tagType tag               = generatedTagTypes tag
+tagType (UnknownTag {..})  = unknownTag_tagType
+tagType (DefineFont {})    = 10
+tagType (DefineButton2 {}) = 34
+tagType tag                = generatedTagTypes tag
 
 \end{code}
 
@@ -1641,7 +1643,6 @@ generatedTagGetters tag
         45 -> Just getSoundStreamHead2
         19 -> Just getSoundStreamBlock
         7 -> Just getDefineButton
-        34 -> Just getDefineButton2
         23 -> Just getDefineButtonCxform
         17 -> Just getDefineButtonSound
         39 -> Just getDefineSprite
@@ -1708,7 +1709,6 @@ generatedTagPutters tag
         SoundStreamHead2{..} -> putSoundStreamHead2 tag
         SoundStreamBlock{..} -> putSoundStreamBlock tag
         DefineButton{..} -> putDefineButton tag
-        DefineButton2{..} -> putDefineButton2 tag
         DefineButtonCxform{..} -> putDefineButtonCxform tag
         DefineButtonSound{..} -> putDefineButtonSound tag
         DefineSprite{..} -> putDefineSprite tag
@@ -1773,7 +1773,6 @@ generatedTagTypes tag
         SoundStreamHead2{..} -> 45
         SoundStreamBlock{..} -> 19
         DefineButton{..} -> 7
-        DefineButton2{..} -> 34
         DefineButtonCxform{..} -> 23
         DefineButtonSound{..} -> 17
         DefineSprite{..} -> 39
@@ -7785,31 +7784,44 @@ putDefineButton DefineButton{..}
 \end{code}
 
 p226: DefineButton2
+\begin{comment}
+DefineButton2
+Field             Type              Comment
+Header            RECORDHEADER      Tag type = 34
+ButtonId          UI16              ID for this character
+ReservedFlags     UB[7]             Always 0
+TrackAsMenu       UB[1]             0 = track as normal button 1 = track as menu button
+ActionOffset      UI16              Offset in bytes from start of this field to the first BUTTONCONDACTION, or 0 if no actions occur
+Characters        BUTTONRECORDS(2)  Characters that make up the button
+Actions           BUTTONCONDACTIONS Actions to execute at particular button events
+\end{comment}
+
 \begin{code}
-getDefineButton2
-  = do defineButton2_buttonId <- getUI16
-       discardReserved "_reserved (x :: ?)" (getUB 7)
-       defineButton2_trackAsMenu <- getFlag
-       defineButton2_actionOffset <- getUI16
-       defineButton2_characters <- getBUTTONRECORDS 2
-       defineButton2_actions <- getBUTTONCONDACTIONS
-       return (DefineButton2{..})
-putDefineButton2 DefineButton2{..}
-  = do putUI16 defineButton2_buttonId
-       let defineButton2_reservedFlags = reservedDefault
-       if requiredBitsUB defineButton2_reservedFlags <= 7 then
-         putUB 7 defineButton2_reservedFlags else
-         inconsistent "x :: DefineButton2"
-           ("Bit count incorrect: required " ++
-              show (requiredBitsUB defineButton2_reservedFlags) ++
-                " bits to store the value " ++
-                  show defineButton2_reservedFlags ++
-                    ", but only have available " ++ show 7)
-       putFlag defineButton2_trackAsMenu
-       putUI16 defineButton2_actionOffset
-       putBUTTONRECORDS 2 defineButton2_characters
-       putBUTTONCONDACTIONS defineButton2_actions
-       return ()
+
+getDefineButton2 = do
+    defineButton2_buttonId <- getUI16
+    
+    discardReserved "defineButton2_reserved (x :: Tag)" (getUB 7)
+    defineButton2_trackAsMenu <- getFlag
+    defineButton2_actionOffset <- getUI16
+    
+    defineButton2_characters <- getBUTTONRECORDS 2
+    
+    defineButton2_actions <- getBUTTONCONDACTIONS
+    return $ DefineButton2{..}
+
+putDefineButton2 (DefineButton2 {..}) = do
+    putUI16 defineButton2_buttonId
+    
+    putUB 7 reservedDefault
+    putFlag defineButton2_trackAsMenu
+    
+    (characters_len, put_characters) <- nestSwfPut $ putBUTTONRECORDS 2 defineButton2_characters
+    putUI16 (if characters_len == 0 then 0 else characters_len + 2)
+    put_characters
+    
+    putBUTTONCONDACTIONS defineButton2_actions
+    return ()
 
 \end{code}
 

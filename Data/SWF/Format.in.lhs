@@ -31,7 +31,6 @@ TODOS
     * STYLECHANGERECORD MoveBits
     * STRAIGHTEDGERECORD NumBits
   b) Byte counts and offset tables
-    * DefineButton2 ActionOffset
     * DefineFont3.CodeTableOffset (OffsetTable is semantic junk)
     * DefineFont2.CodeTableOffset (lots of NumGlyphs junk here too)
   c) Misc
@@ -632,6 +631,7 @@ Chapter 3: The Display List
 
 data Tag = UnknownTag { unknownTag_tagType :: UI16, unknownTag_data :: ByteString }
          | DefineFont { defineFont_fontID :: UI16, defineFont_glyphShapeTable :: [SHAPE] }
+         | DefineButton2 { defineButton2_buttonId :: UI16, defineButton2_trackAsMenu :: Bool, defineButton2_characters :: BUTTONRECORDS, defineButton2_actions :: BUTTONCONDACTIONS }
 \genconstructors{tag}
          deriving (Eq, Show, Typeable, Data)
 
@@ -640,6 +640,7 @@ getTag = do
 
     let mb_getter = case rECORDHEADER_tagType of
           10 -> Just getDefineFont
+          34 -> Just getDefineButton2
           _  -> generatedTagGetters rECORDHEADER_tagType
 
     nestSwfGet "getTag" rECORDHEADER_tagLength $ case mb_getter of
@@ -651,17 +652,19 @@ getTag = do
 
 putTag tag = do
     (rECORDHEADER_tagLength, put) <- nestSwfPut $ case tag of
-        UnknownTag {..} -> putLazyByteString unknownTag_data
-        DefineFont {}   -> putDefineFont tag
-        _               -> generatedTagPutters tag
+        UnknownTag {..}  -> putLazyByteString unknownTag_data
+        DefineFont {}    -> putDefineFont tag
+        DefineButton2 {} -> putDefineButton2 tag
+        _                -> generatedTagPutters tag
   
     let rECORDHEADER_tagType = tagType tag
     putRECORDHEADER $ RECORDHEADER {..}
     put
 
-tagType (UnknownTag {..}) = unknownTag_tagType
-tagType (DefineFont {})   = 10
-tagType tag               = generatedTagTypes tag
+tagType (UnknownTag {..})  = unknownTag_tagType
+tagType (DefineFont {})    = 10
+tagType (DefineButton2 {}) = 34
+tagType tag                = generatedTagTypes tag
 
 \end{code}
 
@@ -3380,7 +3383,7 @@ Actions          ACTIONRECORDS    Actions to perform
 \end{record}
 
 p226: DefineButton2
-\begin{record}
+\begin{comment}
 DefineButton2
 Field             Type              Comment
 Header            RECORDHEADER      Tag type = 34
@@ -3390,7 +3393,36 @@ TrackAsMenu       UB[1]             0 = track as normal button 1 = track as menu
 ActionOffset      UI16              Offset in bytes from start of this field to the first BUTTONCONDACTION, or 0 if no actions occur
 Characters        BUTTONRECORDS(2)  Characters that make up the button
 Actions           BUTTONCONDACTIONS Actions to execute at particular button events
-\end{record}
+\end{comment}
+
+\begin{code}
+
+getDefineButton2 = do
+    defineButton2_buttonId <- getUI16
+    
+    discardReserved "defineButton2_reserved (x :: Tag)" (getUB 7)
+    defineButton2_trackAsMenu <- getFlag
+    defineButton2_actionOffset <- getUI16
+    
+    defineButton2_characters <- getBUTTONRECORDS 2
+    
+    defineButton2_actions <- getBUTTONCONDACTIONS
+    return $ DefineButton2{..}
+
+putDefineButton2 (DefineButton2 {..}) = do
+    putUI16 defineButton2_buttonId
+    
+    putUB 7 reservedDefault
+    putFlag defineButton2_trackAsMenu
+    
+    (characters_len, put_characters) <- nestSwfPut $ putBUTTONRECORDS 2 defineButton2_characters
+    putUI16 (if characters_len == 0 then 0 else characters_len + 2)
+    put_characters
+    
+    putBUTTONCONDACTIONS defineButton2_actions
+    return ()
+
+\end{code}
 
 \begin{record}
 BUTTONCONDACTION
