@@ -25,13 +25,17 @@ TODOS
   * In particular, the zlib compressed fields in the image chapter
   * Perhaps also those embedding sound and video formats
 3) Reduce semantic junk
-  * NewNumFillBits and NewNumLineBits
-  * GlyphBits / AdvanceBits
-  * STYLECHANGERECORD MoveBits
-  * STRAIGHTEDGERECORD NumBits
-  * DefineButton2 ActionOffset
-  * DefineFont3.CodeTableOffset (OffsetTable is semantic junk, as is GlyphShapeTable/CodeTable pairing)
-  * DefineFont2.CodeTableOffset (lots of NumGlyphs junk here too)
+  a) Bit counts
+    * NewNumFillBits and NewNumLineBits
+    * GlyphBits / AdvanceBits
+    * STYLECHANGERECORD MoveBits
+    * STRAIGHTEDGERECORD NumBits
+  b) Byte counts and offset tables
+    * DefineButton2 ActionOffset
+    * DefineFont3.CodeTableOffset (OffsetTable is semantic junk)
+    * DefineFont2.CodeTableOffset (lots of NumGlyphs junk here too)
+  c) Misc
+    * Paired arrays rather than arrays of pairs in DefineFont2 and DefineFont3
 5) Simplify away generated consistency checks that are trivially true
 7) Generate comments on constructor fields and add them to custom ones
 8) Represent some [UI8] as ByteString?
